@@ -1,0 +1,150 @@
+{
+  "version": "1.1",
+  "hackathon_name": "0G APAC Hackathon",
+  "project_name": "0g-sentinel",
+  "winning_idea": "0G Sentinel",
+  "source": "warroom",
+  "status": "complete",
+  "current_phase": "complete",
+  "current_substep": null,
+  "current_session": 3,
+  "next_session_entry": null,
+  "phases_complete": ["phase-0", "phase-0b", "phase-1", "phase-1.5", "phase-2", "phase-2.5", "phase-3", "phase-3.5", "phase-4"],
+  "autonomous_mode": false,
+  "working_dir": "~/hackathon-toolkit/active/0g-apac-hackathon",
+  "timestamps": {
+    "started": "2026-05-14T00:00:00Z",
+    "completed": "2026-05-14T06:00:00Z"
+  },
+  "documents": {
+    "prd": "~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/PRD.md",
+    "architecture": "~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/ARCHITECTURE.md",
+    "architecture_sections_complete": [
+      "System Overview",
+      "AttestationRegistry.sol",
+      "AgentRegistry.sol",
+      "AgentGate.sol",
+      "Behavioral Analysis Pipeline",
+      "Code Vulnerability Scan Pipeline",
+      "0G Storage Evidence Archive",
+      "Deploy Scripts",
+      "Dashboard API",
+      "Dashboard Frontend",
+      "Domain Knowledge",
+      "Submission Directory Plan",
+      "Multi-Track Architecture",
+      "Safety Architecture",
+      "Configuration Reference",
+      "Testing Strategy",
+      "Component Build Order",
+      "Deployment Sequence",
+      "Addresses and External References"
+    ],
+    "implementation_plan": "~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/PLAN.md",
+    "mini_verdict": null,
+    "deep_research": null,
+    "feature_observables": "~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/FEATURE-OBSERVABLES.md"
+  },
+  "quality_scores": {
+    "prd": "6/6 PASS",
+    "architecture": "6/6 PASS (Metric 4 import validity: 0 cross-file imports — self-contained)",
+    "implementation_plan": "7/7 PASS (Metric 2: 4 operational tasks documented as legitimate exceptions)",
+    "cross_doc_audit": "4/4 PASS"
+  },
+  "project_type": "full-stack",
+  "project_type_rationale": "Next.js 14 frontend + Solidity contracts + user flows (dashboard, agent scan, gate check) — no autonomous agent loop",
+  "featureObservablesPath": "~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/FEATURE-OBSERVABLES.md",
+  "corrections": [
+    "Post-V1: 0G mainnet agent population is thin (~20-80 real iNFTs). Demo reframed to comprehensive coverage, not anomaly detection in volume.",
+    "Post-V1: Name changed from AgentWatch to 0G Sentinel.",
+    "Post-V2: Marketplace framing too narrow. Correct framing: on-chain security infrastructure for AI agents.",
+    "Post-V3: Swapped ModelProof for Code Vulnerability Scan (deterministic, copy-paste from AgentMesh, stronger security story).",
+    "Final: Architecture is V2 product (2 pipelines) + AgentMesh plumbing. NOT Sentinel Swarm multi-agent coordination."
+  ],
+  "tech_stack": {
+    "family": "Smart Contracts + Frontend",
+    "languages": ["Solidity", "TypeScript"],
+    "frameworks": ["Next.js", "Hardhat", "ethers.js", "@0glabs/0g-ts-sdk"],
+    "deploy_target": "0G Aristotle Mainnet (chain 0g, EVM-compatible)"
+  },
+  "technical_spike": {
+    "needed": true,
+    "unknowns": [
+      {"component": "0G Compute API", "confidence": "HIGH", "source": "PULSE.md VF: OpenAI-compatible"},
+      {"component": "AgentMesh AuditAttestation.sol pattern", "confidence": "HIGH", "source": "builder has codebase"},
+      {"component": "0G Storage Log Layer upload via @0glabs/0g-ts-sdk", "confidence": "MEDIUM", "source": "SDK exists, upload pattern not tested"},
+      {"component": "ERC-7857 Agent ID interface (exact fields)", "confidence": "LOW", "source": "standard referenced but interface not verified"}
+    ],
+    "verified_patterns": [
+      {"component": "0G Compute", "pattern": "OpenAI-compatible endpoint, same receipt hash capture as AgentMesh", "source": "PULSE.md VF + research-brief.md"},
+      {"component": "0G Chain mainnet RPC", "pattern": "https://evmrpc.0g.ai, EVM-compatible", "source": "PULSE.md VF"},
+      {"component": "@0glabs/0g-ts-sdk", "pattern": "TypeScript SDK for 0G Storage", "source": "PULSE.md VF"}
+    ],
+    "unverified_patterns": [
+      {"component": "0G Storage Log Layer", "pattern": "upload(data) -> hash", "risk": "SDK method names not verified"}
+    ],
+    "assumed_patterns": [
+      {"component": "ERC-7857 attestation fields", "pattern": "updateMetadata(tokenId, key, value) via agent ID contract", "fallback": "Write custom mapping if standard interface differs"}
+    ]
+  },
+  "scope_mode": "emergency",
+  "context_percentage": 72,
+  "session": 3,
+  "errors": [],
+  "phase_ledger": [
+    {
+      "phase": "SETUP",
+      "started_at": "2026-05-14T00:00:00Z",
+      "completed_at": "2026-05-14T00:05:00Z",
+      "evidence": "config.json loaded, WINNER-BRIEF.md read (locked V3 final), PULSE.md ingested, 14 universal concerns loaded, 2 days remaining = emergency scope mode"
+    },
+    {
+      "phase": "TECHNICAL_SPIKE",
+      "started_at": "2026-05-14T00:05:00Z",
+      "completed_at": "2026-05-14T00:10:00Z",
+      "evidence": "4 components assessed: 0G Compute HIGH, AgentMesh contract HIGH, 0G Storage MEDIUM, ERC-7857 LOW/ASSUMED. Key unknown: ERC-7857 exact interface."
+    },
+    {
+      "phase": "PRD",
+      "started_at": "2026-05-14T00:10:00Z",
+      "completed_at": "2026-05-14T01:30:00Z",
+      "evidence": "PRD.md written at ~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/PRD.md. 6/6 quality gate PASS. 12 features, 9 user flows, 6-scene demo script, 11 risks across 6 categories, all 5 [C] concerns addressed."
+    },
+    {
+      "phase": "PRD_REVIEW",
+      "started_at": "2026-05-14T01:30:00Z",
+      "completed_at": "2026-05-14T01:35:00Z",
+      "evidence": "PRD approved by user. 0 corrections applied. Proceeding to Architecture."
+    },
+    {
+      "phase": "ARCHITECTURE",
+      "started_at": "2026-05-14T01:35:00Z",
+      "completed_at": "2026-05-14T03:30:00Z",
+      "evidence": "ARCHITECTURE.md written at ~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/ARCHITECTURE.md. 6/6 quality gate PASS. 19 sections, 3 contracts (AttestationRegistry, AgentRegistry, AgentGate), 2 AI pipelines, 0G Storage archive, Next.js dashboard with 5 API routes."
+    },
+    {
+      "phase": "ARCHITECTURE_REVIEW",
+      "started_at": "2026-05-14T03:30:00Z",
+      "completed_at": "2026-05-14T03:35:00Z",
+      "evidence": "Architecture reviewed. Cross-doc audit 4/4 PASS. User approved. Proceeding to Implementation Plan."
+    },
+    {
+      "phase": "IMPLEMENTATION_PLAN",
+      "started_at": "2026-05-14T03:35:00Z",
+      "completed_at": "2026-05-14T05:30:00Z",
+      "evidence": "PLAN.md written at ~/hackathon-toolkit/active/0g-apac-hackathon/0g-sentinel/PLAN.md. 1153 lines, 34 tasks across 6 phases, 8 decision trees (DT-R1 through DT-R8), 6 phase gates with checklists. 6 missing commit lines added before quality gate. 7/7 PASS."
+    },
+    {
+      "phase": "PLAN_REVIEW",
+      "started_at": "2026-05-14T05:30:00Z",
+      "completed_at": "2026-05-14T05:35:00Z",
+      "evidence": "Plan quality gate 7/7 PASS. Cross-doc audit 4/4 PASS. User approved with 'review then proceed after'. FEATURE-OBSERVABLES.md generated with 8 observables (F-001 through F-008)."
+    },
+    {
+      "phase": "FINALIZATION",
+      "started_at": "2026-05-14T05:35:00Z",
+      "completed_at": "2026-05-14T06:00:00Z",
+      "evidence": "FEATURE-OBSERVABLES.md written. .forge-state.json finalized. PULSE.md forge section appended. pipeline-log.md updated. All 3 documents complete."
+    }
+  ]
+}

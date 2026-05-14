@@ -1,0 +1,21 @@
+{
+  "project": "0g-sentinel",
+  "pipeline": {
+    "phases": {
+      "intel": { "status": "complete" },
+      "warroom": { "status": "complete" },
+      "forge": { "status": "complete" },
+      "critique": { "status": "complete" },
+      "url_preverify": { "status": "complete" },
+      "build": { "status": "in-progress" }
+    }
+  },
+  "buildState": {
+    "status": "in-progress",
+    "contractAddresses": {},
+    "deviationCount": 0,
+    "untestedDeviationCount": 0,
+    "knownRiskCount": 0
+  },
+  "artifacts": {}
+}

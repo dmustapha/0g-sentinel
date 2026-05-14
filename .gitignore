@@ -1,0 +1,8 @@
+.env
+node_modules/
+artifacts/
+cache/
+typechain-types/
+.build-state.json
+frontend/.next/
+frontend/node_modules/

@@ -1,0 +1,29 @@
+{
+  "name": "0g-sentinel",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy:testnet": "npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogTestnet && npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogTestnet && npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogTestnet",
+    "deploy:mainnet": "npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogMainnet && npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogMainnet && npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogMainnet",
+    "seed-demo": "npx ts-node scripts/seed-demo.ts",
+    "generate-proof": "npx ts-node scripts/generate-proof.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@0glabs/0g-ts-sdk": "latest",
+    "@0gfoundation/0g-compute-ts-sdk": "^0.8.3",
+    "@openzeppelin/contracts": "^5.0.0",
+    "dotenv": "^16.0.0",
+    "ethers": "^6.0.0",
+    "openai": "^4.0.0"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  }
+}

@@ -15,7 +15,7 @@ const nextConfig = {
   },
   webpack: (config) => {
     // Allow Next.js API routes to import from ../scanner/ (outside project root)
-    config.resolve.alias["@scanner"] = path.resolve(__dirname, "../scanner");
+    config.resolve.alias["@scanner"] = path.resolve(__dirname, "./scanner");
     return config;
   },
 };

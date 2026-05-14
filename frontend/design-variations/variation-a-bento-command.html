@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0G Sentinel — Variation A: Bento Command Center</title>
+<!-- DNA: Bento-SideRail-HeroMetric-CyanOnInk-SpaceGrotesk -->
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #050810;
+    --surface: #0D1224;
+    --surface-2: #141830;
+    --border: #1E2D4A;
+    --cyan: #00D4FF;
+    --violet: #7C3AED;
+    --text: #E2E8F0;
+    --muted: #64748B;
+    --safe: #10B981;
+    --caution: #F59E0B;
+    --danger: #EF4444;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  /* Side Rail Nav */
+  .sidenav {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 24px 0;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+  }
+
+  .logo-area {
+    padding: 0 20px 24px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+
+  .logo-mark {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .logo-icon {
+    width: 32px;
+    height: 32px;
+    background: linear-gradient(135deg, var(--cyan), var(--violet));
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 14px;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .logo-text { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; }
+  .logo-sub { font-size: 10px; color: var(--cyan); letter-spacing: 0.1em; text-transform: uppercase; margin-top: 1px; }
+
+  .nav-section-label { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; text-transform: uppercase; padding: 8px 20px 4px; }
+
+  .nav-link {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 20px; font-size: 13px; color: var(--muted);
+    cursor: pointer; border-left: 2px solid transparent;
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+  .nav-link:hover, .nav-link.active {
+    color: var(--text); background: var(--surface-2);
+    border-left-color: var(--cyan);
+  }
+  .nav-link .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--muted); flex-shrink: 0;
+  }
+  .nav-link.active .dot { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+
+  .nav-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border); }
+  .chain-badge {
+    display: flex; align-items: center; gap: 8px;
+    background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 8px; padding: 8px 12px; font-size: 11px;
+  }
+  .chain-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--safe); animation: pulse-dot 2s infinite; }
+
+  /* Main content */
+  .main-topbar {
+    grid-column: 2;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(13,18,36,0.8);
+    backdrop-filter: blur(10px);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .page-title { font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; }
+  .page-sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  .scan-btn {
+    background: linear-gradient(135deg, var(--cyan), #0099FF);
+    color: #050810; font-weight: 700; font-size: 13px;
+    border: none; padding: 9px 20px; border-radius: 8px;
+    cursor: pointer; font-family: 'Space Grotesk', sans-serif;
+    transition: opacity 0.15s;
+  }
+  .scan-btn:hover { opacity: 0.85; }
+
+  /* Content grid */
+  .content-area { grid-column: 2; padding: 24px 32px; overflow-y: auto; }
+
+  /* ALERT BANNER */
+  .alert-banner {
+    background: linear-gradient(90deg, rgba(239,68,68,0.12), rgba(239,68,68,0.04));
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 10px;
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    font-size: 13px;
+  }
+  .alert-icon { font-size: 18px; }
+  .alert-stat { font-family: 'Space Grotesk', sans-serif; font-size: 20px; font-weight: 700; color: #EF4444; }
+  .alert-label { color: var(--muted); font-size: 12px; }
+
+  /* Bento Grid */
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: auto;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .bento-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 0.2s;
+  }
+  .bento-card:hover { border-color: rgba(0,212,255,0.3); }
+
+  .bento-stat { grid-column: span 1; }
+  .bento-wide { grid-column: span 2; }
+  .bento-full { grid-column: span 4; }
+
+  .stat-label { font-size: 11px; color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; }
+  .stat-value { font-family: 'Space Grotesk', sans-serif; font-size: 32px; font-weight: 700; line-height: 1; }
+  .stat-value.safe { color: var(--safe); }
+  .stat-value.danger { color: var(--danger); }
+  .stat-value.cyan { color: var(--cyan); }
+  .stat-trend { font-size: 11px; color: var(--muted); margin-top: 6px; }
+
+  /* Gauge card */
+  .gauge-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .gauge-item { display: flex; flex-direction: column; gap: 4px; }
+  .gauge-bar { height: 4px; background: var(--surface-2); border-radius: 2px; overflow: hidden; margin-top: 2px; }
+  .gauge-fill { height: 100%; border-radius: 2px; transition: width 0.8s ease; }
+
+  /* Agent table */
+  .agent-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .agent-table th { text-align: left; padding: 10px 16px; font-size: 10px; font-weight: 600; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 1px solid var(--border); }
+  .agent-table td { padding: 14px 16px; border-bottom: 1px solid rgba(30,45,74,0.5); vertical-align: middle; }
+  .agent-table tr:last-child td { border-bottom: none; }
+  .agent-table tr:hover td { background: var(--surface-2); }
+
+  .address-mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--muted); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .badge-safe { background: rgba(16,185,129,0.12); color: var(--safe); border: 1px solid rgba(16,185,129,0.2); }
+  .badge-caution { background: rgba(245,158,11,0.12); color: var(--caution); border: 1px solid rgba(245,158,11,0.2); }
+  .badge-danger { background: rgba(239,68,68,0.12); color: var(--danger); border: 1px solid rgba(239,68,68,0.2); }
+
+  .score-bar-wrap { width: 80px; }
+  .score-bar { height: 4px; background: var(--surface-2); border-radius: 2px; margin-top: 4px; }
+  .score-fill { height: 100%; border-radius: 2px; }
+
+  .action-link { color: var(--cyan); font-size: 11px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; opacity: 0.7; }
+  .action-link:hover { opacity: 1; }
+
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-title { font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; }
+
+  /* 0G tag */
+  .zerog-tag {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(0,212,255,0.06); border: 1px solid rgba(0,212,255,0.15);
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--cyan);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDE NAV -->
+<aside class="sidenav">
+  <div class="logo-area">
+    <div class="logo-mark">
+      <div class="logo-icon">0G</div>
+      <div>
+        <div class="logo-text">Sentinel</div>
+        <div class="logo-sub">Agent Security</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="nav-section-label">Monitor</div>
+  <a class="nav-link active" href="#">
+    <span class="dot"></span> Dashboard
+  </a>
+  <a class="nav-link" href="#">
+    <span class="dot"></span> Agents
+  </a>
+  <a class="nav-link" href="#">
+    <span class="dot"></span> Scan Queue
+  </a>
+
+  <div class="nav-section-label" style="margin-top:8px;">Proof</div>
+  <a class="nav-link" href="#">
+    <span class="dot"></span> Integration Proof
+  </a>
+  <a class="nav-link" href="#">
+    <span class="dot"></span> Explorer Links
+  </a>
+
+  <div class="nav-footer">
+    <div class="chain-badge">
+      <div class="chain-dot"></div>
+      <div>
+        <div style="font-family:'Space Grotesk',sans-serif;font-weight:600;">0G Aristotle</div>
+        <div style="color:var(--muted);font-size:10px;">Chain ID 16661</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- TOP BAR -->
+<header class="main-topbar">
+  <div>
+    <div class="page-title">Security Dashboard</div>
+    <div class="page-sub">Real-time agent attestations on 0G Aristotle mainnet</div>
+  </div>
+  <button class="scan-btn">+ Scan Agent</button>
+</header>
+
+<!-- CONTENT -->
+<main class="content-area">
+
+  <!-- Alert Banner -->
+  <div class="alert-banner">
+    <div class="alert-icon">⚠</div>
+    <div>
+      <div class="alert-stat">$88.88M</div>
+      <div class="alert-label">in 0G ecosystem grants — agents operating without on-chain security attestations</div>
+    </div>
+    <div style="margin-left:auto;">
+      <span class="zerog-tag">0G Compute Powered</span>
+    </div>
+  </div>
+
+  <!-- Bento Stats -->
+  <div class="bento-grid">
+    <div class="bento-card bento-stat">
+      <div class="stat-label">Agents Scanned</div>
+      <div class="stat-value cyan">3</div>
+      <div class="stat-trend">↑ on 0G mainnet</div>
+    </div>
+    <div class="bento-card bento-stat">
+      <div class="stat-label">All Clear</div>
+      <div class="stat-value safe">2</div>
+      <div class="stat-trend">Fully attested</div>
+    </div>
+    <div class="bento-card bento-stat">
+      <div class="stat-label">Risks Detected</div>
+      <div class="stat-value danger">1</div>
+      <div class="stat-trend">AgentGate blocking</div>
+    </div>
+    <div class="bento-card bento-stat">
+      <div class="stat-label">Attestations</div>
+      <div class="stat-value" style="font-size:24px;">3</div>
+      <div class="stat-trend">On-chain, immutable</div>
+    </div>
+
+    <div class="bento-card bento-wide">
+      <div class="section-header">
+        <span class="stat-label" style="margin:0;">Risk Distribution</span>
+        <span class="zerog-tag">live</span>
+      </div>
+      <div class="gauge-grid">
+        <div class="gauge-item">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span>Behavioral</span><span style="color:var(--caution);">45/100</span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-fill" style="width:45%;background:var(--caution);"></div></div>
+        </div>
+        <div class="gauge-item">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span>Code Risk</span><span style="color:var(--safe);">Low</span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-fill" style="width:20%;background:var(--safe);"></div></div>
+        </div>
+        <div class="gauge-item">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span>Threat Level</span><span style="color:var(--danger);">1 flagged</span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-fill" style="width:33%;background:var(--danger);"></div></div>
+        </div>
+        <div class="gauge-item">
+          <div style="display:flex;justify-content:space-between;font-size:12px;">
+            <span>Gate Status</span><span style="color:var(--safe);">2 passing</span>
+          </div>
+          <div class="gauge-bar"><div class="gauge-fill" style="width:66%;background:var(--safe);"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bento-card bento-wide">
+      <div class="stat-label">How it works</div>
+      <div style="display:flex;gap:8px;margin-top:12px;font-size:12px;">
+        <div style="flex:1;text-align:center;padding:12px;background:var(--surface-2);border-radius:8px;">
+          <div style="font-size:18px;margin-bottom:4px;">🔍</div>
+          <div style="font-weight:600;color:var(--cyan);">Scan</div>
+          <div style="color:var(--muted);margin-top:2px;">0G Compute AI analysis</div>
+        </div>
+        <div style="display:flex;align-items:center;color:var(--muted);">→</div>
+        <div style="flex:1;text-align:center;padding:12px;background:var(--surface-2);border-radius:8px;">
+          <div style="font-size:18px;margin-bottom:4px;">📋</div>
+          <div style="font-weight:600;color:var(--violet);">Attest</div>
+          <div style="color:var(--muted);margin-top:2px;">Write ERC-7857 on-chain</div>
+        </div>
+        <div style="display:flex;align-items:center;color:var(--muted);">→</div>
+        <div style="flex:1;text-align:center;padding:12px;background:var(--surface-2);border-radius:8px;">
+          <div style="font-size:18px;margin-bottom:4px;">🛡</div>
+          <div style="font-weight:600;color:var(--safe);">Gate</div>
+          <div style="color:var(--muted);margin-top:2px;">AgentGate blocks VULNERABLE</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Agent Table -->
+  <div class="bento-card bento-full" style="padding:0;">
+    <div style="padding:20px 20px 16px;border-bottom:1px solid var(--border);">
+      <div class="section-header">
+        <span class="section-title">Registered Agents</span>
+        <a href="#" class="action-link">View all →</a>
+      </div>
+    </div>
+    <table class="agent-table">
+      <thead>
+        <tr>
+          <th>Agent</th>
+          <th>Address</th>
+          <th>Behavioral</th>
+          <th>Threat</th>
+          <th>Code Risk</th>
+          <th>Gate</th>
+          <th>Last Scan</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span style="font-weight:600;">Agent Alpha</span></td>
+          <td><span class="address-mono">0x5F6a3A...E06</span></td>
+          <td>
+            <div class="score-bar-wrap">
+              <span style="font-size:12px;">45/100</span>
+              <div class="score-bar"><div class="score-fill" style="width:45%;background:var(--caution);"></div></div>
+            </div>
+          </td>
+          <td><span class="badge badge-caution">CAUTION</span></td>
+          <td><span class="badge badge-safe">CLEAN</span></td>
+          <td><span class="badge badge-safe">✓ PASS</span></td>
+          <td><span style="color:var(--muted);font-size:12px;">Just now</span></td>
+          <td><a href="#" class="action-link">Details →</a></td>
+        </tr>
+        <tr>
+          <td><span style="font-weight:600;">Agent Beta</span></td>
+          <td><span class="address-mono">0xB9431b...382</span></td>
+          <td>
+            <div class="score-bar-wrap">
+              <span style="font-size:12px;">72/100</span>
+              <div class="score-bar"><div class="score-fill" style="width:72%;background:var(--danger);"></div></div>
+            </div>
+          </td>
+          <td><span class="badge badge-danger">FLAGGED</span></td>
+          <td><span class="badge badge-danger">VULN</span></td>
+          <td><span class="badge badge-danger">✗ BLOCK</span></td>
+          <td><span style="color:var(--muted);font-size:12px;">Just now</span></td>
+          <td><a href="#" class="action-link">Details →</a></td>
+        </tr>
+        <tr>
+          <td><span style="font-weight:600;">Agent Gamma</span></td>
+          <td><span class="address-mono">0x8E107b...4bE</span></td>
+          <td>
+            <div class="score-bar-wrap">
+              <span style="font-size:12px;">12/100</span>
+              <div class="score-bar"><div class="score-fill" style="width:12%;background:var(--safe);"></div></div>
+            </div>
+          </td>
+          <td><span class="badge badge-safe">SAFE</span></td>
+          <td><span class="badge badge-safe">CLEAN</span></td>
+          <td><span class="badge badge-safe">✓ PASS</span></td>
+          <td><span style="color:var(--muted);font-size:12px;">Just now</span></td>
+          <td><a href="#" class="action-link">Details →</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</main>
+
+</body>
+</html>

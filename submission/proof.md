@@ -35,5 +35,4 @@ Total agents with attestations: 3
 
 ## Dashboard
 
-URL: http://localhost:3000
-*(Will be updated to production URL post-deploy — see deploy phase)*
+URL: https://frontend-alpha-seven-62.vercel.app

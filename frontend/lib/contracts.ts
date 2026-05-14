@@ -1,0 +1,32 @@
+// File: frontend/lib/contracts.ts
+import { ethers } from "ethers";
+
+const ATTESTATION_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS!;
+const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS!;
+const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
+
+const ATTESTATION_ABI = [
+  "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
+  "function hasAttestation(address agentAddress) view returns (bool)",
+  "function getAllAttestedAgents() view returns (address[])",
+  "event AttestationWritten(address indexed agentAddress, uint8 threatLevel, uint8 codeRisk, uint256 timestamp)",
+];
+
+const AGENT_REGISTRY_ABI = [
+  "function getAllAgents() view returns (address[])",
+  "function getAgentCount() view returns (uint256)",
+];
+
+export function getProvider() {
+  return new ethers.JsonRpcProvider(RPC_URL);
+}
+
+export function getAttestationRegistry(signerOrProvider?: ethers.Signer | ethers.Provider) {
+  const p = signerOrProvider ?? getProvider();
+  return new ethers.Contract(ATTESTATION_REGISTRY_ADDRESS, ATTESTATION_ABI, p);
+}
+
+export function getAgentRegistry(signerOrProvider?: ethers.Signer | ethers.Provider) {
+  const p = signerOrProvider ?? getProvider();
+  return new ethers.Contract(AGENT_REGISTRY_ADDRESS, AGENT_REGISTRY_ABI, p);
+}

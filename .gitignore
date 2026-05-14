@@ -1,8 +1,51 @@
-.env
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+
+# Build artifacts
+.next/
+out/
+dist/
+build/
 artifacts/
 cache/
 typechain-types/
+tsconfig.tsbuildinfo
+
+# Secrets
+.env
+.env.local
+.env.*.local
+*.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local
+.DS_Store
+Thumbs.db
+*.backup
+
+# Deploy
+.vercel
+.netlify
+
+# Testing
+coverage/
+
+# Pipeline state (local only)
 .build-state.json
-frontend/.next/
-frontend/node_modules/
+.conductor-state.json
+.conductor-lock/
+.debug-state.json
+.deploy-state.json
+.polish-state.json
+.stress-test-state.json
+.verify-state.json
+.watchdog-last-alert
+.wire-state.json
+# Design forge state
+frontend/.design-forge-state.json
+**/.design-forge-state.json

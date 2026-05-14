@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<!-- Variation B: DNA = Grid-TopNav-HeroSplit-VioletOnInk-Mono -->
+<!-- Distinctiveness: Full-bleed threat map backdrop with frosted glass cards; violet primary with cyan secondary -->
+<!-- Memory test: "that one with the blurred glass and the threat graph background" -->
+<!-- Industry tell: Security ops center aesthetic — dark glass, red threat indicators, real-time feel -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0G Sentinel — Agent Security</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #020408;
+    --glass: rgba(13, 18, 36, 0.7);
+    --glass-strong: rgba(13, 18, 36, 0.92);
+    --violet: #7C3AED;
+    --violet-dim: rgba(124, 58, 237, 0.15);
+    --violet-glow: rgba(124, 58, 237, 0.35);
+    --cyan: #00D4FF;
+    --cyan-dim: rgba(0, 212, 255, 0.12);
+    --text: #E2E8F0;
+    --text-muted: #64748B;
+    --safe: #10B981;
+    --safe-dim: rgba(16, 185, 129, 0.12);
+    --caution: #F59E0B;
+    --caution-dim: rgba(245, 158, 11, 0.12);
+    --danger: #EF4444;
+    --danger-dim: rgba(239, 68, 68, 0.12);
+    --border: rgba(124, 58, 237, 0.2);
+    --border-subtle: rgba(255,255,255,0.06);
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-body: 'Inter', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--ink);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+  }
+
+  /* Animated threat graph background */
+  .bg-mesh {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+
+  .bg-mesh::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 20% 30%, rgba(124,58,237,0.12) 0%, transparent 60%),
+      radial-gradient(ellipse 40% 50% at 80% 70%, rgba(0,212,255,0.07) 0%, transparent 60%),
+      radial-gradient(ellipse 30% 30% at 60% 10%, rgba(239,68,68,0.06) 0%, transparent 60%);
+  }
+
+  .bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,58,237,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,58,237,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Floating threat nodes */
+  .threat-node {
+    position: absolute;
+    border-radius: 50%;
+    animation: float-node 8s ease-in-out infinite;
+  }
+
+  .tn-1 { width: 4px; height: 4px; background: var(--danger); top: 15%; left: 25%; animation-delay: 0s; box-shadow: 0 0 8px var(--danger); }
+  .tn-2 { width: 3px; height: 3px; background: var(--caution); top: 40%; left: 70%; animation-delay: 2s; box-shadow: 0 0 6px var(--caution); }
+  .tn-3 { width: 5px; height: 5px; background: var(--violet); top: 65%; left: 35%; animation-delay: 4s; box-shadow: 0 0 10px var(--violet); }
+  .tn-4 { width: 3px; height: 3px; background: var(--cyan); top: 20%; left: 80%; animation-delay: 1s; box-shadow: 0 0 6px var(--cyan); }
+  .tn-5 { width: 4px; height: 4px; background: var(--safe); top: 75%; left: 60%; animation-delay: 3s; box-shadow: 0 0 8px var(--safe); }
+
+  @keyframes float-node {
+    0%, 100% { transform: translateY(0) scale(1); opacity: 0.6; }
+    50% { transform: translateY(-20px) scale(1.2); opacity: 1; }
+  }
+
+  /* Connection lines between nodes — SVG overlay */
+  .threat-lines {
+    position: absolute;
+    inset: 0;
+    opacity: 0.15;
+  }
+
+  /* Layout */
+  .vb-layout {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+  }
+
+  /* Top Nav */
+  .vb-nav {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 24px;
+    height: 56px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid var(--border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .vb-logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 40px;
+  }
+
+  .vb-logo-icon {
+    width: 28px;
+    height: 28px;
+    background: linear-gradient(135deg, var(--violet), var(--cyan));
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    letter-spacing: -0.5px;
+  }
+
+  .vb-logo-name {
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 0.5px;
+  }
+
+  .vb-logo-name span { color: var(--violet); }
+
+  .vb-nav-links {
+    display: flex;
+    gap: 2px;
+    flex: 1;
+  }
+
+  .vb-nav-link {
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .vb-nav-link:hover { background: var(--violet-dim); color: var(--text); }
+  .vb-nav-link.active { background: var(--violet-dim); color: var(--violet); border: 1px solid rgba(124,58,237,0.25); }
+
+  .vb-nav-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .vb-chain-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--violet-dim);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--violet);
+  }
+
+  .vb-pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--safe); animation: pulse-dot 2s ease-in-out infinite; }
+
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16,185,129,0.4); }
+    50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(16,185,129,0); }
+  }
+
+  .vb-scan-btn {
+    background: linear-gradient(135deg, var(--violet), #6D28D9);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 7px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 0 20px rgba(124,58,237,0.3);
+  }
+
+  .vb-scan-btn:hover { transform: translateY(-1px); box-shadow: 0 0 30px rgba(124,58,237,0.5); }
+
+  /* Main content */
+  .vb-main {
+    flex: 1;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* Hero split: critical alert + key metrics */
+  .vb-hero {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .vb-alert-card {
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 14px;
+    padding: 24px;
+    backdrop-filter: blur(12px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .vb-alert-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--danger), transparent);
+  }
+
+  .vb-alert-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(239,68,68,0.15);
+    border: 1px solid rgba(239,68,68,0.3);
+    border-radius: 20px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--danger);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    font-family: var(--font-mono);
+  }
+
+  .vb-alert-blink { width: 5px; height: 5px; border-radius: 50%; background: var(--danger); animation: blink 1s step-end infinite; }
+  @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+  .vb-alert-title {
+    font-size: 28px;
+    font-weight: 800;
+    color: #FCA5A5;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+
+  .vb-alert-title em {
+    color: var(--danger);
+    font-style: normal;
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 20px;
+  }
+
+  .vb-alert-sub {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+
+  .vb-alert-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(239,68,68,0.15);
+    border: 1px solid rgba(239,68,68,0.4);
+    color: var(--danger);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .vb-alert-action:hover { background: rgba(239,68,68,0.25); }
+
+  .vb-metrics-card {
+    background: var(--glass);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    backdrop-filter: blur(12px);
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .vb-metric {
+    padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 10px;
+    border: 1px solid var(--border-subtle);
+  }
+
+  .vb-metric-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    margin-bottom: 8px;
+  }
+
+  .vb-metric-value {
+    font-size: 26px;
+    font-weight: 800;
+    font-family: var(--font-mono);
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .vb-metric-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .mv-safe { color: var(--safe); }
+  .mv-danger { color: var(--danger); }
+  .mv-caution { color: var(--caution); }
+  .mv-violet { color: var(--violet); }
+  .mv-cyan { color: var(--cyan); }
+
+  /* Content grid */
+  .vb-grid {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+
+  .vb-card {
+    background: var(--glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    backdrop-filter: blur(12px);
+    overflow: hidden;
+  }
+
+  .vb-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .vb-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .vb-card-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: var(--violet-dim);
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+  }
+
+  .vb-badge-count {
+    background: var(--violet-dim);
+    color: var(--violet);
+    border: 1px solid rgba(124,58,237,0.3);
+    border-radius: 12px;
+    padding: 2px 8px;
+    font-size: 11px;
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+
+  /* Agent table */
+  .vb-agent-table {
+    width: 100%;
+  }
+
+  .vb-agent-row {
+    display: grid;
+    grid-template-columns: 1fr 80px 100px 80px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-subtle);
+    align-items: center;
+    transition: background 0.15s;
+    cursor: pointer;
+  }
+
+  .vb-agent-row:hover { background: rgba(124,58,237,0.05); }
+  .vb-agent-row:last-child { border-bottom: none; }
+
+  .vb-agent-info { display: flex; flex-direction: column; gap: 2px; }
+  .vb-agent-name { font-size: 13px; font-weight: 600; }
+  .vb-agent-addr { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); }
+
+  /* Status badges */
+  .vb-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-family: var(--font-mono);
+  }
+
+  .vb-status-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+  .st-safe { background: var(--safe-dim); color: var(--safe); border: 1px solid rgba(16,185,129,0.2); }
+  .st-safe .vb-status-dot { background: var(--safe); }
+  .st-caution { background: var(--caution-dim); color: var(--caution); border: 1px solid rgba(245,158,11,0.2); }
+  .st-caution .vb-status-dot { background: var(--caution); }
+  .st-danger { background: var(--danger-dim); color: var(--danger); border: 1px solid rgba(239,68,68,0.2); }
+  .st-danger .vb-status-dot { background: var(--danger); }
+  .st-blocked { background: rgba(239,68,68,0.2); color: #FCA5A5; border: 1px solid rgba(239,68,68,0.4); }
+  .st-blocked .vb-status-dot { background: var(--danger); animation: blink 0.5s step-end infinite; }
+
+  .vb-score {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .vb-mini-bar {
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 3px;
+  }
+
+  .vb-mini-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.6s ease;
+  }
+
+  /* Right panel: threat timeline */
+  .vb-timeline {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-height: 320px;
+    overflow-y: auto;
+    scrollbar-width: none;
+  }
+
+  .vb-timeline::-webkit-scrollbar { display: none; }
+
+  .vb-event {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .vb-event-dot-col { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+  .vb-event-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .vb-event-line { width: 1px; flex: 1; min-height: 20px; background: var(--border-subtle); margin-top: 3px; }
+
+  .vb-event-content { flex: 1; min-width: 0; }
+
+  .vb-event-title { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+  .vb-event-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+  .vb-event-time { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-top: 3px; }
+
+  /* Bottom grid: 0G compute proof + attestation */
+  .vb-bottom {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  .vb-proof-card {
+    background: linear-gradient(135deg, rgba(124,58,237,0.08), rgba(0,212,255,0.04));
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+    backdrop-filter: blur(12px);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .vb-proof-card::after {
+    content: '0G';
+    position: absolute;
+    bottom: -20px;
+    right: -10px;
+    font-size: 80px;
+    font-weight: 900;
+    font-family: var(--font-mono);
+    color: rgba(124,58,237,0.05);
+    pointer-events: none;
+    line-height: 1;
+  }
+
+  .vb-proof-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--violet);
+    font-family: var(--font-mono);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .vb-proof-title::before {
+    content: '⬡';
+    font-size: 14px;
+  }
+
+  .vb-proof-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-subtle);
+    gap: 12px;
+  }
+
+  .vb-proof-item:last-child { border-bottom: none; }
+  .vb-proof-key { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); flex-shrink: 0; }
+
+  .vb-proof-val {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--cyan);
+    text-align: right;
+    word-break: break-all;
+    max-width: 200px;
+  }
+
+  .vb-explorer-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--violet);
+    font-size: 10px;
+    font-family: var(--font-mono);
+    text-decoration: none;
+    margin-top: 12px;
+    opacity: 0.8;
+    transition: opacity 0.15s;
+  }
+
+  .vb-explorer-link:hover { opacity: 1; }
+
+  /* Attestation card */
+  .vb-attest-card {
+    background: var(--glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: 14px;
+    padding: 20px;
+    backdrop-filter: blur(12px);
+  }
+
+  .vb-attest-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+
+  .vb-attest-title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--cyan);
+    font-family: var(--font-mono);
+  }
+
+  .vb-attest-live {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--safe);
+    font-family: var(--font-mono);
+  }
+
+  .vb-attest-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .vb-attest-item {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .vb-attest-label { font-size: 10px; color: var(--text-muted); font-family: var(--font-mono); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .vb-attest-value { font-size: 14px; font-weight: 700; font-family: var(--font-mono); }
+
+  /* Score ring */
+  .score-ring-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 0;
+  }
+
+  .score-ring-wrap {
+    position: relative;
+    width: 80px;
+    height: 80px;
+  }
+
+  .score-ring-svg { transform: rotate(-90deg); }
+
+  .score-ring-track { fill: none; stroke: rgba(255,255,255,0.06); stroke-width: 8; }
+  .score-ring-fill { fill: none; stroke-width: 8; stroke-linecap: round; transition: stroke-dashoffset 1s ease; }
+
+  .score-ring-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .score-ring-num { font-size: 18px; font-weight: 800; font-family: var(--font-mono); line-height: 1; }
+  .score-ring-max { font-size: 9px; color: var(--text-muted); font-family: var(--font-mono); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .vb-hero, .vb-grid, .vb-bottom { grid-template-columns: 1fr; }
+    .vb-metrics-card { grid-template-columns: 1fr 1fr; }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+<div class="bg-mesh">
+  <div class="bg-grid"></div>
+  <div class="threat-node tn-1"></div>
+  <div class="threat-node tn-2"></div>
+  <div class="threat-node tn-3"></div>
+  <div class="threat-node tn-4"></div>
+  <div class="threat-node tn-5"></div>
+</div>
+
+<div class="vb-layout">
+  <!-- Top Navigation -->
+  <nav class="vb-nav">
+    <div class="vb-logo">
+      <div class="vb-logo-icon">0G</div>
+      <span class="vb-logo-name"><span>Sentinel</span></span>
+    </div>
+    <div class="vb-nav-links">
+      <a class="vb-nav-link active" href="#">⬡ Dashboard</a>
+      <a class="vb-nav-link" href="#">◈ Agents</a>
+      <a class="vb-nav-link" href="#">⚡ Scan</a>
+      <a class="vb-nav-link" href="#">⬡ Attestations</a>
+      <a class="vb-nav-link" href="#">◈ Proof</a>
+    </div>
+    <div class="vb-nav-right">
+      <div class="vb-chain-badge">
+        <div class="vb-pulse"></div>
+        0G Aristotle · 16661
+      </div>
+      <button class="vb-scan-btn">▶ Run Scan</button>
+    </div>
+  </nav>
+
+  <main class="vb-main">
+    <!-- Hero split -->
+    <div class="vb-hero">
+      <!-- Critical exposure alert -->
+      <div class="vb-alert-card">
+        <div class="vb-alert-label">
+          <span class="vb-alert-blink"></span>
+          Ecosystem Exposure
+        </div>
+        <div class="vb-alert-title">
+          Agents operating blind.
+          <em>$88.88M at risk.</em>
+        </div>
+        <p class="vb-alert-sub">
+          0G APAC ecosystem grants are deployed across autonomous AI agents — with no on-chain security layer.
+          0G Sentinel provides attestation, behavioral analysis, and DeFi gating for every agent.
+        </p>
+        <button class="vb-alert-action">
+          ⬡ View Attestation Proof
+        </button>
+      </div>
+
+      <!-- Key metrics grid -->
+      <div class="vb-metrics-card">
+        <div class="vb-metric">
+          <div class="vb-metric-label">Total Agents</div>
+          <div class="vb-metric-value mv-violet">3</div>
+          <div class="vb-metric-sub">monitored on-chain</div>
+        </div>
+        <div class="vb-metric">
+          <div class="vb-metric-label">Threats Detected</div>
+          <div class="vb-metric-value mv-danger">2</div>
+          <div class="vb-metric-sub">flagged agents</div>
+        </div>
+        <div class="vb-metric">
+          <div class="vb-metric-label">0G Compute Calls</div>
+          <div class="vb-metric-value mv-cyan">847</div>
+          <div class="vb-metric-sub">independent receipts</div>
+        </div>
+        <div class="vb-metric">
+          <div class="vb-metric-label">Safe for DeFi</div>
+          <div class="vb-metric-value mv-safe">1</div>
+          <div class="vb-metric-sub">cleared by AgentGate</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main content grid -->
+    <div class="vb-grid">
+      <!-- Agent table -->
+      <div class="vb-card">
+        <div class="vb-card-header">
+          <div class="vb-card-title">
+            <div class="vb-card-icon">◈</div>
+            Monitored Agents
+          </div>
+          <span class="vb-badge-count">3 active</span>
+        </div>
+
+        <!-- Table header -->
+        <div class="vb-agent-row" style="padding-top:8px;padding-bottom:8px;border-bottom:1px solid var(--border-subtle);">
+          <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.5px;">Agent</div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;">Score</div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;">Status</div>
+          <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);text-transform:uppercase;">DeFi</div>
+        </div>
+
+        <div class="vb-agent-table">
+          <div class="vb-agent-row">
+            <div class="vb-agent-info">
+              <span class="vb-agent-name">DeFi Arbitrage Agent</span>
+              <span class="vb-agent-addr">0x742d...F890</span>
+            </div>
+            <div>
+              <div class="vb-score mv-safe">94/100</div>
+              <div class="vb-mini-bar"><div class="vb-mini-fill" style="width:94%;background:var(--safe);"></div></div>
+            </div>
+            <div class="vb-status st-safe"><span class="vb-status-dot"></span>Safe</div>
+            <div style="font-size:12px;color:var(--safe);">✓ Open</div>
+          </div>
+
+          <div class="vb-agent-row">
+            <div class="vb-agent-info">
+              <span class="vb-agent-name">Yield Optimizer</span>
+              <span class="vb-agent-addr">0x3C89...A2F1</span>
+            </div>
+            <div>
+              <div class="vb-score mv-caution">67/100</div>
+              <div class="vb-mini-bar"><div class="vb-mini-fill" style="width:67%;background:var(--caution);"></div></div>
+            </div>
+            <div class="vb-status st-caution"><span class="vb-status-dot"></span>Caution</div>
+            <div style="font-size:12px;color:var(--caution);">⚠ Limited</div>
+          </div>
+
+          <div class="vb-agent-row">
+            <div class="vb-agent-info">
+              <span class="vb-agent-name">Cross-Chain Bridge</span>
+              <span class="vb-agent-addr">0xA1E9...D3C8</span>
+            </div>
+            <div>
+              <div class="vb-score mv-danger">28/100</div>
+              <div class="vb-mini-bar"><div class="vb-mini-fill" style="width:28%;background:var(--danger);"></div></div>
+            </div>
+            <div class="vb-status st-blocked"><span class="vb-status-dot"></span>Blocked</div>
+            <div style="font-size:12px;color:var(--danger);">✕ Denied</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threat timeline -->
+      <div class="vb-card">
+        <div class="vb-card-header">
+          <div class="vb-card-title">
+            <div class="vb-card-icon">⚡</div>
+            Threat Timeline
+          </div>
+          <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">Live · 3 events</span>
+        </div>
+        <div class="vb-timeline">
+          <div class="vb-event">
+            <div class="vb-event-dot-col">
+              <div class="vb-event-dot" style="background:var(--danger);box-shadow:0 0 6px var(--danger);"></div>
+              <div class="vb-event-line"></div>
+            </div>
+            <div class="vb-event-content">
+              <div class="vb-event-title" style="color:#FCA5A5;">Reentrancy Pattern Detected</div>
+              <div class="vb-event-desc">Cross-Chain Bridge agent exhibits reentrancy vulnerability in withdrawal logic. DeFi access blocked via AgentGate.</div>
+              <div class="vb-event-time">0x4f2a...9e1b · 2 minutes ago</div>
+            </div>
+          </div>
+          <div class="vb-event">
+            <div class="vb-event-dot-col">
+              <div class="vb-event-dot" style="background:var(--caution);box-shadow:0 0 6px var(--caution);"></div>
+              <div class="vb-event-line"></div>
+            </div>
+            <div class="vb-event-content">
+              <div class="vb-event-title" style="color:#FDE68A;">Anomalous Slippage Risk</div>
+              <div class="vb-event-desc">Yield Optimizer shows elevated slippage tolerance (8.2%) vs safe threshold (3%). Behavior monitoring active.</div>
+              <div class="vb-event-time">0x7c1d...3b4e · 18 minutes ago</div>
+            </div>
+          </div>
+          <div class="vb-event">
+            <div class="vb-event-dot-col">
+              <div class="vb-event-dot" style="background:var(--safe);box-shadow:0 0 6px var(--safe);"></div>
+            </div>
+            <div class="vb-event-content">
+              <div class="vb-event-title" style="color:#6EE7B7;">Attestation Verified</div>
+              <div class="vb-event-desc">DeFi Arbitrage Agent passed behavioral scan. Receipt hash confirmed via 0G Compute. AgentGate opened.</div>
+              <div class="vb-event-time">0x2a9f...c5d7 · 34 minutes ago</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom: 0G proof + attestation stats -->
+    <div class="vb-bottom">
+      <!-- 0G Compute proof -->
+      <div class="vb-proof-card">
+        <div class="vb-proof-title">0G Compute Attestation</div>
+        <div class="vb-proof-item">
+          <span class="vb-proof-key">endpoint</span>
+          <span class="vb-proof-val">router-api.0g.ai/v1</span>
+        </div>
+        <div class="vb-proof-item">
+          <span class="vb-proof-key">behavioral_receipt</span>
+          <span class="vb-proof-val">zg-res-key::a7f2c9e1-38b4-4d2a-b6f9-0c5e8a3d17f2</span>
+        </div>
+        <div class="vb-proof-item">
+          <span class="vb-proof-key">code_receipt</span>
+          <span class="vb-proof-val">zg-res-key::f3d8b2c7-91a5-4e6f-a2d4-7b9c1e5f3a8d</span>
+        </div>
+        <div class="vb-proof-item">
+          <span class="vb-proof-key">chain</span>
+          <span class="vb-proof-val">0G Aristotle · chainId 16661</span>
+        </div>
+        <div class="vb-proof-item">
+          <span class="vb-proof-key">AgentRegistry</span>
+          <span class="vb-proof-val">0x5F6a...1e06</span>
+        </div>
+        <a href="https://chainscan.0g.ai" class="vb-explorer-link">⬡ View on chainscan.0g.ai ↗</a>
+      </div>
+
+      <!-- Attestation stats -->
+      <div class="vb-attest-card">
+        <div class="vb-attest-header">
+          <div class="vb-attest-title">Attestation Registry</div>
+          <div class="vb-attest-live"><div class="vb-pulse"></div>Live</div>
+        </div>
+        <div class="vb-attest-grid">
+          <div class="vb-attest-item">
+            <div class="vb-attest-label">Total Scans</div>
+            <div class="vb-attest-value mv-violet">847</div>
+          </div>
+          <div class="vb-attest-item">
+            <div class="vb-attest-label">Avg Score</div>
+            <div class="vb-attest-value mv-cyan">63.0</div>
+          </div>
+          <div class="vb-attest-item">
+            <div class="vb-attest-label">Threats Found</div>
+            <div class="vb-attest-value mv-danger">2</div>
+          </div>
+          <div class="vb-attest-item">
+            <div class="vb-attest-label">0G Receipts</div>
+            <div class="vb-attest-value mv-safe">6</div>
+          </div>
+        </div>
+        <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border-subtle);">
+          <div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px;">AgentGate — DeFi Access</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12px;color:var(--text-muted);">Score ≥ 70 required</span>
+              <span style="font-size:12px;font-family:var(--font-mono);color:var(--safe);">1 cleared</span>
+            </div>
+            <div style="height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;">
+              <div style="width:33%;height:100%;background:linear-gradient(90deg,var(--safe),var(--cyan));border-radius:3px;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;">
+              <span style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">0x742d...F890 ✓</span>
+              <a href="https://chainscan.0g.ai/address/0x8E107bAC6f430aecB8Aa11B383E9690e9a5214bE" style="font-size:10px;color:var(--violet);font-family:var(--font-mono);text-decoration:none;">AgentGate contract ↗</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,24 @@
+{
+  "colors": {
+    "primary": "#0A0E1A",
+    "secondary": "#0F172A",
+    "accent": "#00D4FF",
+    "accentSecondary": "#7C3AED",
+    "background": "#050810",
+    "surface": "#0D1224",
+    "surfaceHover": "#141830",
+    "text": "#E2E8F0",
+    "textMuted": "#64748B",
+    "textDim": "#334155",
+    "safe": "#10B981",
+    "caution": "#F59E0B",
+    "flagged": "#EF4444",
+    "border": "#1E2D4A"
+  },
+  "fonts": {
+    "heading": "Space Grotesk",
+    "body": "Inter"
+  },
+  "logoPath": "public/logo.svg",
+  "darkMode": true
+}

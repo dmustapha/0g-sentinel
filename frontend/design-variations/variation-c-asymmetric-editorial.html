@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<!-- Variation C: DNA = Asymmetric-Hidden-HeroText-DualAccent-Mono -->
+<!-- Distinctiveness: Giant editorial typography hero; full-bleed left panel; scanline texture; zero cards, pure data rows -->
+<!-- Memory test: "the one with the huge numbers and the vertical text label" -->
+<!-- Industry tell: Military/OSINT aesthetic — high contrast, structured information hierarchy, no decoration -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0G Sentinel — On-Chain Agent Security</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #050810;
+    --panel: #08010E;
+    --rail: #0A0E1A;
+    --cyan: #00D4FF;
+    --violet: #7C3AED;
+    --safe: #10B981;
+    --caution: #F59E0B;
+    --danger: #EF4444;
+    --text: #E2E8F0;
+    --text-mid: #94A3B8;
+    --text-muted: #475569;
+    --rule: rgba(255,255,255,0.06);
+    --rule-strong: rgba(255,255,255,0.12);
+    --font-head: 'Space Grotesk', sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-mono);
+    background: var(--ink);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 1fr 1px 400px;
+    grid-template-rows: 1fr;
+  }
+
+  /* Scanline texture overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.4;
+  }
+
+  /* ========================
+     LEFT HERO PANEL
+     ======================== */
+  .vc-left {
+    background: var(--panel);
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 0;
+  }
+
+  /* Top bar */
+  .vc-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--rule);
+    flex-shrink: 0;
+  }
+
+  .vc-brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .vc-brand-mark {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--cyan);
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--cyan);
+    letter-spacing: -0.5px;
+    position: relative;
+  }
+
+  .vc-brand-mark::before {
+    content: '';
+    position: absolute;
+    inset: 2px;
+    border: 1px solid rgba(0,212,255,0.2);
+    border-radius: 3px;
+  }
+
+  .vc-brand-text {
+    font-family: var(--font-head);
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: var(--text);
+  }
+
+  .vc-brand-tag {
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    border-left: 2px solid var(--cyan);
+    padding-left: 8px;
+    margin-left: 4px;
+    line-height: 1.2;
+  }
+
+  .vc-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .vc-status-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+  }
+
+  .vc-dot { width: 6px; height: 6px; border-radius: 50%; }
+  .vc-dot-live { background: var(--safe); animation: pulse-dot 2s ease-in-out infinite; }
+  .vc-dot-danger { background: var(--danger); animation: blink-dot 0.8s step-end infinite; }
+
+  @keyframes pulse-dot { 0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(16,185,129,0.5)} 50%{opacity:0.8;box-shadow:0 0 0 4px rgba(16,185,129,0)} }
+  @keyframes blink-dot { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* Hero editorial section */
+  .vc-hero {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 40px 32px;
+    position: relative;
+  }
+
+  /* Vertical label */
+  .vc-vertical-label {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%) rotate(-90deg) translateX(-50%);
+    transform-origin: center center;
+    font-size: 9px;
+    letter-spacing: 4px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .vc-eyebrow {
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .vc-eyebrow::before { content: ''; display: block; width: 32px; height: 1px; background: var(--cyan); }
+
+  .vc-hero-number {
+    font-family: var(--font-head);
+    font-size: clamp(60px, 8vw, 100px);
+    font-weight: 800;
+    line-height: 0.85;
+    letter-spacing: -3px;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+
+  .vc-hero-number .amount {
+    display: block;
+    background: linear-gradient(135deg, var(--cyan) 0%, var(--violet) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .vc-hero-number .label {
+    display: block;
+    font-size: 18px;
+    letter-spacing: 0;
+    color: var(--text-mid);
+    font-weight: 500;
+    -webkit-text-fill-color: var(--text-mid);
+  }
+
+  .vc-hero-statement {
+    font-family: var(--font-head);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text-mid);
+    line-height: 1.6;
+    max-width: 420px;
+    margin-bottom: 32px;
+    border-left: 2px solid var(--violet);
+    padding-left: 16px;
+  }
+
+  .vc-hero-statement strong { color: var(--text); font-weight: 700; }
+
+  .vc-hero-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .vc-btn-primary {
+    background: var(--cyan);
+    color: var(--ink);
+    border: none;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .vc-btn-primary:hover { background: #00BBDD; }
+
+  .vc-btn-ghost {
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--rule-strong);
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+
+  .vc-btn-ghost:hover { border-color: var(--cyan); color: var(--cyan); }
+
+  /* Bottom metrics strip */
+  .vc-metrics-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid var(--rule);
+    flex-shrink: 0;
+  }
+
+  .vc-metric {
+    padding: 18px 24px;
+    border-right: 1px solid var(--rule);
+    position: relative;
+  }
+
+  .vc-metric:last-child { border-right: none; }
+
+  .vc-metric-num {
+    font-family: var(--font-head);
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .vc-metric-label {
+    font-size: 9px;
+    color: var(--text-muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+  }
+
+  .vc-metric-accent {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+  }
+
+  /* ========================
+     DIVIDER
+     ======================== */
+  .vc-divider {
+    background: var(--rule);
+    position: relative;
+  }
+
+  /* ========================
+     RIGHT DATA PANEL
+     ======================== */
+  .vc-right {
+    background: var(--rail);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .vc-right-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--rule);
+    flex-shrink: 0;
+  }
+
+  .vc-right-title {
+    font-size: 9px;
+    letter-spacing: 3px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .vc-right-subtitle {
+    font-family: var(--font-head);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  /* Nav links (sidebar style) */
+  .vc-nav {
+    border-bottom: 1px solid var(--rule);
+    flex-shrink: 0;
+  }
+
+  .vc-nav-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    transition: background 0.15s;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .vc-nav-item:last-child { border-bottom: none; }
+  .vc-nav-item:hover { background: rgba(255,255,255,0.02); color: var(--text); }
+  .vc-nav-item.active { background: rgba(0,212,255,0.05); color: var(--cyan); }
+
+  .vc-nav-item-left { display: flex; align-items: center; gap: 10px; }
+  .vc-nav-label { letter-spacing: 0.5px; }
+  .vc-nav-count { font-size: 10px; opacity: 0.6; }
+
+  /* Agents list — pure data rows, no cards */
+  .vc-agents {
+    flex: 1;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--rule) transparent;
+  }
+
+  .vc-agent-section {
+    padding: 14px 24px 8px;
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .vc-agent-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 14px 24px;
+    border-bottom: 1px solid var(--rule);
+    cursor: pointer;
+    transition: background 0.1s;
+    position: relative;
+  }
+
+  .vc-agent-row::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .vc-agent-row:hover { background: rgba(255,255,255,0.02); }
+  .vc-agent-row:hover::before { opacity: 1; }
+
+  .row-safe::before { background: var(--safe); }
+  .row-caution::before { background: var(--caution); }
+  .row-danger::before { background: var(--danger); }
+
+  .vc-ar-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .vc-ar-name { font-family: var(--font-head); font-size: 13px; font-weight: 600; }
+  .vc-ar-score { font-size: 13px; font-weight: 700; }
+
+  .vc-ar-mid {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .vc-ar-addr { font-size: 10px; color: var(--text-muted); }
+
+  .vc-ar-status {
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  .ar-st-safe { color: var(--safe); background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.15); }
+  .ar-st-caution { color: var(--caution); background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.15); }
+  .ar-st-danger { color: var(--danger); background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.15); }
+
+  .vc-ar-bar {
+    height: 2px;
+    background: var(--rule);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+
+  .vc-ar-fill { height: 100%; border-radius: 1px; transition: width 0.8s ease; }
+
+  .vc-ar-detail {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .vc-ar-kv {
+    display: flex;
+    gap: 6px;
+    font-size: 9px;
+  }
+
+  .vc-ar-key { color: var(--text-muted); }
+  .vc-ar-val { color: var(--text-mid); }
+
+  /* Proof section at bottom of right panel */
+  .vc-proof {
+    border-top: 1px solid var(--rule);
+    padding: 16px 24px;
+    flex-shrink: 0;
+    background: rgba(0,212,255,0.02);
+  }
+
+  .vc-proof-label {
+    font-size: 9px;
+    letter-spacing: 2px;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .vc-proof-label::after { content: ''; flex: 1; height: 1px; background: rgba(0,212,255,0.2); }
+
+  .vc-proof-rows { display: flex; flex-direction: column; gap: 6px; }
+
+  .vc-proof-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 10px;
+  }
+
+  .vc-proof-k { color: var(--text-muted); }
+  .vc-proof-v { color: var(--text-mid); font-size: 9px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .vc-proof-v.cyan { color: var(--cyan); }
+
+  .vc-explorer-row {
+    margin-top: 8px;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .vc-explorer-link {
+    font-size: 9px;
+    letter-spacing: 0.5px;
+    color: var(--violet);
+    text-decoration: none;
+    text-transform: uppercase;
+  }
+
+  .vc-explorer-link:hover { color: var(--cyan); }
+
+  /* Scan button bottom of right panel */
+  .vc-scan-action {
+    padding: 14px 24px;
+    border-top: 1px solid var(--rule);
+    flex-shrink: 0;
+  }
+
+  .vc-scan-full {
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--cyan);
+    color: var(--cyan);
+    border-radius: 4px;
+    padding: 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .vc-scan-full:hover { background: var(--cyan); color: var(--ink); }
+
+  .vc-scan-indicator { width: 6px; height: 6px; border-radius: 50%; background: var(--cyan); animation: blink-dot 1s step-end infinite; }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto auto; overflow: auto; height: auto; }
+    .vc-divider { display: none; }
+    .vc-right { max-height: 600px; }
+    .vc-hero-number { font-size: clamp(48px, 12vw, 72px); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+  <!-- LEFT HERO PANEL -->
+  <div class="vc-left">
+    <div class="vc-topbar">
+      <div class="vc-brand">
+        <div class="vc-brand-mark">0G</div>
+        <span class="vc-brand-text">SENTINEL</span>
+        <span class="vc-brand-tag">On-Chain<br>Agent Security</span>
+      </div>
+      <div class="vc-status-bar">
+        <div class="vc-status-item">
+          <div class="vc-dot vc-dot-live"></div>
+          Live · 0G Aristotle · 16661
+        </div>
+        <div class="vc-status-item">
+          <div class="vc-dot vc-dot-danger"></div>
+          2 threats detected
+        </div>
+      </div>
+    </div>
+
+    <div class="vc-hero">
+      <div class="vc-vertical-label">// 0G SENTINEL · SECURITY LAYER</div>
+
+      <div class="vc-eyebrow">Ecosystem Exposure Report</div>
+
+      <div class="vc-hero-number">
+        <span class="amount">$88.88M</span>
+        <span class="label">in ecosystem grants — agents operating blind.</span>
+      </div>
+
+      <p class="vc-hero-statement">
+        Every autonomous AI agent in the 0G ecosystem touches real money. Without on-chain security attestation,
+        <strong>nobody knows which agents are safe.</strong> 0G Sentinel changes that.
+      </p>
+
+      <div class="vc-hero-actions">
+        <button class="vc-btn-primary">▶ Run Scan</button>
+        <button class="vc-btn-ghost">View Attestation Proof</button>
+      </div>
+    </div>
+
+    <!-- Bottom metrics strip -->
+    <div class="vc-metrics-strip">
+      <div class="vc-metric">
+        <div class="vc-metric-accent" style="background:var(--safe);"></div>
+        <div class="vc-metric-num" style="color:var(--safe);">1</div>
+        <div class="vc-metric-label">Safe Agents</div>
+      </div>
+      <div class="vc-metric">
+        <div class="vc-metric-accent" style="background:var(--danger);"></div>
+        <div class="vc-metric-num" style="color:var(--danger);">2</div>
+        <div class="vc-metric-label">Threats</div>
+      </div>
+      <div class="vc-metric">
+        <div class="vc-metric-accent" style="background:var(--cyan);"></div>
+        <div class="vc-metric-num" style="color:var(--cyan);">847</div>
+        <div class="vc-metric-label">0G Compute Calls</div>
+      </div>
+      <div class="vc-metric">
+        <div class="vc-metric-accent" style="background:var(--violet);"></div>
+        <div class="vc-metric-num" style="color:var(--violet);">6</div>
+        <div class="vc-metric-label">Receipt Hashes</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DIVIDER -->
+  <div class="vc-divider"></div>
+
+  <!-- RIGHT DATA PANEL -->
+  <div class="vc-right">
+    <div class="vc-right-header">
+      <div class="vc-right-title">// Agent Registry</div>
+      <div class="vc-right-subtitle">3 agents monitored</div>
+    </div>
+
+    <!-- Nav -->
+    <div class="vc-nav">
+      <div class="vc-nav-item active">
+        <div class="vc-nav-item-left">
+          <span>◈</span>
+          <span class="vc-nav-label">Agents</span>
+        </div>
+        <span class="vc-nav-count">3</span>
+      </div>
+      <div class="vc-nav-item">
+        <div class="vc-nav-item-left">
+          <span>⚡</span>
+          <span class="vc-nav-label">Scan</span>
+        </div>
+        <span class="vc-nav-count">→</span>
+      </div>
+      <div class="vc-nav-item">
+        <div class="vc-nav-item-left">
+          <span>⬡</span>
+          <span class="vc-nav-label">Proof</span>
+        </div>
+        <span class="vc-nav-count">→</span>
+      </div>
+    </div>
+
+    <!-- Agent rows -->
+    <div class="vc-agents">
+      <div class="vc-agent-section">// Agent Security Status</div>
+
+      <!-- Agent 1 — SAFE -->
+      <div class="vc-agent-row row-safe">
+        <div class="vc-ar-top">
+          <span class="vc-ar-name">DeFi Arbitrage Agent</span>
+          <span class="vc-ar-score" style="color:var(--safe);">94</span>
+        </div>
+        <div class="vc-ar-mid">
+          <span class="vc-ar-addr">0x742d...F890</span>
+          <span class="vc-ar-status ar-st-safe">Safe</span>
+        </div>
+        <div class="vc-ar-bar">
+          <div class="vc-ar-fill" style="width:94%;background:var(--safe);"></div>
+        </div>
+        <div class="vc-ar-detail">
+          <div class="vc-ar-kv"><span class="vc-ar-key">behavioral:</span><span class="vc-ar-val">94/100</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">code:</span><span class="vc-ar-val">96/100</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">DeFi gate:</span><span class="vc-ar-val" style="color:var(--safe);">open</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">scans:</span><span class="vc-ar-val">12</span></div>
+        </div>
+      </div>
+
+      <!-- Agent 2 — CAUTION -->
+      <div class="vc-agent-row row-caution">
+        <div class="vc-ar-top">
+          <span class="vc-ar-name">Yield Optimizer</span>
+          <span class="vc-ar-score" style="color:var(--caution);">67</span>
+        </div>
+        <div class="vc-ar-mid">
+          <span class="vc-ar-addr">0x3C89...A2F1</span>
+          <span class="vc-ar-status ar-st-caution">Caution</span>
+        </div>
+        <div class="vc-ar-bar">
+          <div class="vc-ar-fill" style="width:67%;background:var(--caution);"></div>
+        </div>
+        <div class="vc-ar-detail">
+          <div class="vc-ar-kv"><span class="vc-ar-key">behavioral:</span><span class="vc-ar-val">67/100</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">code:</span><span class="vc-ar-val">78/100</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">DeFi gate:</span><span class="vc-ar-val" style="color:var(--caution);">limited</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">scans:</span><span class="vc-ar-val">7</span></div>
+        </div>
+      </div>
+
+      <!-- Agent 3 — DANGER -->
+      <div class="vc-agent-row row-danger">
+        <div class="vc-ar-top">
+          <span class="vc-ar-name">Cross-Chain Bridge</span>
+          <span class="vc-ar-score" style="color:var(--danger);">28</span>
+        </div>
+        <div class="vc-ar-mid">
+          <span class="vc-ar-addr">0xA1E9...D3C8</span>
+          <span class="vc-ar-status ar-st-danger">Blocked</span>
+        </div>
+        <div class="vc-ar-bar">
+          <div class="vc-ar-fill" style="width:28%;background:var(--danger);"></div>
+        </div>
+        <div class="vc-ar-detail">
+          <div class="vc-ar-kv"><span class="vc-ar-key">behavioral:</span><span class="vc-ar-val">28/100</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">code:</span><span class="vc-ar-val">41/100</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">DeFi gate:</span><span class="vc-ar-val" style="color:var(--danger);">denied</span></div>
+          <div class="vc-ar-kv"><span class="vc-ar-key">threat:</span><span class="vc-ar-val" style="color:var(--danger);">reentrancy</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 0G Compute proof -->
+    <div class="vc-proof">
+      <div class="vc-proof-label">0G Compute Proof</div>
+      <div class="vc-proof-rows">
+        <div class="vc-proof-row">
+          <span class="vc-proof-k">chain</span>
+          <span class="vc-proof-v cyan">0G Aristotle · 16661</span>
+        </div>
+        <div class="vc-proof-row">
+          <span class="vc-proof-k">behavioral_receipt</span>
+          <span class="vc-proof-v">a7f2c9e1-38b4-4d2a</span>
+        </div>
+        <div class="vc-proof-row">
+          <span class="vc-proof-k">code_receipt</span>
+          <span class="vc-proof-v">f3d8b2c7-91a5-4e6f</span>
+        </div>
+      </div>
+      <div class="vc-explorer-row">
+        <a href="https://chainscan.0g.ai/address/0x5F6a3AbC97E421f7B3930fc504D6a0CE4eE41e06" class="vc-explorer-link">Registry ↗</a>
+        <a href="https://chainscan.0g.ai/address/0xB9431b3be9a56a1eeA8E728326332f8B4dD51382" class="vc-explorer-link">Attestations ↗</a>
+        <a href="https://chainscan.0g.ai/address/0x8E107bAC6f430aecB8Aa11B383E9690e9a5214bE" class="vc-explorer-link">AgentGate ↗</a>
+      </div>
+    </div>
+
+    <!-- Scan action -->
+    <div class="vc-scan-action">
+      <button class="vc-scan-full">
+        <span class="vc-scan-indicator"></span>
+        Initiate Security Scan
+      </button>
+    </div>
+  </div>
+</body>
+</html>

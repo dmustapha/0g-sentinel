@@ -124,16 +124,15 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
     fetchContractSource(agentAddress),
   ]);
 
-  // Pipeline 1: Behavioral Analysis (0G Compute — independent call)
-  console.log(`[Scanner] Pipeline 1: behavioral analysis...`);
-  const behavioral = await runBehavioralAnalysis(activity);
+  // Pipeline 1 + Pipeline 2: Run both 0G Compute inference calls in parallel
+  console.log(`[Scanner] Pipelines 1+2: behavioral analysis + code scan (parallel)...`);
+  const [behavioral, codeScan] = await Promise.all([
+    runBehavioralAnalysis(activity),
+    runCodeScan(agentAddress, contractSource),
+  ]);
   console.log(
     `[Scanner] Behavioral: ${["SAFE", "CAUTION", "FLAGGED"][behavioral.threat_level]} (score: ${behavioral.behavioral_score})`
   );
-
-  // Pipeline 2: Code Vulnerability Scan (0G Compute — independent call, separate receipt hash)
-  console.log(`[Scanner] Pipeline 2: code vulnerability scan...`);
-  const codeScan = await runCodeScan(agentAddress, contractSource);
   console.log(`[Scanner] Code scan: ${["CLEAN", "WARNING", "VULNERABLE"][codeScan.code_risk]}`);
 
   // Verify receipt hashes are different (critical requirement)

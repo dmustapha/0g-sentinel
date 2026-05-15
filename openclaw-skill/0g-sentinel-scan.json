@@ -27,7 +27,7 @@
   },
   "endpoint": {
     "method": "POST",
-    "url": "https://0g-sentinel.vercel.app/api/scan/behavioral",
+    "url": "https://PROD_URL/api/scan/behavioral",
     "headers": { "Content-Type": "application/json" }
   },
   "tags": ["security", "agent-audit", "0g-compute", "erc-7857", "attestation"]

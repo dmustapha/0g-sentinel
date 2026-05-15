@@ -24,13 +24,13 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
   let tmpPath: string | null = null;
 
   try {
-    const { ZgFile, Indexer } = await import("@0glabs/0g-ts-sdk");
+    const { ZgFile, Indexer } = await import("@0gfoundation/0g-ts-sdk");
     const { ethers } = await import("ethers");
 
     const rpcEndpoint = process.env.ZERO_G_RPC || "https://evmrpc.0g.ai";
     const indexerRpc =
       process.env.ZERO_G_STORAGE_INDEXER ||
-      "https://indexer-storage-testnet-standard.0g.ai";
+      "https://indexer-storage-turbo.0g.ai";
     const privateKey = process.env.ZERO_G_PRIVATE_KEY || process.env.SCANNER_PRIVATE_KEY || "";
 
     // Write evidence to temp file — ZgFile only supports fromFilePath/fromNodeFileHandle
@@ -49,8 +49,11 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
 
     if (uploadErr) throw new Error(`Upload error: ${uploadErr}`);
 
-    console.log(`[StorageClient] Evidence uploaded. tx=${result.txHash} root=${result.rootHash}`);
-    return result.rootHash.startsWith("0x") ? result.rootHash : "0x" + result.rootHash;
+    // New SDK returns single-file or fragment result — evidence is always single-file
+    const rootHash = "rootHash" in result ? result.rootHash : result.rootHashes[0];
+    const txHash = "txHash" in result ? result.txHash : result.txHashes[0];
+    console.log(`[StorageClient] Evidence uploaded. tx=${txHash} root=${rootHash}`);
+    return rootHash.startsWith("0x") ? rootHash : "0x" + rootHash;
   } catch (err) {
     // FALLBACK: if SDK upload fails, return SHA256 of evidence as proof of content
     console.error("[StorageClient] 0G Storage upload failed, using content hash as fallback:", err);

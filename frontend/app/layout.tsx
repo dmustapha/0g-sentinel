@@ -24,12 +24,19 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
   title: "0G Sentinel — Agent Security Dashboard",
   description: "On-chain security attestations for AI agents. Powered by 0G Compute, 0G Storage, and 0G Chain.",
   openGraph: {
     title: "0G Sentinel",
     description: "$88.88M in ecosystem grants. Every agent operating blind.",
     siteName: "0G Sentinel",
+    images: [{ url: "/dashboard.png", width: 1280, height: 800, alt: "0G Sentinel Agent Dashboard" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "0G Sentinel — Agent Security Dashboard",
+    description: "$88.88M in ecosystem grants. Every agent operating blind.",
   },
 };
 
@@ -40,7 +47,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <GridOverlays />
         {/* Top bar */}
         <header role="banner" className="sg-topbar">
-          <a href="/agents" className="sg-topbar-brand">
+          <a href="/" className="sg-topbar-brand">
             0G <span>Sentinel</span>
           </a>
           <NavLinks />

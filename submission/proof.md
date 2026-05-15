@@ -35,4 +35,4 @@ Total agents with attestations: 3
 
 ## Dashboard
 
-URL: https://frontend-alpha-seven-62.vercel.app
+URL: https://PROD_URL

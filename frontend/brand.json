@@ -17,8 +17,11 @@
   },
   "fonts": {
     "heading": "Space Grotesk",
-    "body": "Inter"
+    "body": "Inter",
+    "mono": "JetBrains Mono"
   },
   "logoPath": "public/logo.svg",
-  "darkMode": true
+  "darkMode": true,
+  "name": "0G Sentinel",
+  "tagline": "Every AI agent, verified — behavioral audit, code scan, on-chain proof."
 }

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 36" fill="none">
+  <!-- Combination mark: shield icon + wordmark -->
+  <!-- Shield (scaled down) -->
+  <path d="M12 4 L22 7.5 L22 14 C22 19 17.5 22.5 12 24 C6.5 22.5 2 19 2 14 L2 7.5 Z" stroke="#00d4ff" stroke-width="1.25" fill="rgba(0,212,255,0.04)" opacity="0.9"/>
+  <circle cx="12" cy="14" r="2.5" fill="#00d4ff" opacity="0.9"/>
+  <circle cx="12" cy="14" r="1" fill="#050810"/>
+  <line x1="7" y1="12" x2="17" y2="12" stroke="#00d4ff" stroke-width="0.6" opacity="0.3"/>
+  <line x1="7" y1="16" x2="17" y2="16" stroke="#00d4ff" stroke-width="0.6" opacity="0.3"/>
+  <!-- Divider line -->
+  <line x1="28" y1="7" x2="28" y2="29" stroke="#1e2d4a" stroke-width="1"/>
+  <!-- "0G" -->
+  <text x="34" y="23" font-family="'Space Grotesk', sans-serif" font-size="16" font-weight="700" fill="#e2e8f0" letter-spacing="-0.03em">0G</text>
+  <!-- Vertical separator between 0G and Sentinel -->
+  <line x1="64" y1="7" x2="64" y2="29" stroke="#1e2d4a" stroke-width="1"/>
+  <!-- Sentinel label -->
+  <text x="70" y="16" font-family="'Space Grotesk', sans-serif" font-size="7.5" font-weight="600" fill="#64748b" letter-spacing="0.18em" text-transform="uppercase">SENTINEL</text>
+  <text x="70" y="26" font-family="'JetBrains Mono', monospace" font-size="6" font-weight="400" fill="rgba(0,212,255,0.5)" letter-spacing="0.1em">ATTESTATION INFRA</text>
+</svg>

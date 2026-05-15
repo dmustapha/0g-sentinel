@@ -8,6 +8,12 @@ export function NavLinks() {
   return (
     <nav className="sg-topbar-nav">
       <Link
+        href="/"
+        className={`sg-topbar-link${pathname === "/" ? " active" : ""}`}
+      >
+        Home
+      </Link>
+      <Link
         href="/agents"
         className={`sg-topbar-link${pathname.startsWith("/agents") ? " active" : ""}`}
       >

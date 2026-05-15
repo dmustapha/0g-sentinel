@@ -41,6 +41,8 @@ coverage/
 .conductor-lock/
 .debug-state.json
 .deploy-state.json
+.demo-state.json
+.demo-rehearsal-state.json
 .polish-state.json
 .stress-test-state.json
 .verify-state.json
@@ -49,3 +51,16 @@ coverage/
 # Design forge state
 frontend/.design-forge-state.json
 **/.design-forge-state.json
+# Pipeline reports and scripts (local only)
+PULSE.md
+DEMO-SCRIPT.md
+DEMO-FOOTGUNS.md
+POLISH-REPORT.md
+STRESS-TEST-PLAN.md
+STRESS-TEST-REPORT.md
+pipeline-log.md
+# Design variations (local only)
+frontend/design-variations/
+# Video assets (local only)
+video/
+.env*.local

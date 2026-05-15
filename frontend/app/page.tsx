@@ -36,7 +36,7 @@ async function getLiveStats(): Promise<LiveStats> {
       threatsDetected,
     };
   } catch {
-    return { totalAgents: 3, totalAttested: 3, threatsDetected: 1 };
+    return { totalAgents: 3, totalAttested: 3, threatsDetected: 2 };
   }
 }
 
@@ -81,7 +81,7 @@ export default async function Home() {
           <div className="sg-feat-cell">
             <div className="sg-feat-num">[03]</div>
             <div className="sg-feat-name">On-Chain Attestation</div>
-            <div className="sg-feat-desc">ERC-7857 structs — all 8 fields immutable on 0G Chain, verifiable by any smart contract.</div>
+            <div className="sg-feat-desc">ERC-7857 structs — all 9 fields immutable on 0G Chain, verifiable by any smart contract.</div>
           </div>
           <div className="sg-feat-cell">
             <div className="sg-feat-num">[04]</div>

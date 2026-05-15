@@ -15,6 +15,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  */
 contract AttestationRegistry is Ownable {
 
+    string public constant VERSION = "1.0.0";
+
     // Threat levels: 0 = SAFE, 1 = CAUTION, 2 = FLAGGED
     uint8 public constant SAFE = 0;
     uint8 public constant CAUTION = 1;

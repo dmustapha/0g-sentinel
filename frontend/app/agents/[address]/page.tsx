@@ -2,7 +2,10 @@
 import { getAttestationRegistry } from "@/lib/contracts";
 import { AttestationData } from "@/lib/types";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { AnimatedScoreBar } from "@/components/AnimatedScoreBar";
+
+export const revalidate = 30;
 
 interface Props {
   params: { address: string };
@@ -42,6 +45,7 @@ function threatBadgeClass(level: number) {
 
 
 export default async function AgentDetailPage({ params }: Props) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.address)) notFound();
   const attestation = await getAttestation(params.address);
   const explorerBase = "https://chainscan.0g.ai";
   const shortAddr = `${params.address.slice(0, 8)}…${params.address.slice(-6)}`;

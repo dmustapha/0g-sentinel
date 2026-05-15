@@ -29,6 +29,8 @@ interface IAttestationRegistry {
  *      integrators may want per-deployment configurability via constructor parameters.
  */
 contract AgentGate {
+    string public constant VERSION = "1.0.0";
+
     IAttestationRegistry public immutable registry;
 
     // Max allowed: threat_level <= 1 (SAFE or CAUTION), code_risk <= 1 (CLEAN or WARNING)
@@ -81,6 +83,13 @@ contract AgentGate {
     /**
      * @dev Execute a call to target on behalf of a verified-safe agent.
      *      Reverts with the original revert reason if the inner call fails.
+     *
+     *      Design note: msg.sender is NOT required to equal agentAddress by design.
+     *      This implements a delegated-call model: any orchestrator or protocol contract
+     *      can submit a call on behalf of an attested agent. The gate enforces that the
+     *      declared agentAddress holds a valid 0G Sentinel attestation — it does not
+     *      enforce that the caller IS that agent. Production integrations that require
+     *      strict caller identity should add `require(msg.sender == agentAddress)`.
      */
     function executeIfSafe(
         address agentAddress,

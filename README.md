@@ -1,6 +1,6 @@
 # 0G Sentinel: On-chain security attestations for AI agents
 
-Security infrastructure for the AI agent era. 0G Sentinel scans every registered agent using two independent AI inference pipelines, then writes an immutable 8-field attestation to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single on-chain call and gate execution on the result.
+Security infrastructure for the AI agent era. 0G Sentinel scans every registered agent using two independent AI inference pipelines, then writes an immutable 9-field attestation to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single on-chain call and gate execution on the result.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity)](https://soliditylang.org/)
@@ -27,9 +27,9 @@ AgentMesh audits developer code. 0G Sentinel audits live agents on mainnet and w
 
 | Contract | Address | Explorer |
 |----------|---------|---------|
-| AttestationRegistry | `0xB9431b3be9a56a1eeA8E728326332f8B4dD51382` | [View](https://chainscan.0g.ai/address/0xB9431b3be9a56a1eeA8E728326332f8B4dD51382) |
-| AgentRegistry | `0x5F6a3AbC97E421f7B3930fc504D6a0CE4eE41e06` | [View](https://chainscan.0g.ai/address/0x5F6a3AbC97E421f7B3930fc504D6a0CE4eE41e06) |
-| AgentGate | `0x8E107bAC6f430aecB8Aa11B383E9690e9a5214bE` | [View](https://chainscan.0g.ai/address/0x8E107bAC6f430aecB8Aa11B383E9690e9a5214bE) |
+| AttestationRegistry | `0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba` | [View](https://chainscan.0g.ai/address/0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba) |
+| AgentRegistry | `0x0c578A4B7F0985D4599A319634649ACbd8D377d4` | [View](https://chainscan.0g.ai/address/0x0c578A4B7F0985D4599A319634649ACbd8D377d4) |
+| AgentGate | `0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012` | [View](https://chainscan.0g.ai/address/0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012) |
 
 Chain ID: 16661 (0G Aristotle Mainnet)
 
@@ -50,9 +50,9 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 - **Dual AI pipelines**: Two independent 0G Compute inference calls per scan, each with a unique `zg-res-key` receipt UUID stored on-chain as proof of independent verification
 - **Behavioral risk scoring**: 0-100 risk score from tx frequency, fund outflow patterns, and contract interaction breadth
 - **Smart contract vulnerability scan**: Reentrancy, broken access control, and unchecked-call detection via AI code analysis
-- **Immutable on-chain attestations**: 8-field struct written to `AttestationRegistry` — queryable by any dApp with a single call
-- **AgentGate composability**: Drop-in security gate for any protocol; reads `AttestationRegistry` directly, no intermediary
-- **Evidence archival**: Full scan evidence JSON archived to 0G Storage; SHA256 content hash stored in attestation struct
+- **Immutable on-chain attestations**: 9-field struct written to `AttestationRegistry` — queryable by any dApp with a single call; includes full LLM reasoning string
+- **AgentGate composability**: Drop-in security gate for any protocol; `isSafe()` and `isSafeWithAge()` read `AttestationRegistry` directly, no intermediary
+- **Evidence archival**: Full scan evidence JSON content-addressed and hashed; `evidence_hash` stored immutably in attestation struct
 - **OpenClaw skill**: `openclaw-skill/0g-sentinel-scan.json` enables AI orchestrators to trigger scans as a native tool call
 
 ---
@@ -64,7 +64,7 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 | Frontend | Next.js 15, React, TypeScript |
 | Smart Contracts | Solidity 0.8, Hardhat |
 | AI Inference | 0G Compute (`router-api.0g.ai/v1`), 0GM-1.0-35B-A3B model |
-| Evidence Storage | `@0glabs/0g-ts-sdk`, SHA256 content hash |
+| Evidence Storage | `@0gfoundation/0g-ts-sdk` 1.2.8, SHA256 content hash |
 | Chain | 0G Aristotle Mainnet (chain ID 16661) |
 | Wallet | ethers.js v6 |
 
@@ -94,11 +94,12 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
                            |
                   AttestationRegistry
                   (0G Chain, mainnet)
-                  8-field attestation struct:
+                  9-field attestation struct:
                   behavioral_score (0-100)
                   threat_level (SAFE/CAUTION/FLAGGED)
                   code_risk (CLEAN/WARNING/VULNERABLE)
                   code_findings (string)
+                  reasoning (string — LLM explanation)
                   behavioral_receipt_hash (bytes32)
                   code_receipt_hash (bytes32)
                   evidence_hash (bytes32)
@@ -113,7 +114,7 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 1. **Register**: Add an agent address to `AgentRegistry`
 2. **Scan**: Sentinel runs two parallel AI pipelines via 0G Compute
 3. **Archive**: Evidence JSON uploaded to 0G Storage; root hash stored
-4. **Attest**: Scanner writes 8-field attestation to `AttestationRegistry` on 0G Chain
+4. **Attest**: Scanner writes 9-field attestation to `AttestationRegistry` on 0G Chain
 5. **Gate**: `AgentGate` reads attestation; reverts if agent is flagged or unscanned
 
 Each pipeline call produces a unique `zg-res-key` receipt UUID from the 0G router, converted to a bytes32 hash. Both hashes stored on-chain prove two independent AI verifications ran.
@@ -188,7 +189,7 @@ require(att.code_risk < 2, "Agent has vulnerabilities");
 ```
 0g-sentinel/
 ├── contracts/
-│   ├── AttestationRegistry.sol   # Core: stores 8-field attestation struct
+│   ├── AttestationRegistry.sol   # Core: stores 9-field attestation struct
 │   ├── AgentRegistry.sol         # Agent registration list
 │   └── AgentGate.sol             # Composability: gates on attestation verdict
 ├── scanner/
@@ -225,4 +226,4 @@ MIT
 
 ---
 
-Built for 0G APAC Hackathon 2026. Track T1 (Agentic Infrastructure + OpenClaw Lab) and Track T2 (Agentic Trading Arena / Verifiable Finance).
+Built for 0G APAC Hackathon 2026. Track T1 (Agentic Infrastructure + OpenClaw Lab).

@@ -726,7 +726,8 @@ body::after {
   animation: sg-pulse-live 2.5s ease-in-out infinite;
 }
 
-.sg-pipeline-step.caution::before {
+.sg-pipeline-step.caution::before,
+.sg-pipeline-step.degraded::before {
   background: #f59e0b;
   box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
   animation: sg-pulse-caution 2s ease-in-out infinite;
@@ -1118,6 +1119,7 @@ body::after {
 .sg-tbl-badge-safe    { color: #10b981; border-color: rgba(16,185,129,0.25); background: rgba(16,185,129,0.04); }
 .sg-tbl-badge-caution { color: #f59e0b; border-color: rgba(245,158,11,0.25); background: rgba(245,158,11,0.04); }
 .sg-tbl-badge-threat  { color: #ef4444; border-color: rgba(239,68,68,0.25);  background: rgba(239,68,68,0.04);  }
+.sg-tbl-badge-neutral { color: #475569; border-color: rgba(71,85,105,0.25);  background: rgba(71,85,105,0.04);  }
 
 .sg-tbl-time {
   font-family: "JetBrains Mono", monospace;

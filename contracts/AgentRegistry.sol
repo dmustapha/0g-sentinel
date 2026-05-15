@@ -17,6 +17,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  *      Full NFT binding is a post-hackathon integration point.
  */
 contract AgentRegistry is Ownable {
+    string public constant VERSION = "1.0.0";
+
     struct Agent {
         address agentAddress;
         bool active;

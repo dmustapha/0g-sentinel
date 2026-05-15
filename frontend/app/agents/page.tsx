@@ -17,19 +17,22 @@ function relativeTime(ts: number): string {
   return `${Math.floor(diff / 86400)}d ago`;
 }
 
-function scoreColor(score: number): string {
-  if (score >= 60) return "#ef4444"; // FLAGGED (60-100)
-  if (score >= 30) return "#f59e0b"; // CAUTION (30-59)
-  return "#10b981";                  // SAFE (0-29)
+function scoreColor(agent: AgentWithAttestation): string {
+  if (!agent.has_attestation) return "#334155";          // NOT SCANNED — neutral
+  if (agent.behavioral_score >= 60) return "#ef4444";    // FLAGGED (60-100)
+  if (agent.behavioral_score >= 30) return "#f59e0b";    // CAUTION (30-59)
+  return "#10b981";                                      // SAFE (0-29)
 }
 
 function badgeClass(agent: AgentWithAttestation): string {
+  if (!agent.has_attestation) return "sg-tbl-badge sg-tbl-badge-neutral";
   if (agent.threat_level === 2 || agent.code_risk === 2) return "sg-tbl-badge sg-tbl-badge-threat";
   if (agent.threat_level === 1 || agent.code_risk === 1) return "sg-tbl-badge sg-tbl-badge-caution";
   return "sg-tbl-badge sg-tbl-badge-safe";
 }
 
 function badgeLabel(agent: AgentWithAttestation): string {
+  if (!agent.has_attestation) return "NOT SCANNED";
   if (agent.threat_level === 2 || agent.code_risk === 2) return "FLAGGED";
   if (agent.threat_level === 1 || agent.code_risk === 1) return "CAUTION";
   return "SAFE";
@@ -149,16 +152,16 @@ export default async function AgentsPage() {
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
                     <span
                       className="sg-tbl-score-val"
-                      style={{ color: scoreColor(agent.behavioral_score) }}
+                      style={{ color: scoreColor(agent) }}
                     >
-                      {agent.behavioral_score}
+                      {agent.has_attestation ? agent.behavioral_score : "—"}
                     </span>
                     <div className="sg-tbl-score-track">
                       <div
                         className="sg-tbl-score-fill"
                         style={{
-                          width: `${agent.behavioral_score}%`,
-                          background: scoreColor(agent.behavioral_score),
+                          width: agent.has_attestation ? `${agent.behavioral_score}%` : "0%",
+                          background: scoreColor(agent),
                         }}
                       />
                     </div>

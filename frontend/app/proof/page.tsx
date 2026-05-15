@@ -31,18 +31,18 @@ export default function ProofPage() {
     },
     {
       label: "0G Storage",
-      status: "live",
-      detail: "Evidence archive via @0gfoundation/0g-ts-sdk 1.2.8. Content-addressed root hash stored in attestation.evidenceHash — permanently retrievable from 0G decentralized storage.",
+      status: "degraded",
+      detail: "Evidence JSON archived via @0gfoundation/0g-ts-sdk 1.2.8. Upload to 0G distributed storage attempted at scan time; SHA256 content hash preserved as tamper-evident fallback when indexer is unreachable. evidence_hash stored immutably on-chain in all cases.",
     },
     {
       label: "0G Chain",
       status: "live",
-      detail: "ERC-7857 attestations written to AttestationRegistry on 0G Aristotle mainnet (chain ID: 16661). All 8 fields on-chain, immutable, verifiable.",
+      detail: "ERC-7857 attestations written to AttestationRegistry on 0G Aristotle mainnet (chain ID: 16661). All 9 fields on-chain, immutable, verifiable.",
     },
     {
       label: "AgentGate",
       status: "live",
-      detail: "Composability primitive — any protocol can require attestation before execution. isSafe() reads directly from AttestationRegistry.",
+      detail: "Composability primitive — any protocol can require attestation before execution. isSafe() and isSafeWithAge() read directly from AttestationRegistry with optional freshness check.",
     },
   ];
 
@@ -148,7 +148,7 @@ export default function ProofPage() {
             {integrations.map((intg) => (
               <div
                 key={intg.label}
-                className="sg-pipeline-step live"
+                className={`sg-pipeline-step ${intg.status === "live" ? "live" : "degraded"}`}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
                   <span style={{
@@ -198,9 +198,9 @@ export default function ProofPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
             {[
               { label: "0G Compute", ok: true, detail: "Inference active" },
-              { label: "0G Storage", ok: true, detail: "Content-addressed" },
+              { label: "0G Storage", ok: false, detail: "SHA256 fallback active" },
               { label: "0G Chain", ok: true, detail: "Chain ID 16661" },
-              { label: "AgentGate", ok: true, detail: "isSafe() live" },
+              { label: "AgentGate", ok: true, detail: "isSafeWithAge() live" },
             ].map(({ label, ok, detail }) => (
               <div key={label} style={{
                 display: "flex",

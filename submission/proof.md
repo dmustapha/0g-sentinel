@@ -35,4 +35,4 @@ Total agents with attestations: 3
 
 ## Dashboard
 
-URL: https://PROD_URL
+URL: https://0g-sentinel.vercel.app

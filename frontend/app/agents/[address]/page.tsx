@@ -2,6 +2,7 @@
 import { getAttestationRegistry } from "@/lib/contracts";
 import { AttestationData } from "@/lib/types";
 import Link from "next/link";
+import { AnimatedScoreBar } from "@/components/AnimatedScoreBar";
 
 interface Props {
   params: { address: string };
@@ -38,17 +39,6 @@ function threatBadgeClass(level: number) {
   return "sg-badge sg-badge-safe";
 }
 
-function ScoreBar({ score }: { score: number }) {
-  const color = score >= 60 ? "#ef4444" : score >= 30 ? "#f59e0b" : "#10b981";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginTop: 6 }}>
-      <div className="sg-score-bar" style={{ flex: 1 }}>
-        <div className="sg-score-bar-fill" style={{ width: `${score}%`, background: color }} />
-      </div>
-      <span className="sg-mono" style={{ color, minWidth: 36, textAlign: "right" }}>{score}/100</span>
-    </div>
-  );
-}
 
 export default async function AgentDetailPage({ params }: Props) {
   const attestation = await getAttestation(params.address);
@@ -139,8 +129,14 @@ export default async function AgentDetailPage({ params }: Props) {
                 marginBottom: "1.5rem",
               }}>
                 {/* Behavioral */}
-                <div className={`sg-glass-card${attestation.threatLevel === 2 ? "-danger" : attestation.threatLevel === 1 ? "-caution" : ""}`}
-                  style={{ padding: "1.5rem" }}>
+                <div
+                  className={
+                    attestation.threatLevel === 2 ? "sg-threat-danger" :
+                    attestation.threatLevel === 1 ? "sg-threat-caution" :
+                    "sg-threat-safe"
+                  }
+                  style={{ padding: "1.5rem" }}
+                >
                   <div className="sg-label" style={{ marginBottom: 12 }}>Behavioral Risk</div>
                   <div className="sg-display" style={{
                     fontSize: "3.5rem",
@@ -151,7 +147,7 @@ export default async function AgentDetailPage({ params }: Props) {
                     {attestation.behavioralScore}
                     <span style={{ fontSize: "1.25rem", color: "#334155", fontWeight: 400 }}>/100</span>
                   </div>
-                  <ScoreBar score={attestation.behavioralScore} />
+                  <AnimatedScoreBar score={attestation.behavioralScore} />
                   <div style={{ marginTop: 12 }}>
                     <span className={threatBadgeClass(attestation.threatLevel)}>
                       {THREAT_LABELS[attestation.threatLevel] ?? "UNKNOWN"}
@@ -160,8 +156,14 @@ export default async function AgentDetailPage({ params }: Props) {
                 </div>
 
                 {/* Code vulnerability */}
-                <div className={`sg-glass-card${attestation.codeRisk === 2 ? "-danger" : attestation.codeRisk === 1 ? "-caution" : ""}`}
-                  style={{ padding: "1.5rem" }}>
+                <div
+                  className={
+                    attestation.codeRisk === 2 ? "sg-threat-danger" :
+                    attestation.codeRisk === 1 ? "sg-threat-caution" :
+                    "sg-threat-safe"
+                  }
+                  style={{ padding: "1.5rem" }}
+                >
                   <div className="sg-label" style={{ marginBottom: 12 }}>Code Vulnerability</div>
                   <div className="sg-display" style={{
                     fontSize: "2.25rem",

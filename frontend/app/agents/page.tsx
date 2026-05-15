@@ -1,8 +1,14 @@
 "use client";
 // File: frontend/app/agents/page.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentWithAttestation } from "@/lib/types";
 import { AgentRow } from "@/components/AgentRow";
+
+function StatSkeleton({ width = 36 }: { width?: number }) {
+  return (
+    <div className="sg-skeleton" style={{ width, height: 28, borderRadius: 2 }} />
+  );
+}
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<AgentWithAttestation[]>([]);
@@ -10,6 +16,9 @@ export default function AgentsPage() {
   const [scanning, setScanning] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState(false);
+  const [displayMillions, setDisplayMillions] = useState(0);
+  const [counterDone, setCounterDone] = useState(false);
+  const rafRef = useRef<number | null>(null);
 
   async function fetchAgents() {
     try {
@@ -50,6 +59,27 @@ export default function AgentsPage() {
     fetchAgents();
   }, []);
 
+  useEffect(() => {
+    const target = 88.88;
+    const duration = 2000;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min((now - start) / duration, 1);
+      const ease = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
+      setDisplayMillions(target * ease);
+      if (t < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+      } else {
+        setDisplayMillions(target);
+        setCounterDone(true);
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
   const flagged = agents.filter((a) => a.threat_level === 2 || a.code_risk === 2).length;
   const safe = agents.filter((a) => a.threat_level === 0 && a.code_risk === 0).length;
   const caution = agents.filter(
@@ -86,14 +116,17 @@ export default function AgentsPage() {
             </span>
           </div>
 
-          {/* Massive display number */}
+          {/* Massive display number — animated counter */}
           <div className="sg-reveal-up sg-delay-1" style={{ marginBottom: "0.75rem" }}>
-            <div className="sg-display sg-gradient-text" style={{
-              fontSize: "clamp(4.5rem, 13vw, 9.5rem)",
-              lineHeight: 0.85,
-              letterSpacing: "-0.05em",
-            }}>
-              $88.88M
+            <div
+              className={`sg-display sg-gradient-text${!counterDone ? " sg-cursor" : ""}`}
+              style={{
+                fontSize: "clamp(4.5rem, 13vw, 9.5rem)",
+                lineHeight: 0.85,
+                letterSpacing: "-0.05em",
+              }}
+            >
+              ${displayMillions.toFixed(2)}M
             </div>
           </div>
 
@@ -127,29 +160,29 @@ export default function AgentsPage() {
             borderTop: "1px solid #0f1c30",
           }}>
             <div style={{ flex: 1, paddingRight: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#e2e8f0" }}>
-                {loading ? "—" : agents.length}
+              <div className="sg-stat__number" style={{ color: "#e2e8f0", minHeight: 28, display: "flex", alignItems: "center" }}>
+                {loading ? <StatSkeleton width={28} /> : agents.length}
               </div>
               <div className="sg-stat__label" style={{ marginTop: 6 }}>Monitored</div>
             </div>
             <div style={{ width: 1, background: "#0f1c30", flexShrink: 0 }} />
             <div style={{ flex: 1, paddingLeft: "2rem", paddingRight: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#10b981" }}>
-                {loading ? "—" : safe}
+              <div className="sg-stat__number" style={{ color: "#10b981", minHeight: 28, display: "flex", alignItems: "center" }}>
+                {loading ? <StatSkeleton width={20} /> : safe}
               </div>
               <div className="sg-stat__label" style={{ marginTop: 6 }}>Verified safe</div>
             </div>
             <div style={{ width: 1, background: "#0f1c30", flexShrink: 0 }} />
             <div style={{ flex: 1, paddingLeft: "2rem", paddingRight: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#f59e0b" }}>
-                {loading ? "—" : caution}
+              <div className="sg-stat__number" style={{ color: "#f59e0b", minHeight: 28, display: "flex", alignItems: "center" }}>
+                {loading ? <StatSkeleton width={20} /> : caution}
               </div>
               <div className="sg-stat__label" style={{ marginTop: 6 }}>Caution</div>
             </div>
             <div style={{ width: 1, background: "#0f1c30", flexShrink: 0 }} />
             <div style={{ flex: 1, paddingLeft: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#ef4444" }}>
-                {loading ? "—" : flagged}
+              <div className="sg-stat__number" style={{ color: "#ef4444", minHeight: 28, display: "flex", alignItems: "center" }}>
+                {loading ? <StatSkeleton width={20} /> : flagged}
               </div>
               <div className="sg-stat__label" style={{ marginTop: 6 }}>Threats</div>
             </div>

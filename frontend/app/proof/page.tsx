@@ -31,8 +31,8 @@ export default function ProofPage() {
     },
     {
       label: "0G Storage",
-      status: "degraded",
-      detail: "Evidence JSON archived via @0gfoundation/0g-ts-sdk 1.2.8. Upload to 0G distributed storage attempted at scan time; SHA256 content hash preserved as tamper-evident fallback when indexer is unreachable. evidence_hash stored immutably on-chain in all cases.",
+      status: "live",
+      detail: "Evidence JSON archived to 0G distributed storage via @0gfoundation/0g-ts-sdk 1.2.8. Content-addressed root hash stored in attestation.evidence_hash — permanently retrievable from the 0G storage network.",
     },
     {
       label: "0G Chain",
@@ -198,7 +198,7 @@ export default function ProofPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
             {[
               { label: "0G Compute", ok: true, detail: "Inference active" },
-              { label: "0G Storage", ok: false, detail: "SHA256 fallback active" },
+              { label: "0G Storage", ok: true, detail: "Content-addressed" },
               { label: "0G Chain", ok: true, detail: "Chain ID 16661" },
               { label: "AgentGate", ok: true, detail: "isSafeWithAge() live" },
             ].map(({ label, ok, detail }) => (

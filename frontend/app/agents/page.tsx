@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getAttestationRegistry, getAgentRegistry } from "@/lib/contracts";
 import { AgentWithAttestation } from "@/lib/types";
 import { RescanButton } from "@/components/RescanButton";
+import { ScanInput } from "@/components/ScanInput";
 
 export const revalidate = 30;
 
@@ -97,6 +98,12 @@ export default async function AgentsPage() {
           <div className="sg-dash-subtitle">
             Behavioral audit · Code scan · On-chain attestation · 0G Aristotle
           </div>
+        </div>
+        <div style={{ flex: "1 1 320px", maxWidth: 480 }}>
+          <div className="sg-label" style={{ marginBottom: "0.5rem", fontSize: "0.5625rem" }}>
+            Scan any agent address
+          </div>
+          <ScanInput />
         </div>
       </div>
 

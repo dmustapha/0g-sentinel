@@ -1,8 +1,12 @@
-"use client";
 // File: frontend/app/agents/page.tsx
-import { useEffect, useState } from "react";
+// Server component with ISR — no loading spinner on initial render.
+// Rescan interactivity is isolated to the client RescanButton component.
 import Link from "next/link";
+import { getAttestationRegistry, getAgentRegistry } from "@/lib/contracts";
 import { AgentWithAttestation } from "@/lib/types";
+import { RescanButton } from "@/components/RescanButton";
+
+export const revalidate = 30;
 
 function relativeTime(ts: number): string {
   if (!ts) return "—";
@@ -26,56 +30,61 @@ function badgeClass(agent: AgentWithAttestation): string {
 }
 
 function badgeLabel(agent: AgentWithAttestation): string {
-  if (agent.threat_level === 2 || agent.code_risk === 2) return "THREAT";
+  if (agent.threat_level === 2 || agent.code_risk === 2) return "FLAGGED";
   if (agent.threat_level === 1 || agent.code_risk === 1) return "CAUTION";
   return "SAFE";
 }
 
-export default function AgentsPage() {
-  const [agents, setAgents] = useState<AgentWithAttestation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [scanning, setScanning] = useState<string | null>(null);
-  const [scanError, setScanError] = useState<string | null>(null);
-  const [fetchError, setFetchError] = useState(false);
+const AGENT_NAMES: Record<string, string> = {
+  "0xaaaa000000000000000000000000000000000001": "Agent Alpha",
+  "0xbbbb000000000000000000000000000000000002": "Agent Beta",
+  "0xcccc000000000000000000000000000000000003": "Agent Gamma",
+};
 
-  async function fetchAgents() {
-    try {
-      const res = await fetch("/api/agents");
-      const data = await res.json();
-      setAgents(data.agents || []);
-      setFetchError(false);
-    } catch {
-      setFetchError(true);
-    } finally {
-      setLoading(false);
-    }
-  }
+async function fetchAgents(): Promise<AgentWithAttestation[]> {
+  const attestationRegistry = getAttestationRegistry();
+  const agentRegistry = getAgentRegistry();
+  const agentAddresses: string[] = await agentRegistry.getAllAgents();
 
-  async function handleRescan(address: string) {
-    setScanning(address);
-    setScanError(null);
-    try {
-      const res = await fetch("/api/scan/behavioral", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentAddress: address }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setScanError(data.error || `Scan failed (HTTP ${res.status})`);
-      } else {
-        await fetchAgents();
+  return Promise.all(
+    agentAddresses.map(async (address) => {
+      const has = await attestationRegistry.hasAttestation(address);
+      const name = AGENT_NAMES[address.toLowerCase()] ||
+        `Agent ${address.slice(0, 6)}...${address.slice(-4)}`;
+      if (!has) {
+        return {
+          address, name,
+          behavioral_score: 0, threat_level: 1 as const, code_risk: 1 as const,
+          code_findings: "", behavioral_receipt_hash: "", code_receipt_hash: "",
+          evidence_hash: "", attestation_timestamp: 0, has_attestation: false,
+        };
       }
-    } catch {
-      setScanError("Scan request failed — check network connection");
-    } finally {
-      setScanning(null);
-    }
-  }
+      const att = await attestationRegistry.getAttestation(address);
+      return {
+        address, name,
+        behavioral_score: Number(att.behavioral_score),
+        threat_level: Number(att.threat_level) as 0 | 1 | 2,
+        code_risk: Number(att.code_risk) as 0 | 1 | 2,
+        code_findings: att.code_findings,
+        behavioral_receipt_hash: att.behavioral_receipt_hash,
+        code_receipt_hash: att.code_receipt_hash,
+        evidence_hash: att.evidence_hash,
+        attestation_timestamp: Number(att.attestation_timestamp),
+        has_attestation: true,
+      };
+    })
+  );
+}
 
-  useEffect(() => {
-    fetchAgents();
-  }, []);
+export default async function AgentsPage() {
+  let agents: AgentWithAttestation[] = [];
+  let fetchError = false;
+
+  try {
+    agents = await fetchAgents();
+  } catch {
+    fetchError = true;
+  }
 
   return (
     <div className="sg-dash-section">
@@ -86,26 +95,7 @@ export default function AgentsPage() {
             Behavioral audit · Code scan · On-chain attestation · 0G Aristotle
           </div>
         </div>
-        <button
-          className="sg-btn-refresh"
-          onClick={fetchAgents}
-          disabled={loading}
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
       </div>
-
-      {scanError && (
-        <div style={{
-          padding: "0.625rem 0",
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
-          fontSize: "0.6875rem",
-          color: "#ef4444",
-          marginBottom: "0.75rem",
-        }}>
-          {scanError}
-        </div>
-      )}
 
       {fetchError ? (
         <div style={{
@@ -116,16 +106,6 @@ export default function AgentsPage() {
           textAlign: "center",
         }}>
           Failed to load agents — check RPC connection
-        </div>
-      ) : loading ? (
-        <div style={{
-          padding: "4rem 0",
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
-          fontSize: "0.75rem",
-          color: "rgba(0,212,255,0.4)",
-          textAlign: "center",
-        }}>
-          Loading from 0G Chain…
         </div>
       ) : agents.length === 0 ? (
         <div style={{
@@ -193,15 +173,7 @@ export default function AgentsPage() {
                   </span>
                 </td>
                 <td>
-                  <button
-                    className="sg-btn-refresh"
-                    disabled={scanning !== null}
-                    onClick={() => handleRescan(agent.address)}
-                    style={{ fontSize: "0.625rem", padding: "0.25rem 0.625rem" }}
-                    aria-label={`Rescan ${agent.address.slice(0, 6)}…${agent.address.slice(-4)}`}
-                  >
-                    {scanning === agent.address ? "Scanning…" : "Rescan"}
-                  </button>
+                  <RescanButton address={agent.address} />
                 </td>
               </tr>
             ))}

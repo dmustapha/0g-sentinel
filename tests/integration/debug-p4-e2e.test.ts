@@ -53,7 +53,7 @@ describe("E2E Flow 1: Dashboard — Load all agents + attestations", () => {
   it("Tier 1: Dashboard correctly shows agents WITH attestation (has_attestation=true)", async () => {
     const { registry, attestation, scanner, agentA } = await deployFullSystem();
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 15, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 15, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const has = await attestation.hasAttestation(agentA.address);
     expect(has).to.be.true;
@@ -66,7 +66,7 @@ describe("E2E Flow 1: Dashboard — Load all agents + attestations", () => {
     const { registry, attestation, scanner, agentA, agentB, agentC } = await deployFullSystem();
     // Only attest agentA
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 15, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 15, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const agents = await registry.getAllAgents();
     const results = await Promise.all(agents.map(async (addr) => ({
@@ -92,7 +92,7 @@ describe("E2E Flow 2: Agent detail — attestation proof view", () => {
   it("Tier 1: getAttestation returns full proof for attested agent", async () => {
     const { attestation, scanner, agentA } = await deployFullSystem();
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 72, 2, 1, "Suspicious fund drain detected", HASH_A, HASH_B, HASH_C
+      agentA.address, 72, 2, 1, "Suspicious fund drain detected", "", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agentA.address);
     expect(Number(att.behavioral_score)).to.equal(72);
@@ -119,7 +119,7 @@ describe("E2E Flow 2: Agent detail — attestation proof view", () => {
     expect(safe1).to.be.false;
     // After attestation (SAFE)
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe2] = await gate.isSafe(agentA.address);
     expect(safe2).to.be.true;
@@ -192,7 +192,7 @@ describe("E2E Flow 4: Full attestation → gate → execution flow", () => {
 
     // Step 2: Scanner writes attestation (SAFE)
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
 
     // Step 3: Gate confirms safe
@@ -211,7 +211,7 @@ describe("E2E Flow 4: Full attestation → gate → execution flow", () => {
 
     expect(await registry.isRegistered(agentB.address)).to.be.true;
     await attestation.connect(scanner).writeAttestation(
-      agentB.address, 85, 2, 2, "reentrancy + fund drain", HASH_A, HASH_B, HASH_C
+      agentB.address, 85, 2, 2, "reentrancy + fund drain", "", HASH_A, HASH_B, HASH_C
     );
     const [safe, reason] = await gate.isSafe(agentB.address);
     expect(safe).to.be.false;
@@ -225,7 +225,7 @@ describe("E2E Flow 4: Full attestation → gate → execution flow", () => {
   it("Tier 1: Proof page data — all receipt hashes are valid bytes32", async () => {
     const { attestation, scanner, agentA } = await deployFullSystem();
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 20, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 20, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agentA.address);
     const bytes32Regex = /^0x[0-9a-fA-F]{64}$/;

@@ -43,7 +43,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
   it("AgentGate: isSafe returns true for SAFE attested agent", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe, reason] = await gate.isSafe(agent.address);
     expect(safe).to.be.true;
@@ -53,7 +53,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
   it("AgentGate: isSafe returns true for CAUTION attested agent (threat_level=1)", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 45, 1, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 45, 1, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe] = await gate.isSafe(agent.address);
     expect(safe).to.be.true; // threshold is MAX_THREAT_LEVEL=1
@@ -62,7 +62,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
   it("AgentGate: isSafe returns false for FLAGGED agent (threat_level=2)", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 80, 2, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 80, 2, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe, reason] = await gate.isSafe(agent.address);
     expect(safe).to.be.false;
@@ -72,7 +72,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
   it("AgentGate: isSafe returns false for VULNERABLE code risk (code_risk=2)", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 2, "reentrancy at withdraw()", HASH_A, HASH_B, HASH_C
+      agent.address, 10, 0, 2, "reentrancy at withdraw()", "", HASH_A, HASH_B, HASH_C
     );
     const [safe, reason] = await gate.isSafe(agent.address);
     expect(safe).to.be.false;
@@ -89,7 +89,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
   it("AgentGate: executeIfSafe reverts for FLAGGED agent", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 80, 2, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 80, 2, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     await expect(
       gate.executeIfSafe(agent.address, user.address, "0x")
@@ -99,7 +99,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
   it("AgentGate: executeIfSafe succeeds for SAFE agent (simple call)", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     // Call a view function on AttestationRegistry (will succeed)
     const iface = new ethers.Interface(["function getAttestedCount() view returns (uint256)"]);
@@ -124,7 +124,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
     await attestation.authorizeScanner(scanner.address);
     // First write: FLAGGED
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 80, 2, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 80, 2, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe1] = await gate.isSafe(agent.address);
     expect(safe1).to.be.false;
@@ -133,7 +133,7 @@ describe("Integration: Contract-Contract (AgentGate ↔ AttestationRegistry)", (
     const HASH_D = "0x" + "d".repeat(64);
     const HASH_E = "0x" + "e".repeat(64);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 0, "", HASH_D, HASH_E, HASH_C
+      agent.address, 10, 0, 0, "", "", HASH_D, HASH_E, HASH_C
     );
     const [safe2] = await gate.isSafe(agent.address);
     expect(safe2).to.be.true; // gate reads updated attestation immediately
@@ -150,16 +150,17 @@ describe("Integration: Scanner write path → AttestationRegistry state", () => 
     attestation = await AttestationFactory.deploy() as unknown as AttestationRegistry;
   });
 
-  it("writeAttestation stores all 8 fields correctly", async () => {
+  it("writeAttestation stores all 9 fields correctly (including reasoning)", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 42, 1, 1, "reentrancy risk", HASH_A, HASH_B, HASH_C
+      agent.address, 42, 1, 1, "reentrancy risk", "Method concentration 0.97 with 94% outflow suggests automated drain.", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agent.address);
     expect(att.behavioral_score).to.equal(42);
     expect(att.threat_level).to.equal(1);
     expect(att.code_risk).to.equal(1);
     expect(att.code_findings).to.equal("reentrancy risk");
+    expect(att.reasoning).to.include("Method concentration");
     expect(att.behavioral_receipt_hash).to.equal(HASH_A);
     expect(att.code_receipt_hash).to.equal(HASH_B);
     expect(att.evidence_hash).to.equal(HASH_C);
@@ -169,7 +170,7 @@ describe("Integration: Scanner write path → AttestationRegistry state", () => 
   it("writeAttestation: behavioral and code receipt hashes stored separately", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 30, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 30, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agent.address);
     expect(att.behavioral_receipt_hash).to.not.equal(att.code_receipt_hash);
@@ -180,10 +181,10 @@ describe("Integration: Scanner write path → AttestationRegistry state", () => 
   it("writeAttestation: second write updates (not duplicate) attested agents list", async () => {
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 20, 1, 0, "", HASH_B, HASH_C, HASH_A
+      agent.address, 20, 1, 0, "", "", HASH_B, HASH_C, HASH_A
     );
     const count = await attestation.getAttestedCount();
     expect(count).to.equal(1n); // NOT 2 — same address, no duplicate
@@ -195,7 +196,7 @@ describe("Integration: Scanner write path → AttestationRegistry state", () => 
     expect(await attestation.hasAttestation(agent.address)).to.be.false;
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     expect(await attestation.hasAttestation(agent.address)).to.be.true;
   });
@@ -204,17 +205,17 @@ describe("Integration: Scanner write path → AttestationRegistry state", () => 
     await attestation.authorizeScanner(scanner.address);
     await expect(
       attestation.connect(scanner).writeAttestation(
-        agent.address, 75, 2, 2, "vuln", HASH_A, HASH_B, HASH_C
+        agent.address, 75, 2, 2, "vuln", "", HASH_A, HASH_B, HASH_C
       )
     )
       .to.emit(attestation, "AttestationWritten")
-      .withArgs(agent.address, 2, 2, HASH_A, HASH_B, (v: any) => v > 0n);
+      .withArgs(agent.address, 75, 2, 2, HASH_A, HASH_B, HASH_C, (v: any) => v > 0n);
   });
 
   it("Unauthorized scanner cannot write attestation", async () => {
     await expect(
       attestation.connect(scanner).writeAttestation(
-        agent.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+        agent.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Not authorized scanner");
   });
@@ -223,10 +224,10 @@ describe("Integration: Scanner write path → AttestationRegistry state", () => 
     await attestation.authorizeScanner(scanner.address);
     const [, , , agentB] = await ethers.getSigners();
     await attestation.connect(scanner).writeAttestation(
-      agent.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agent.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     await attestation.connect(scanner).writeAttestation(
-      agentB.address, 20, 1, 0, "", HASH_B, HASH_C, HASH_A
+      agentB.address, 20, 1, 0, "", "", HASH_B, HASH_C, HASH_A
     );
     const all = await attestation.getAllAttestedAgents();
     expect(all.length).to.equal(2);

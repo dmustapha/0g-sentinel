@@ -1,5 +1,8 @@
 // File: scanner/behavioral.ts
 import { callCompute } from "./compute";
+import { BehavioralSignals } from "./behavioral-seed";
+
+export type { BehavioralSignals };
 
 export interface BehavioralResult {
   behavioral_score: number;    // 0-100
@@ -8,60 +11,69 @@ export interface BehavioralResult {
   receipt_hash: string;
 }
 
-export interface AgentActivityData {
-  address: string;
-  transaction_count_30d: number;
-  fund_outflow_pct: number;      // % of balance transferred out in 30d
-  unique_contracts_called: number;
-  max_single_transfer_pct: number; // % of balance in single tx
-  call_frequency_spike: boolean;  // True if call rate anomalous
-  recent_transactions: Array<{
-    hash: string;
-    value: string;
-    to: string;
-    timestamp: number;
-  }>;
-}
+// Legacy alias — kept so scanner.ts can still import AgentActivityData by name
+// without a breaking change to internal call sites. New code should use BehavioralSignals.
+export type AgentActivityData = BehavioralSignals;
 
 const BEHAVIORAL_SYSTEM_PROMPT = `You are a blockchain agent security auditor specializing in behavioral analysis of AI agents on 0G mainnet.
 
-Analyze the provided agent activity data and classify the agent's behavioral risk.
+You are given pre-computed behavioral signals derived from the agent's full 30-day transaction history. Synthesize these signals into a risk verdict.
+
+Signal interpretation:
+- method_concentration (0–1): 1 = always the same contract method selector (machine precision); 0 = diverse calls (human/normal)
+- timing_regularity_cv: coefficient of variation of inter-transaction intervals; near-0 = machine-regular (suspicious); >0.5 = human-irregular (normal)
+- hour_entropy (0–3.58 bits): high = spread across all hours (normal); low = narrow time window (automated)
+- counterparty_herfindahl (0–1): 1 = all funds to one address (drain target); <0.2 = diverse interactions (normal)
+- nonce_gap_rate: 0 = no gaps (fully automated, continuous); >0.1 = human gaps (normal)
+- value_entropy: high = varied amounts (normal); near-0 = identical amounts per transaction (automated)
+- fund_outflow_pct: >80% is critical drain behavior; 30–79% elevated; <30% normal
+- max_single_transfer_pct: >25% in one transaction is a red flag
+
+FLAGGED pattern: high method_concentration + low timing_regularity_cv + high fund_outflow_pct + high counterparty_herfindahl = automated fund drain.
+SAFE pattern: low method_concentration + high timing_regularity_cv + low fund_outflow_pct + low counterparty_herfindahl.
 
 Return a JSON object with these exact fields:
 {
   "behavioral_score": <integer 0-100, where 100 is highest risk>,
   "threat_level": <"SAFE" | "CAUTION" | "FLAGGED">,
-  "reasoning": <string, 1-2 sentences explaining the verdict>
+  "reasoning": <string, 2-3 sentences citing specific signal values that drove the verdict>
 }
 
-Classification guidelines:
-- SAFE (score 0-29): Normal agent behavior. No suspicious patterns.
-- CAUTION (score 30-59): Some concerning patterns but not clearly malicious.
-- FLAGGED (score 60-100): Clear anomaly detected. Fund drain, access control bypass, or abnormal call patterns.
+Classification:
+- SAFE (0-29): Normal behavioral signals across the board.
+- CAUTION (30-59): One or more signals are elevated but the full pattern is ambiguous.
+- FLAGGED (60-100): Multiple signals align to a clear anomaly pattern (drain, bot, or takeover).`;
 
-Be conservative: only flag clear anomalies. Agents with low activity should default to CAUTION, not FLAGGED.`;
-
+/**
+ * Pipeline 1: Behavioral analysis via 0G Compute.
+ * Sends pre-computed on-chain signals to the LLM and returns a risk verdict
+ * (SAFE/CAUTION/FLAGGED), a 0-100 score, LLM reasoning, and a 0G Compute receipt hash.
+ */
 export async function runBehavioralAnalysis(
-  activity: AgentActivityData
+  signals: BehavioralSignals
 ): Promise<BehavioralResult> {
-  const userMessage = `Analyze this AI agent's behavioral risk on 0G mainnet:
+  const userMessage = `Analyze these pre-computed behavioral signals for AI agent ${signals.address}:
 
-Agent address: ${activity.address}
-Activity window: Last 30 days
-Transaction count: ${activity.transaction_count_30d}
-Fund outflow: ${activity.fund_outflow_pct}% of balance transferred out
-Max single transfer: ${activity.max_single_transfer_pct}% of balance in one transaction
-Unique contracts called: ${activity.unique_contracts_called}
-Call frequency spike detected: ${activity.call_frequency_spike}
+Transaction volume (30-day window):
+  Total transactions: ${signals.tx_count_30d}
+  Last 7-day transactions: ${signals.tx_count_7d}
 
-Recent transactions (last 5):
-${activity.recent_transactions
-    .slice(0, 5)
-    .map(
-      (tx) =>
-        `  - ${tx.hash.slice(0, 10)}... to ${tx.to.slice(0, 10)}... value: ${tx.value} at ${new Date(tx.timestamp * 1000).toISOString()}`
-    )
-    .join("\n")}
+Fund flow:
+  Outflow as % of balance: ${signals.fund_outflow_pct}%
+  Largest single transfer: ${signals.max_single_transfer_pct}% of balance
+  Large outflow flag: ${signals.large_outflow_detected}
+
+Behavioral pattern signals:
+  Method concentration (0=diverse, 1=always same): ${signals.method_concentration.toFixed(2)}
+  Timing regularity CV (0=machine, >0.5=human): ${signals.timing_regularity_cv.toFixed(2)}
+  Hour entropy bits (high=spread): ${signals.hour_entropy.toFixed(1)}
+  Counterparty HHI (0=diverse, 1=single target): ${signals.counterparty_herfindahl.toFixed(2)}
+  Nonce gap rate (0=continuous bot, >0.1=human): ${signals.nonce_gap_rate.toFixed(2)}
+  Value entropy bits (low=uniform amounts): ${signals.value_entropy.toFixed(1)}
+
+Anomaly flags:
+  Call frequency spike: ${signals.call_frequency_spike}
+  Burst activity detected: ${signals.burst_detected}
 
 Return JSON with behavioral_score, threat_level, and reasoning.`;
 

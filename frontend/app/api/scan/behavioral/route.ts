@@ -1,4 +1,7 @@
 // File: frontend/app/api/scan/behavioral/route.ts
+// POST /api/scan/behavioral — triggers a full two-pipeline scan (behavioral + code) for an agent.
+// Runs Pipeline 1 (behavioral signals → 0G Compute) and Pipeline 2 (Solidity audit → 0G Compute)
+// in parallel, archives evidence to 0G Storage, then writes the attestation to 0G Chain.
 import { NextRequest, NextResponse } from "next/server";
 import { runFullScan } from "@scanner/scanner";
 

@@ -16,6 +16,11 @@ const client = new OpenAI({
   apiKey: process.env.ZERO_G_COMPUTE_API_KEY || "",
 });
 
+/**
+ * Send a chat completion request to 0G Compute and return the response with a cryptographic
+ * receipt hash. The receipt (zg-res-key header) proves a specific inference ran on 0G network —
+ * this hash is stored on-chain as tamper-evident proof of the AI verdict.
+ */
 export async function callCompute(
   systemPrompt: string,
   userMessage: string,

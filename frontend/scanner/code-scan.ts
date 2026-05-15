@@ -32,6 +32,12 @@ Examples of code_findings:
 - "unprotected selfdestruct in kill()"
 - "" (for CLEAN)`;
 
+/**
+ * Pipeline 2: Smart contract vulnerability scan via 0G Compute.
+ * Sends Solidity source to the LLM auditor and returns a risk level
+ * (CLEAN/WARNING/VULNERABLE), specific findings, and a 0G Compute receipt hash.
+ * Returns WARNING with a placeholder if no source is available.
+ */
 export async function runCodeScan(
   agentAddress: string,
   contractSource: string

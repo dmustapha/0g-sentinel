@@ -19,6 +19,7 @@ export interface AttestationData {
   threatLevel: number;
   codeRisk: number;
   codeFindings: string;
+  reasoning: string;
   behavioralReceiptHash: string;
   codeReceiptHash: string;
   evidenceHash: string;

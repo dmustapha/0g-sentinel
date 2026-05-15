@@ -104,7 +104,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     await attestation.authorizeScanner(scanner.address);
     await expect(
       attestation.connect(scanner).writeAttestation(
-        ethers.ZeroAddress, 50, 1, 1, "", HASH_A, HASH_B, HASH_C
+        ethers.ZeroAddress, 50, 1, 1, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Invalid agent address");
   });
@@ -114,7 +114,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     await attestation.authorizeScanner(scanner.address);
     await expect(
       attestation.connect(scanner).writeAttestation(
-        agentA.address, 101, 0, 0, "", HASH_A, HASH_B, HASH_C
+        agentA.address, 101, 0, 0, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Score must be 0-100");
   });
@@ -123,7 +123,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     const { attestation, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 100, 2, 2, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 100, 2, 2, "", "", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agentA.address);
     expect(Number(att.behavioral_score)).to.equal(100);
@@ -133,7 +133,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     const { attestation, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 0, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 0, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agentA.address);
     expect(Number(att.behavioral_score)).to.equal(0);
@@ -144,7 +144,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     await attestation.authorizeScanner(scanner.address);
     await expect(
       attestation.connect(scanner).writeAttestation(
-        agentA.address, 50, 3, 0, "", HASH_A, HASH_B, HASH_C
+        agentA.address, 50, 3, 0, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Invalid threat_level");
   });
@@ -154,7 +154,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     await attestation.authorizeScanner(scanner.address);
     await expect(
       attestation.connect(scanner).writeAttestation(
-        agentA.address, 50, 0, 3, "", HASH_A, HASH_B, HASH_C
+        agentA.address, 50, 0, 3, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Invalid code_risk");
   });
@@ -163,7 +163,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     const { attestation, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 50, 1, 1, "", ZERO_BYTES32, ZERO_BYTES32, ZERO_BYTES32
+      agentA.address, 50, 1, 1, "", "", ZERO_BYTES32, ZERO_BYTES32, ZERO_BYTES32
     );
     const att = await attestation.getAttestation(agentA.address);
     expect(att.behavioral_receipt_hash).to.equal(ZERO_BYTES32);
@@ -173,7 +173,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     const { attestation, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const att = await attestation.getAttestation(agentA.address);
     expect(att.code_findings).to.equal("");
@@ -183,7 +183,7 @@ describe("Edge: AttestationRegistry — writeAttestation()", () => {
     const { attestation, agentA, notOwner } = await deployAll();
     await expect(
       attestation.connect(notOwner).writeAttestation(
-        agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+        agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Not authorized scanner");
   });
@@ -196,7 +196,7 @@ describe("Edge: AttestationRegistry — authorizeScanner/revokeScanner()", () =>
     await attestation.revokeScanner(scanner.address);
     await expect(
       attestation.connect(scanner).writeAttestation(
-        agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+        agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
       )
     ).to.be.revertedWith("Not authorized scanner");
   });
@@ -212,7 +212,7 @@ describe("Edge: AttestationRegistry — authorizeScanner/revokeScanner()", () =>
     const { attestation, owner, agentA } = await deployAll();
     // onlyAuthorized allows owner OR authorized scanner
     await attestation.connect(owner).writeAttestation(
-      agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     expect(await attestation.hasAttestation(agentA.address)).to.be.true;
   });
@@ -231,7 +231,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     const { attestation, gate, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 59, 1, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 59, 1, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe] = await gate.isSafe(agentA.address);
     expect(safe).to.be.true;
@@ -241,7 +241,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     const { attestation, gate, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 60, 2, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 60, 2, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     const [safe] = await gate.isSafe(agentA.address);
     expect(safe).to.be.false;
@@ -251,7 +251,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     const { attestation, gate, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 1, "warning only", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 1, "warning only", "", HASH_A, HASH_B, HASH_C
     );
     const [safe] = await gate.isSafe(agentA.address);
     expect(safe).to.be.true;
@@ -261,7 +261,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     const { attestation, gate, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 2, "reentrancy", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 2, "reentrancy", "", HASH_A, HASH_B, HASH_C
     );
     const [safe] = await gate.isSafe(agentA.address);
     expect(safe).to.be.false;
@@ -273,7 +273,7 @@ describe("Edge: AgentGate — executeIfSafe()", () => {
     const { attestation, gate, scanner, agentA } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     // Call with invalid calldata to a contract that will revert
     const invalidCalldata = "0xdeadbeef";
@@ -286,7 +286,7 @@ describe("Edge: AgentGate — executeIfSafe()", () => {
     const { attestation, gate, scanner, agentA, notOwner } = await deployAll();
     await attestation.authorizeScanner(scanner.address);
     await attestation.connect(scanner).writeAttestation(
-      agentA.address, 10, 0, 0, "", HASH_A, HASH_B, HASH_C
+      agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
     // Calling an EOA with empty calldata always succeeds
     const tx = await gate.executeIfSafe(agentA.address, notOwner.address, "0x");

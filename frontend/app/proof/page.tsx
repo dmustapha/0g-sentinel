@@ -48,7 +48,7 @@ export default function ProofPage() {
 
   const statusBadge = (status: string) => {
     if (status === "live")
-      return <span className="sg-badge sg-badge-safe">Live</span>;
+      return <span className="sg-badge sg-badge-live">Live</span>;
     if (status === "degraded")
       return <span className="sg-badge sg-badge-caution">Degraded</span>;
     return <span className="sg-badge sg-badge-neutral">—</span>;
@@ -141,38 +141,31 @@ export default function ProofPage() {
           </div>
         </div>
 
-        {/* Integration status */}
+        {/* Integration pipeline */}
         <div className="sg-reveal-up sg-delay-2">
-          <div className="sg-label" style={{ marginBottom: "1rem" }}>0G Integration Status</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          <div className="sg-label" style={{ marginBottom: "1.25rem" }}>0G Integration Pipeline</div>
+          <div style={{ paddingLeft: "0.5rem" }}>
             {integrations.map((intg) => (
               <div
                 key={intg.label}
-                className={intg.status === "degraded" ? "sg-glass-card-caution" : "sg-glass-card"}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "minmax(0, 120px) auto 1fr",
-                  gap: "0.75rem",
-                  padding: "1rem 1.25rem",
-                  alignItems: "start",
-                  minWidth: 0,
-                  overflow: "hidden",
-                }}
+                className={`sg-pipeline-step${intg.status === "degraded" ? " caution" : " live"}`}
               >
-                <div style={{
-                  fontFamily: "Space Grotesk, sans-serif",
-                  fontSize: "0.875rem",
-                  fontWeight: 600,
-                  color: "#e2e8f0",
-                }}>
-                  {intg.label}
+                <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
+                  <span style={{
+                    fontFamily: "Space Grotesk, sans-serif",
+                    fontSize: "0.875rem",
+                    fontWeight: 600,
+                    color: "#e2e8f0",
+                  }}>
+                    {intg.label}
+                  </span>
+                  {statusBadge(intg.status)}
                 </div>
-                <div>{statusBadge(intg.status)}</div>
                 <div style={{
                   fontFamily: "Inter, sans-serif",
                   fontSize: "0.8125rem",
                   color: "#64748b",
-                  lineHeight: 1.5,
+                  lineHeight: 1.55,
                 }}>
                   {intg.detail}
                 </div>
@@ -185,7 +178,7 @@ export default function ProofPage() {
       {/* ── DIVIDER ── */}
       <div className="sg-divider" />
 
-      {/* ── RIGHT: Key facts ── */}
+      {/* ── RIGHT: System pulse ── */}
       <div style={{
         flex: "1 1 260px",
         maxWidth: 300,
@@ -199,6 +192,55 @@ export default function ProofPage() {
         overflowY: "auto",
       }}>
 
+        {/* System status summary */}
+        <div>
+          <div className="sg-label" style={{ marginBottom: "1rem" }}>System Pulse</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
+            {[
+              { label: "0G Compute", ok: true, detail: "Inference active" },
+              { label: "0G Storage", ok: false, detail: "SHA256 fallback" },
+              { label: "0G Chain", ok: true, detail: "Chain ID 16661" },
+              { label: "AgentGate", ok: true, detail: "isSafe() live" },
+            ].map(({ label, ok, detail }) => (
+              <div key={label} style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.625rem",
+                padding: "0.5rem 0.75rem",
+                background: ok ? "rgba(16,185,129,0.03)" : "rgba(245,158,11,0.04)",
+                border: `1px solid ${ok ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)"}`,
+                borderRadius: 2,
+              }}>
+                <div style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  background: ok ? "#10b981" : "#f59e0b",
+                  boxShadow: ok
+                    ? "0 0 8px rgba(16,185,129,0.7)"
+                    : "0 0 8px rgba(245,158,11,0.6)",
+                  flexShrink: 0,
+                }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontFamily: "Space Grotesk, sans-serif",
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    color: "#c8d3e8",
+                  }}>
+                    {label}
+                  </div>
+                  <div className="sg-mono" style={{ fontSize: "0.6rem", color: "#334155", marginTop: 1 }}>
+                    {detail}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="sg-rule" />
+
         <div>
           <div className="sg-label" style={{ marginBottom: "0.75rem" }}>Why On-Chain?</div>
           <p style={{
@@ -207,39 +249,24 @@ export default function ProofPage() {
             color: "#64748b",
             lineHeight: 1.6,
           }}>
-            Off-chain attestations can be forged. On-chain attestations are immutable, verifiable by any smart contract,
-            and composable — AgentGate can require them without trusting a centralized oracle.
+            Off-chain attestations can be forged. On-chain records are immutable, verifiable by any smart contract,
+            and composable — AgentGate requires no centralized oracle.
           </p>
         </div>
 
         <div className="sg-rule" />
 
         <div>
-          <div className="sg-label" style={{ marginBottom: "0.75rem" }}>Receipt Hash Uniqueness</div>
+          <div className="sg-label" style={{ marginBottom: "0.5rem" }}>Receipt Hash Proof</div>
           <p style={{
             fontFamily: "Inter, sans-serif",
             fontSize: "0.75rem",
             color: "#64748b",
             lineHeight: 1.6,
           }}>
-            0G Compute returns a unique <span className="sg-mono" style={{ color: "#94a3b8" }}>zg-res-key</span> UUID per
-            inference call. Behavioral and code scans produce independent hashes — identical hashes would indicate
-            a non-compliant integration.
-          </p>
-        </div>
-
-        <div className="sg-rule" />
-
-        <div>
-          <div className="sg-label" style={{ marginBottom: "0.5rem" }}>AgentMesh Track</div>
-          <p style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: "0.75rem",
-            color: "#64748b",
-            lineHeight: 1.5,
-          }}>
-            AgentGate.sol enforces risk-management gating for DeFi agents — a composable trust rail for any trading
-            protocol on 0G.
+            Each 0G Compute call returns a unique{" "}
+            <span className="sg-mono" style={{ color: "#94a3b8" }}>zg-res-key</span> UUID.
+            Two independent hashes — behavioral + code — prove two separate AI inferences ran.
           </p>
         </div>
 

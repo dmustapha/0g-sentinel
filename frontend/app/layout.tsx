@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { GridOverlays } from "@/components/GridOverlays";
+import { NavLinks } from "@/components/NavLinks";
 
 const spaceGrotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -42,10 +43,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <a href="/agents" className="sg-topbar-brand">
             0G <span>Sentinel</span>
           </a>
-          <nav className="sg-topbar-nav">
-            <a href="/agents" className="sg-topbar-link">Dashboard</a>
-            <a href="/proof" className="sg-topbar-link">Proof</a>
-          </nav>
+          <NavLinks />
           <div className="sg-topbar-status">
             <span className="sg-topbar-dot" />
             <span>Live · 0G Aristotle · 16661</span>

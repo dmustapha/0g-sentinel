@@ -615,3 +615,180 @@ body::after {
   border-radius: 2px;
   transition: width 0.6s ease;
 }
+
+/* ─────────────────────────────────────────
+   SKELETON LOADER
+────────────────────────────────────────── */
+
+.sg-skeleton {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    rgba(14, 27, 48, 0.8) 0%,
+    rgba(30, 45, 74, 0.9) 50%,
+    rgba(14, 27, 48, 0.8) 100%
+  );
+  background-size: 200% 100%;
+  animation: sg-shimmer 1.8s ease-in-out infinite;
+  border-radius: 2px;
+}
+
+@keyframes sg-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ─────────────────────────────────────────
+   COUNTER CURSOR (typing animation)
+────────────────────────────────────────── */
+
+.sg-cursor::after {
+  content: '_';
+  animation: sg-blink 0.8s step-end infinite;
+  color: #00d4ff;
+  margin-left: 2px;
+  font-weight: 400;
+}
+
+@keyframes sg-blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0; }
+}
+
+/* ─────────────────────────────────────────
+   SCAN SWEEP (active scanning state)
+────────────────────────────────────────── */
+
+.sg-scan-active {
+  position: relative;
+  overflow: hidden;
+}
+
+.sg-scan-active::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(0, 212, 255, 0.1) 50%,
+    transparent 100%
+  );
+  animation: sg-scan-sweep 1.8s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes sg-scan-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* ─────────────────────────────────────────
+   NEON GLOW HOVER
+────────────────────────────────────────── */
+
+.sg-neon-hover {
+  transition: box-shadow 0.25s, border-color 0.25s;
+}
+
+.sg-neon-hover:hover {
+  box-shadow:
+    0 0 0 1px rgba(0, 212, 255, 0.2),
+    0 0 20px rgba(0, 212, 255, 0.06),
+    inset 0 0 8px rgba(0, 212, 255, 0.02);
+}
+
+/* ─────────────────────────────────────────
+   PIPELINE VISUALIZATION
+────────────────────────────────────────── */
+
+.sg-pipeline-step {
+  position: relative;
+  padding: 0.875rem 0 0.875rem 1.5rem;
+  border-left: 1px solid #1e2d4a;
+}
+
+.sg-pipeline-step:last-child {
+  border-left-color: transparent;
+}
+
+.sg-pipeline-step::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+  animation: sg-pulse-live 2.5s ease-in-out infinite;
+}
+
+.sg-pipeline-step.caution::before {
+  background: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
+  animation: sg-pulse-caution 2s ease-in-out infinite;
+}
+
+@keyframes sg-pulse-live {
+  0%, 100% { box-shadow: 0 0 10px rgba(16, 185, 129, 0.6); }
+  50%       { box-shadow: 0 0 20px rgba(16, 185, 129, 1), 0 0 4px #10b981; }
+}
+
+@keyframes sg-pulse-caution {
+  0%, 100% { box-shadow: 0 0 8px rgba(245, 158, 11, 0.4); }
+  50%       { box-shadow: 0 0 18px rgba(245, 158, 11, 0.8); }
+}
+
+/* ─────────────────────────────────────────
+   TOPBAR ACTIVE LINK
+────────────────────────────────────────── */
+
+.sg-topbar-link {
+  position: relative;
+}
+
+.sg-topbar-link.active {
+  color: #00d4ff;
+  text-shadow: 0 0 14px rgba(0, 212, 255, 0.5);
+}
+
+/* ─────────────────────────────────────────
+   THREAT CARD VARIANTS
+────────────────────────────────────────── */
+
+.sg-threat-safe {
+  background: rgba(16, 185, 129, 0.04);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: 2px;
+}
+
+.sg-threat-caution {
+  background: rgba(245, 158, 11, 0.04);
+  border: 1px solid rgba(245, 158, 11, 0.15);
+  border-radius: 2px;
+}
+
+.sg-threat-danger {
+  background: rgba(239, 68, 68, 0.04);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: 2px;
+}
+
+/* ─────────────────────────────────────────
+   LIVE BADGE PULSE
+────────────────────────────────────────── */
+
+.sg-badge-live {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+  animation: sg-badge-pulse 3s ease-in-out infinite;
+}
+
+@keyframes sg-badge-pulse {
+  0%, 85%, 100% { opacity: 1; }
+  92%           { opacity: 0.6; }
+}

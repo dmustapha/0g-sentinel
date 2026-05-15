@@ -44,7 +44,7 @@ export function AgentRow({ agent, scanning, onRescan }: AgentRowProps) {
       : "#10b981";
 
   return (
-    <div className={`sg-agent-row ${threatClass}`}>
+    <div className={`sg-agent-row ${threatClass}${scanning ? " sg-scan-active" : ""}`}>
       {/* Name + address */}
       <div style={{ flex: 1, minWidth: 0 }}>
         <Link

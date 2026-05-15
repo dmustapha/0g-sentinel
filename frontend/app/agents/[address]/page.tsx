@@ -4,6 +4,7 @@ import { AttestationData } from "@/lib/types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnimatedScoreBar } from "@/components/AnimatedScoreBar";
+import { ScanInput } from "@/components/ScanInput";
 
 export const revalidate = 30;
 
@@ -115,13 +116,30 @@ export default async function AgentDetailPage({ params }: Props) {
           </div>
 
           {!attestation ? (
-            <div className="sg-glass-card sg-reveal-up" style={{ padding: "2rem" }}>
-              <div style={{
-                fontFamily: "JetBrains Mono, monospace",
-                fontSize: "0.8125rem",
-                color: "#334155",
-              }}>
-                No attestation found on-chain for this agent address.
+            <div className="sg-glass-card sg-reveal-up" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+              <div>
+                <div style={{
+                  fontFamily: "JetBrains Mono, monospace",
+                  fontSize: "0.8125rem",
+                  color: "#475569",
+                  marginBottom: "0.5rem",
+                }}>
+                  No attestation found on-chain for this agent address.
+                </div>
+                <div style={{
+                  fontFamily: "Inter, sans-serif",
+                  fontSize: "0.75rem",
+                  color: "#334155",
+                  lineHeight: 1.6,
+                }}>
+                  Run a full scan to generate a behavioral risk score, code vulnerability report, and immutable on-chain attestation via 0G Compute + 0G Chain.
+                </div>
+              </div>
+              <div>
+                <div className="sg-label" style={{ marginBottom: "0.625rem", fontSize: "0.5625rem" }}>
+                  Scan this agent
+                </div>
+                <ScanInput defaultAddress={params.address} />
               </div>
             </div>
           ) : (

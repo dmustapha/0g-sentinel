@@ -4,7 +4,7 @@ Security infrastructure for the AI agent era. 0G Sentinel scans every registered
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity)](https://soliditylang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org/)
+[![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](https://nextjs.org/)
 [![0G Chain](https://img.shields.io/badge/0G-Aristotle_Mainnet-00d4ff)](https://chainscan.0g.ai)
 [![Tests](https://img.shields.io/badge/tests-82_passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -128,8 +128,8 @@ npm install
 cd frontend && npm install && cd ..
 
 # 2. Set environment variables
-cp .env.example .env
-# Fill in: ZERO_G_COMPUTE_API_KEY, SCANNER_PRIVATE_KEY, contract addresses
+cp frontend/.env.example frontend/.env.local
+# Fill in: ZERO_G_COMPUTE_API_KEY, ZERO_G_PRIVATE_KEY, and verify contract addresses
 
 # 3. Compile contracts
 npx hardhat compile

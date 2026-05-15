@@ -1,13 +1,34 @@
 "use client";
 // File: frontend/app/agents/page.tsx
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { AgentWithAttestation } from "@/lib/types";
-import { AgentRow } from "@/components/AgentRow";
 
-function StatSkeleton({ width = 36 }: { width?: number }) {
-  return (
-    <div className="sg-skeleton" style={{ width, height: 28, borderRadius: 2 }} />
-  );
+function relativeTime(ts: number): string {
+  if (!ts) return "—";
+  const diff = Math.floor((Date.now() - ts * 1000) / 1000);
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
+}
+
+function scoreColor(score: number): string {
+  if (score >= 60) return "#ef4444"; // FLAGGED (60-100)
+  if (score >= 30) return "#f59e0b"; // CAUTION (30-59)
+  return "#10b981";                  // SAFE (0-29)
+}
+
+function badgeClass(agent: AgentWithAttestation): string {
+  if (agent.threat_level === 2 || agent.code_risk === 2) return "sg-tbl-badge sg-tbl-badge-threat";
+  if (agent.threat_level === 1 || agent.code_risk === 1) return "sg-tbl-badge sg-tbl-badge-caution";
+  return "sg-tbl-badge sg-tbl-badge-safe";
+}
+
+function badgeLabel(agent: AgentWithAttestation): string {
+  if (agent.threat_level === 2 || agent.code_risk === 2) return "THREAT";
+  if (agent.threat_level === 1 || agent.code_risk === 1) return "CAUTION";
+  return "SAFE";
 }
 
 export default function AgentsPage() {
@@ -16,9 +37,6 @@ export default function AgentsPage() {
   const [scanning, setScanning] = useState<string | null>(null);
   const [scanError, setScanError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState(false);
-  const [displayMillions, setDisplayMillions] = useState(0);
-  const [counterDone, setCounterDone] = useState(false);
-  const rafRef = useRef<number | null>(null);
 
   async function fetchAgents() {
     try {
@@ -59,278 +77,147 @@ export default function AgentsPage() {
     fetchAgents();
   }, []);
 
-  useEffect(() => {
-    const target = 88.88;
-    const duration = 2000;
-    const start = performance.now();
-    const tick = (now: number) => {
-      const t = Math.min((now - start) / duration, 1);
-      const ease = t === 1 ? 1 : 1 - Math.pow(2, -10 * t);
-      setDisplayMillions(target * ease);
-      if (t < 1) {
-        rafRef.current = requestAnimationFrame(tick);
-      } else {
-        setDisplayMillions(target);
-        setCounterDone(true);
-      }
-    };
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
-    };
-  }, []);
-
-  const flagged = agents.filter((a) => a.threat_level === 2 || a.code_risk === 2).length;
-  const safe = agents.filter((a) => a.threat_level === 0 && a.code_risk === 0).length;
-  const caution = agents.filter(
-    (a) => (a.threat_level === 1 || a.code_risk === 1) && a.threat_level < 2 && a.code_risk < 2
-  ).length;
-
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", minHeight: "calc(100vh - 44px)" }}>
-
-      {/* ── LEFT: Hero Panel ── */}
-      <div style={{
-        flex: "1 1 480px",
-        padding: "clamp(2rem, 4vw, 3.5rem) clamp(1.5rem, 4vw, 3rem) 3rem clamp(1.5rem, 5vw, 4rem)",
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        minWidth: 0,
-        overflow: "hidden",
-        position: "relative",
-      }}>
-
-        {/* Hero content */}
+    <div className="sg-dash-section">
+      <div className="sg-dash-header">
         <div>
-          {/* Axis label */}
-          <div className="sg-reveal-fade sg-delay-1" style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "0.75rem",
-            marginBottom: "2.75rem",
-          }}>
-            <div style={{ width: 32, height: 1, background: "rgba(0,212,255,0.3)" }} />
-            <span className="sg-label" style={{ color: "rgba(0,212,255,0.6)" }}>
-              0G ecosystem at risk
-            </span>
-          </div>
-
-          {/* Massive display number — animated counter */}
-          <div className="sg-reveal-up sg-delay-1" style={{ marginBottom: "0.75rem" }}>
-            <div
-              className={`sg-display sg-gradient-text${!counterDone ? " sg-cursor" : ""}`}
-              style={{
-                fontSize: "clamp(4.5rem, 13vw, 9.5rem)",
-                lineHeight: 0.85,
-                letterSpacing: "-0.05em",
-              }}
-            >
-              ${displayMillions.toFixed(2)}M
-            </div>
-          </div>
-
-          {/* Sub-heading */}
-          <div className="sg-reveal-up sg-delay-2" style={{ marginBottom: "2rem" }}>
-            <div style={{
-              fontFamily: "Space Grotesk, sans-serif",
-              fontSize: "clamp(1.125rem, 2.5vw, 1.75rem)",
-              color: "#334155",
-              letterSpacing: "-0.02em",
-              fontWeight: 500,
-            }}>
-              in ecosystem grants
-            </div>
-          </div>
-
-          {/* Pull quote */}
-          <div className="sg-reveal-fade sg-delay-3" style={{ maxWidth: 520, marginBottom: "3.5rem" }}>
-            <div className="sg-pull-quote">
-              Every AI agent operating blind — no behavioral audit, no code verification,
-              no on-chain proof. 0G Sentinel brings attestation infrastructure to every
-              agent on 0G Aristotle mainnet.
-            </div>
-          </div>
-
-          {/* Metric strip */}
-          <div className="sg-reveal-up sg-delay-4" style={{
-            display: "flex",
-            gap: "0",
-            paddingTop: "2rem",
-            borderTop: "1px solid #0f1c30",
-          }}>
-            <div style={{ flex: 1, paddingRight: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#e2e8f0", minHeight: 28, display: "flex", alignItems: "center" }}>
-                {loading ? <StatSkeleton width={28} /> : agents.length}
-              </div>
-              <div className="sg-stat__label" style={{ marginTop: 6 }}>Monitored</div>
-            </div>
-            <div style={{ width: 1, background: "#0f1c30", flexShrink: 0 }} />
-            <div style={{ flex: 1, paddingLeft: "2rem", paddingRight: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#10b981", minHeight: 28, display: "flex", alignItems: "center" }}>
-                {loading ? <StatSkeleton width={20} /> : safe}
-              </div>
-              <div className="sg-stat__label" style={{ marginTop: 6 }}>Verified safe</div>
-            </div>
-            <div style={{ width: 1, background: "#0f1c30", flexShrink: 0 }} />
-            <div style={{ flex: 1, paddingLeft: "2rem", paddingRight: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#f59e0b", minHeight: 28, display: "flex", alignItems: "center" }}>
-                {loading ? <StatSkeleton width={20} /> : caution}
-              </div>
-              <div className="sg-stat__label" style={{ marginTop: 6 }}>Caution</div>
-            </div>
-            <div style={{ width: 1, background: "#0f1c30", flexShrink: 0 }} />
-            <div style={{ flex: 1, paddingLeft: "2rem" }}>
-              <div className="sg-stat__number" style={{ color: "#ef4444", minHeight: 28, display: "flex", alignItems: "center" }}>
-                {loading ? <StatSkeleton width={20} /> : flagged}
-              </div>
-              <div className="sg-stat__label" style={{ marginTop: 6 }}>Threats</div>
-            </div>
+          <h1 className="sg-dash-title">Registered Agents</h1>
+          <div className="sg-dash-subtitle">
+            Behavioral audit · Code scan · On-chain attestation · 0G Aristotle
           </div>
         </div>
-
-        {/* Bottom: chain info */}
-        <div className="sg-reveal-fade sg-delay-5" style={{
-          display: "flex",
-          gap: "2rem",
-          paddingTop: "1.5rem",
-          borderTop: "1px solid #0f1c30",
-          marginTop: "2rem",
-        }}>
-          <div className="sg-data-field" style={{ gridTemplateColumns: "auto 1fr", paddingBottom: 0, borderBottom: "none" }}>
-            <span className="sg-data-label">Chain</span>
-            <span className="sg-mono" style={{ color: "#00d4ff" }}>0G Aristotle Mainnet · 16661</span>
-          </div>
-          <div className="sg-data-field" style={{ gridTemplateColumns: "auto 1fr", paddingBottom: 0, borderBottom: "none" }}>
-            <span className="sg-data-label">Explorer</span>
-            <a
-              href="https://chainscan.0g.ai"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="sg-mono"
-              style={{ color: "#334155", textDecoration: "none", transition: "color 0.2s" }}
-              onMouseOver={(e) => (e.currentTarget.style.color = "#e2e8f0")}
-              onMouseOut={(e) => (e.currentTarget.style.color = "#334155")}
-            >
-              chainscan.0g.ai ↗
-            </a>
-          </div>
-        </div>
+        <button
+          className="sg-btn-refresh"
+          onClick={fetchAgents}
+          disabled={loading}
+        >
+          {loading ? "Loading…" : "Refresh"}
+        </button>
       </div>
 
-      {/* ── DIVIDER ── */}
-      <div className="sg-divider" />
-
-      {/* ── RIGHT: Data Panel ── */}
-      <div style={{
-        flex: "1 1 360px",
-        maxWidth: 420,
-        display: "flex",
-        flexDirection: "column",
-        background: "rgba(8,1,14,0.92)",
-        backdropFilter: "blur(8px)",
-        overflow: "hidden",
-        borderTop: "1px solid #0f1c30",
-      }}>
-
-        {/* Panel header */}
+      {scanError && (
         <div style={{
-          padding: "1rem 1.25rem",
-          borderBottom: "1px solid #0f1c30",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
+          padding: "0.625rem 0",
+          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontSize: "0.6875rem",
+          color: "#ef4444",
+          marginBottom: "0.75rem",
         }}>
-          <span className="sg-label">Registered Agents</span>
-          <button
-            onClick={fetchAgents}
-            className="sg-btn-ghost"
-            style={{ padding: "0.25rem 0.625rem", fontSize: "0.625rem" }}
-          >
-            Refresh
-          </button>
+          {scanError}
         </div>
+      )}
 
-        {/* Scan error banner */}
-        {scanError && (
-          <div style={{
-            padding: "0.625rem 1.25rem",
-            background: "rgba(239,68,68,0.08)",
-            borderBottom: "1px solid rgba(239,68,68,0.2)",
-            fontFamily: "JetBrains Mono, monospace",
-            fontSize: "0.6875rem",
-            color: "#ef4444",
-          }}>
-            {scanError}
-          </div>
-        )}
-
-        {/* Agent list */}
-        <div style={{ flex: 1, overflowY: "auto" }}>
-          {loading ? (
-            <div style={{
-              padding: "3rem 1.25rem",
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: "0.75rem",
-              color: "#334155",
-              textAlign: "center",
-            }}>
-              Loading from 0G Chain...
-            </div>
-          ) : fetchError ? (
-            <div style={{
-              padding: "3rem 1.25rem",
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: "0.75rem",
-              color: "#ef4444",
-              textAlign: "center",
-            }}>
-              Failed to load agents — check RPC connection
-            </div>
-          ) : agents.length === 0 ? (
-            <div style={{
-              padding: "3rem 1.25rem",
-              fontFamily: "JetBrains Mono, monospace",
-              fontSize: "0.75rem",
-              color: "#334155",
-              textAlign: "center",
-            }}>
-              No agents registered
-            </div>
-          ) : (
-            agents.map((agent) => (
-              <AgentRow
+      {fetchError ? (
+        <div style={{
+          padding: "4rem 0",
+          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontSize: "0.75rem",
+          color: "#ef4444",
+          textAlign: "center",
+        }}>
+          Failed to load agents — check RPC connection
+        </div>
+      ) : loading ? (
+        <div style={{
+          padding: "4rem 0",
+          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontSize: "0.75rem",
+          color: "rgba(0,212,255,0.4)",
+          textAlign: "center",
+        }}>
+          Loading from 0G Chain…
+        </div>
+      ) : agents.length === 0 ? (
+        <div style={{
+          padding: "4rem 0",
+          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontSize: "0.75rem",
+          color: "#334155",
+          textAlign: "center",
+        }}>
+          No agents registered
+        </div>
+      ) : (
+        <table className="sg-agent-table">
+          <thead>
+            <tr>
+              <th>AGENT</th>
+              <th className="sg-score-cell">TRUST SCORE</th>
+              <th>STATUS</th>
+              <th>LAST ATTESTED</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {agents.map((agent, i) => (
+              <tr
                 key={agent.address}
-                agent={agent}
-                scanning={scanning === agent.address}
-                onRescan={scanning ? undefined : handleRescan}
-              />
-            ))
-          )}
-        </div>
+                className="sg-agent-tr"
+                style={{ animationDelay: `${i * 60}ms` }}
+              >
+                <td>
+                  <div className="sg-tbl-agent-name">
+                    <Link href={`/agents/${agent.address}`} style={{ color: "inherit", textDecoration: "none" }}>
+                      {agent.name || "Unnamed Agent"}
+                    </Link>
+                  </div>
+                  <div className="sg-tbl-agent-addr">
+                    {agent.address.slice(0, 6)}…{agent.address.slice(-4)}
+                  </div>
+                </td>
+                <td className="sg-score-cell">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                    <span
+                      className="sg-tbl-score-val"
+                      style={{ color: scoreColor(agent.behavioral_score) }}
+                    >
+                      {agent.behavioral_score}
+                    </span>
+                    <div className="sg-tbl-score-track">
+                      <div
+                        className="sg-tbl-score-fill"
+                        style={{
+                          width: `${agent.behavioral_score}%`,
+                          background: scoreColor(agent.behavioral_score),
+                        }}
+                      />
+                    </div>
+                  </div>
+                </td>
+                <td>
+                  <span className={badgeClass(agent)}>{badgeLabel(agent)}</span>
+                </td>
+                <td>
+                  <span className="sg-tbl-time">
+                    {agent.has_attestation ? relativeTime(agent.attestation_timestamp) : "—"}
+                  </span>
+                </td>
+                <td>
+                  <button
+                    className="sg-btn-refresh"
+                    disabled={scanning !== null}
+                    onClick={() => handleRescan(agent.address)}
+                    style={{ fontSize: "0.625rem", padding: "0.25rem 0.625rem" }}
+                    aria-label={`Rescan ${agent.address.slice(0, 6)}…${agent.address.slice(-4)}`}
+                  >
+                    {scanning === agent.address ? "Scanning…" : "Rescan"}
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
-        {/* Panel footer: scan CTA */}
-        <div style={{
-          padding: "1.25rem",
-          borderTop: "1px solid #0f1c30",
-          background: "rgba(5,8,16,0.8)",
-        }}>
-          <div className="sg-label" style={{ marginBottom: "0.5rem" }}>
-            Run Security Scan
-          </div>
-          <p style={{
-            fontFamily: "Inter, sans-serif",
-            fontSize: "0.75rem",
-            color: "#334155",
-            marginBottom: "0.875rem",
-            lineHeight: 1.5,
-          }}>
-            Behavioral analysis + code audit via 0G Compute. Receipt hash stored on-chain.
-          </p>
-          <a href="/proof" className="sg-btn-primary" style={{ width: "100%", textDecoration: "none" }}>
-            View Integration Proof →
-          </a>
-        </div>
+      <div className="sg-dash-footer">
+        <span className="sg-dash-footer-text">
+          {agents.length} agent{agents.length !== 1 ? "s" : ""} monitored ·{" "}
+          {agents.filter((a) => a.threat_level === 0 && a.code_risk === 0).length} verified safe ·{" "}
+          {agents.filter((a) => a.threat_level === 2 || a.code_risk === 2).length} threats detected
+        </span>
+        <Link href="/proof" style={{ color: "#00d4ff", fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.6875rem", textDecoration: "none" }}>
+          Integration Proof →
+        </Link>
       </div>
     </div>
   );

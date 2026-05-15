@@ -8,6 +8,7 @@ interface IAttestationRegistry {
         uint8 threat_level;
         uint8 code_risk;
         string code_findings;
+        string reasoning;
         bytes32 behavioral_receipt_hash;
         bytes32 code_receipt_hash;
         bytes32 evidence_hash;
@@ -19,9 +20,13 @@ interface IAttestationRegistry {
 
 /**
  * @title AgentGate
- * @dev Composability demo: reads 0G Sentinel attestation and gates agent execution.
- * Any DeFi protocol integrates this to ensure only safe agents are trusted.
- * AgentGate.sol enforces risk-management gating for DeFi agents — a composable trust rail for any trading protocol on 0G.
+ * @dev Composability primitive — reads 0G Sentinel attestations and gates agent execution.
+ *      Any DeFi protocol integrates this to ensure only attested-safe agents are trusted.
+ *
+ *      Note: executeIfSafe() forwards arbitrary calls for this demo. Production use should
+ *      add a function-selector whitelist to prevent abuse of the forwarding mechanism.
+ *      MAX_THREAT_LEVEL and MAX_CODE_RISK are currently protocol-wide constants; production
+ *      integrators may want per-deployment configurability via constructor parameters.
  */
 contract AgentGate {
     IAttestationRegistry public immutable registry;
@@ -37,7 +42,18 @@ contract AgentGate {
         registry = IAttestationRegistry(registryAddress);
     }
 
+    /// @notice Check if an agent passes the safety threshold.
     function isSafe(address agentAddress)
+        public
+        view
+        returns (bool safe, string memory reason)
+    {
+        return isSafeWithAge(agentAddress, 0);
+    }
+
+    /// @notice Check safety with an attestation freshness requirement.
+    /// @param maxAgeSeconds Maximum seconds since attestation_timestamp. Pass 0 to skip expiry check.
+    function isSafeWithAge(address agentAddress, uint256 maxAgeSeconds)
         public
         view
         returns (bool safe, string memory reason)
@@ -47,6 +63,10 @@ contract AgentGate {
         }
 
         IAttestationRegistry.Attestation memory att = registry.getAttestation(agentAddress);
+
+        if (maxAgeSeconds > 0 && block.timestamp - att.attestation_timestamp > maxAgeSeconds) {
+            return (false, "Attestation expired: rescan required");
+        }
 
         if (att.threat_level > MAX_THREAT_LEVEL) {
             return (false, "Agent behavioral risk: FLAGGED");
@@ -60,7 +80,7 @@ contract AgentGate {
 
     /**
      * @dev Execute a call to target on behalf of a verified-safe agent.
-     * Reverts if agent fails safety check. For demo: passes target call through.
+     *      Reverts with the original revert reason if the inner call fails.
      */
     function executeIfSafe(
         address agentAddress,
@@ -75,7 +95,15 @@ contract AgentGate {
 
         emit AgentAllowed(agentAddress);
         (bool success, bytes memory returnData) = target.call(data);
-        require(success, "Agent execution failed");
+        if (!success) {
+            // Bubble the inner revert reason rather than swallowing it
+            if (returnData.length > 0) {
+                assembly {
+                    revert(add(32, returnData), mload(returnData))
+                }
+            }
+            revert("Agent execution failed");
+        }
         return returnData;
     }
 }

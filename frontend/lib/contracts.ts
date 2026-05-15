@@ -6,10 +6,12 @@ const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS!;
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
 
 const ATTESTATION_ABI = [
-  "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
+  "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, string reasoning, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
   "function hasAttestation(address agentAddress) view returns (bool)",
   "function getAllAttestedAgents() view returns (address[])",
-  "event AttestationWritten(address indexed agentAddress, uint8 threatLevel, uint8 codeRisk, uint256 timestamp)",
+  "function getAttestedAgentsPaged(uint256 offset, uint256 limit) view returns (address[])",
+  "function getAttestedCount() view returns (uint256)",
+  "event AttestationWritten(address indexed agentAddress, uint8 behavioral_score, uint8 threat_level, uint8 code_risk, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 timestamp)",
 ];
 
 const AGENT_REGISTRY_ABI = [

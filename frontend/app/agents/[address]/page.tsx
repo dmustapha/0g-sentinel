@@ -20,6 +20,7 @@ async function getAttestation(address: string): Promise<AttestationData | null> 
       threatLevel: Number(raw.threat_level),
       codeRisk: Number(raw.code_risk),
       codeFindings: raw.code_findings,
+      reasoning: raw.reasoning || "",
       behavioralReceiptHash: raw.behavioral_receipt_hash,
       codeReceiptHash: raw.code_receipt_hash,
       evidenceHash: raw.evidence_hash,
@@ -266,32 +267,61 @@ export default async function AgentDetailPage({ params }: Props) {
           flexDirection: "column",
           gap: "1.5rem",
         }}>
-          <div>
-            <div className="sg-label" style={{ marginBottom: "0.75rem" }}>0G Compute Receipts</div>
-            <p style={{
-              fontFamily: "Inter, sans-serif",
-              fontSize: "0.75rem",
-              color: "#334155",
-              lineHeight: 1.6,
-            }}>
-              Two independent inference calls — behavioral analysis and code audit. Each generates a
-              unique receipt hash stored immutably on 0G Aristotle.
-            </p>
-          </div>
+          {attestation?.reasoning ? (
+            <>
+              <div>
+                <div className="sg-label" style={{ marginBottom: "0.75rem" }}>AI Reasoning</div>
+                <p style={{
+                  fontFamily: "Inter, sans-serif",
+                  fontSize: "0.75rem",
+                  color: "#94a3b8",
+                  lineHeight: 1.65,
+                  fontStyle: "italic",
+                }}>
+                  &ldquo;{attestation.reasoning}&rdquo;
+                </p>
+              </div>
+              <div className="sg-rule" />
+            </>
+          ) : (
+            <>
+              <div>
+                <div className="sg-label" style={{ marginBottom: "0.75rem" }}>0G Compute Receipts</div>
+                <p style={{
+                  fontFamily: "Inter, sans-serif",
+                  fontSize: "0.75rem",
+                  color: "#334155",
+                  lineHeight: 1.6,
+                }}>
+                  Two independent inference calls — behavioral analysis and code audit. Each generates a
+                  unique receipt hash stored immutably on 0G Aristotle.
+                </p>
+              </div>
+              <div className="sg-rule" />
+            </>
+          )}
 
-          <div className="sg-rule" />
-
           <div>
-            <div className="sg-label" style={{ marginBottom: "0.75rem" }}>AgentGate Composability</div>
-            <p style={{
-              fontFamily: "Inter, sans-serif",
-              fontSize: "0.75rem",
-              color: "#334155",
-              lineHeight: 1.6,
-            }}>
-              Any protocol can require attestation before execution. Gate reads directly from
-              AttestationRegistry — no trust required.
-            </p>
+            <div className="sg-label" style={{ marginBottom: "0.5rem" }}>Scan Metadata</div>
+            {attestation ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                {[
+                  { label: "Verdict", value: THREAT_LABELS[attestation.threatLevel] ?? "—" },
+                  { label: "Score", value: `${attestation.behavioralScore}/100` },
+                  { label: "Code", value: RISK_LABELS[attestation.codeRisk] ?? "—" },
+                  { label: "Network", value: "0G Aristotle (16661)" },
+                ].map(({ label, value }) => (
+                  <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                    <span style={{ fontFamily: "Inter, sans-serif", fontSize: "0.6875rem", color: "#334155" }}>{label}</span>
+                    <span className="sg-mono" style={{ fontSize: "0.6875rem", color: "#64748b" }}>{value}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p style={{ fontFamily: "Inter, sans-serif", fontSize: "0.75rem", color: "#334155", lineHeight: 1.6 }}>
+                No attestation on-chain for this address.
+              </p>
+            )}
           </div>
 
           <div className="sg-rule" />

@@ -31,8 +31,8 @@ export default function ProofPage() {
     },
     {
       label: "0G Storage",
-      status: "degraded",
-      detail: "Evidence archive via @0glabs/0g-ts-sdk. SHA256 fallback active (storage DNS unavailable on mainnet). Root hash stored in attestation.evidenceHash.",
+      status: "live",
+      detail: "Evidence archive via @0gfoundation/0g-ts-sdk 1.2.8. Content-addressed root hash stored in attestation.evidenceHash — permanently retrievable from 0G decentralized storage.",
     },
     {
       label: "0G Chain",
@@ -148,7 +148,7 @@ export default function ProofPage() {
             {integrations.map((intg) => (
               <div
                 key={intg.label}
-                className={`sg-pipeline-step${intg.status === "degraded" ? " caution" : " live"}`}
+                className="sg-pipeline-step live"
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
                   <span style={{
@@ -198,7 +198,7 @@ export default function ProofPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
             {[
               { label: "0G Compute", ok: true, detail: "Inference active" },
-              { label: "0G Storage", ok: false, detail: "SHA256 fallback" },
+              { label: "0G Storage", ok: true, detail: "Content-addressed" },
               { label: "0G Chain", ok: true, detail: "Chain ID 16661" },
               { label: "AgentGate", ok: true, detail: "isSafe() live" },
             ].map(({ label, ok, detail }) => (

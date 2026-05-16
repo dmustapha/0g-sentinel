@@ -1,6 +1,6 @@
 // File: frontend/app/page.tsx
 import Link from "next/link";
-import { getAttestationRegistry, getAgentRegistry } from "@/lib/contracts";
+import { getAttestationRegistry } from "@/lib/contracts";
 
 // Revalidate every 60s so stats stay fresh without blocking initial load
 export const revalidate = 60;
@@ -14,22 +14,22 @@ interface LiveStats {
 
 async function getLiveStats(): Promise<LiveStats> {
   try {
-    const agentRegistry = getAgentRegistry();
     const attestationRegistry = getAttestationRegistry();
-    const [agentAddresses, attestedCount] = await Promise.all([
-      agentRegistry.getAllAgents() as Promise<string[]>,
+    // All stats derived from AttestationRegistry — the chain IS the registry.
+    const [attestedAddresses, attestedCount] = await Promise.all([
+      attestationRegistry.getAllAttestedAgents() as Promise<string[]>,
       attestationRegistry.getAttestedCount() as Promise<bigint>,
     ]);
-    // Fetch all attestations to count threats — no slice cap so the count is always accurate
+    // Fetch all attestations to count threats
     const attestations = await Promise.all(
-      agentAddresses.map((addr) => attestationRegistry.getAttestation(addr))
+      attestedAddresses.map((addr) => attestationRegistry.getAttestation(addr))
     );
     const threatsDetected = attestations.filter(
       (a) => BigInt(a.attestation_timestamp) > 0n &&
              (Number(a.threat_level) === 2 || Number(a.code_risk) === 2)
     ).length;
     return {
-      totalAgents: agentAddresses.length,
+      totalAgents: Number(attestedCount),
       totalAttested: Number(attestedCount),
       threatsDetected,
     };

@@ -1,34 +1,60 @@
 {
   "name": "0g-sentinel-agent-scan",
-  "version": "1.0.0",
-  "description": "Behavioral risk scan for ERC-7857 AI agents on 0G Aristotle mainnet. Returns behavioral_score (0-100), threat_level (SAFE|CAUTION|FLAGGED), receipt_hash (verifiable 0G Compute proof), and on-chain attestation tx_hash.",
+  "version": "1.1.0",
+  "description": "Behavioral risk scan for AI agents on 0G Aristotle mainnet. Runs two-pipeline analysis via 0G Compute (behavioral LLM + code audit LLM), archives evidence to 0G Storage, and writes cryptographic attestation to 0G Chain.",
   "author": "0G Sentinel",
   "category": "security",
   "chain": "0g-aristotle",
+  "requires": {
+    "env": [
+      {
+        "name": "ZERO_G_COMPUTE_API_KEY",
+        "description": "0G Compute API key — get from https://pc.0g.ai",
+        "required": true
+      },
+      {
+        "name": "ZERO_G_PRIVATE_KEY",
+        "description": "Wallet private key for 0G Storage uploads and chain writes",
+        "required": true
+      }
+    ],
+    "bins": []
+  },
   "input": {
     "type": "object",
     "required": ["agentAddress"],
     "properties": {
       "agentAddress": {
         "type": "string",
-        "description": "ERC-7857 iNFT address to scan"
+        "pattern": "^0x[0-9a-fA-F]{40}$",
+        "description": "EVM address of the AI agent to scan"
       }
     }
   },
   "output": {
     "type": "object",
     "properties": {
-      "behavioral_score": { "type": "number", "description": "0-100 risk score" },
-      "threat_level": { "type": "string", "enum": ["SAFE", "CAUTION", "FLAGGED"] },
+      "behavioral_score": { "type": "number", "minimum": 0, "maximum": 100 },
+      "threat_level": { "type": "integer", "enum": [0, 1, 2], "description": "0=SAFE 1=CAUTION 2=FLAGGED" },
+      "code_risk": { "type": "integer", "enum": [0, 1, 2], "description": "0=CLEAN 1=WARNING 2=VULNERABLE" },
       "reasoning": { "type": "string" },
-      "receipt_hash": { "type": "string", "description": "0G Compute verifiable inference receipt" },
-      "attestation_tx_hash": { "type": "string", "description": "0G Chain tx writing attestation" }
+      "behavioral_receipt_hash": { "type": "string", "description": "0G Compute TEE receipt (bytes32)" },
+      "code_receipt_hash": { "type": "string", "description": "0G Compute TEE receipt (bytes32)" },
+      "evidence_hash": { "type": "string", "description": "0G Storage root hash of full evidence archive" },
+      "attestation_tx_hash": { "type": "string", "description": "0G Chain transaction hash" }
     }
   },
-  "endpoint": {
-    "method": "POST",
-    "url": "https://0g-sentinel.vercel.app/api/scan/behavioral",
-    "headers": { "Content-Type": "application/json" }
+  "endpoints": {
+    "scan": {
+      "method": "POST",
+      "url": "https://0g-sentinel.vercel.app/api/scan/behavioral",
+      "headers": { "Content-Type": "application/json" },
+      "body": { "agentAddress": "{agentAddress}" }
+    },
+    "read": {
+      "method": "GET",
+      "url": "https://0g-sentinel.vercel.app/api/v1/attestation/{agentAddress}"
+    }
   },
-  "tags": ["security", "agent-audit", "0g-compute", "erc-7857", "attestation"]
+  "tags": ["security", "agent-audit", "0g-compute", "erc-7857", "attestation", "tee", "sealed-inference"]
 }

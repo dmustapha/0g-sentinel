@@ -63,6 +63,14 @@ const DEMO_AGENTS: Array<{ address: string; name: string; source: string }> = [
     name: "Agent Gamma",
     source: AGENT_C_SOURCE,
   },
+  {
+    address: "0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526",
+    name: "0G Flow Protocol",
+    source: `// 0G Flow Protocol — live mainnet contract
+pragma solidity ^0.8.0;
+// On-chain data availability payment contract
+// Handles storage node payments and rewards on 0G Aristotle mainnet`,
+  },
 ];
 
 function setKnownSources() {

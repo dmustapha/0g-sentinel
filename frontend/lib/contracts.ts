@@ -18,6 +18,8 @@ const ATTESTATION_ABI = [
   "function getAllAttestedAgents() view returns (address[])",
   "function getAttestedAgentsPaged(uint256 offset, uint256 limit) view returns (address[])",
   "function getAttestedCount() view returns (uint256)",
+  "function getAttestationHistory(address agentAddress, uint256 limit) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, string reasoning, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp)[])",
+  "function getAttestationHistoryCount(address agentAddress) view returns (uint256)",
   "event AttestationWritten(address indexed agentAddress, uint8 behavioral_score, uint8 threat_level, uint8 code_risk, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 timestamp)",
 ];
 

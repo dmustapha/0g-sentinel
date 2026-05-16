@@ -5,8 +5,39 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnimatedScoreBar } from "@/components/AnimatedScoreBar";
 import { ScanInput } from "@/components/ScanInput";
+import { VerifyEvidenceButton } from "@/components/VerifyEvidenceButton";
+import { FineTuneButton } from "@/components/FineTuneButton";
 
 export const revalidate = 30;
+
+function bytes32ToUUID(bytes32: string): string {
+  const hex = bytes32.replace(/^0x/, "").slice(0, 32);
+  if (hex.length < 32) return bytes32.slice(0, 14) + "...";
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
+}
+
+async function checkIsERC7857(address: string): Promise<boolean> {
+  try {
+    const { ethers } = await import("ethers");
+    const provider = new ethers.JsonRpcProvider(process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai");
+    const abi = [
+      "function supportsInterface(bytes4 interfaceId) external view returns (bool)",
+      "function dataHashesOf(uint256 tokenId) external view returns (bytes32[] memory)",
+    ];
+    const contract = new ethers.Contract(address, abi, provider);
+    try {
+      const supported = await contract.supportsInterface("0x4f694152");
+      if (supported) return true;
+    } catch { /* no ERC-165 */ }
+    try {
+      await contract.dataHashesOf(1n);
+      return true;
+    } catch { /* not ERC-7857 */ }
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 interface Props {
   params: { address: string };
@@ -46,7 +77,10 @@ function threatBadgeClass(level: number) {
 
 export default async function AgentDetailPage({ params }: Props) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.address)) notFound();
-  const attestation = await getAttestation(params.address);
+  const [attestation, isERC7857] = await Promise.all([
+    getAttestation(params.address),
+    checkIsERC7857(params.address),
+  ]);
   const explorerBase = "https://chainscan.0g.ai";
   const shortAddr = `${params.address.slice(0, 8)}…${params.address.slice(-6)}`;
 
@@ -87,6 +121,19 @@ export default async function AgentDetailPage({ params }: Props) {
         >
           ← Dashboard
         </Link>
+        {isERC7857 && (
+          <span style={{
+            fontFamily: "var(--font-jetbrains-mono, monospace)",
+            fontSize: "0.5625rem",
+            color: "#a78bfa",
+            border: "1px solid rgba(167,139,250,0.35)",
+            borderRadius: "4px",
+            padding: "0.2rem 0.5rem",
+            letterSpacing: "0.08em",
+          }}>
+            iNFT ERC-7857
+          </span>
+        )}
         <div style={{ width: 1, height: 14, background: "#0f1c30" }} />
         <span className="sg-mono" style={{ color: "#334155" }}>{shortAddr}</span>
         <a
@@ -280,7 +327,72 @@ export default async function AgentDetailPage({ params }: Props) {
                       View on Explorer ↗
                     </a>
                   </div>
+                  {attestation.evidenceHash && attestation.evidenceHash !== "0x" + "0".repeat(64) && (
+                    <div className="sg-data-field">
+                      <span className="sg-data-label">Evidence Integrity</span>
+                      <VerifyEvidenceButton evidenceHash={attestation.evidenceHash} />
+                    </div>
+                  )}
                 </div>
+              </div>
+
+              {/* TEE Verification */}
+              {(attestation.behavioralReceiptHash || attestation.codeReceiptHash) && (
+                <div className="sg-glass-card sg-reveal-up" style={{ marginTop: "1.5rem", padding: "1.25rem" }}>
+                  <div className="sg-section-label" style={{ marginBottom: "1rem" }}>
+                    0G Sealed Inference Receipts
+                  </div>
+                  <div style={{ fontSize: "0.625rem", color: "#94a3b8", marginBottom: "1rem", fontFamily: "var(--font-jetbrains-mono, monospace)" }}>
+                    Hardware-attested via Intel TDX + H100/H200. Each receipt is a chatID linking this inference to a specific TEE execution.
+                  </div>
+                  {attestation.behavioralReceiptHash && attestation.behavioralReceiptHash !== "0x" + "0".repeat(64) && (
+                    <div className="sg-data-field" style={{ marginBottom: "0.5rem" }}>
+                      <span className="sg-data-label">Behavioral ChatID</span>
+                      <span className="sg-data-value" style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem" }}>
+                        {bytes32ToUUID(attestation.behavioralReceiptHash)}
+                      </span>
+                    </div>
+                  )}
+                  {attestation.codeReceiptHash && attestation.codeReceiptHash !== "0x" + "0".repeat(64) && (
+                    <div className="sg-data-field" style={{ marginBottom: "0.75rem" }}>
+                      <span className="sg-data-label">Code Audit ChatID</span>
+                      <span className="sg-data-value" style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem" }}>
+                        {bytes32ToUUID(attestation.codeReceiptHash)}
+                      </span>
+                    </div>
+                  )}
+                  <a
+                    href="https://pc.0g.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: "inline-block",
+                      marginTop: "0.25rem",
+                      padding: "0.375rem 0.75rem",
+                      background: "rgba(0, 212, 255, 0.08)",
+                      border: "1px solid rgba(0, 212, 255, 0.25)",
+                      borderRadius: "4px",
+                      color: "#00d4ff",
+                      fontFamily: "var(--font-jetbrains-mono, monospace)",
+                      fontSize: "0.5625rem",
+                      textDecoration: "none",
+                      letterSpacing: "0.05em",
+                    }}
+                  >
+                    Verify on 0G Proof Cloud →
+                  </a>
+                </div>
+              )}
+
+              {/* Fine-tuning dataset */}
+              <div className="sg-glass-card sg-reveal-up" style={{ marginTop: "1.5rem", padding: "1.25rem" }}>
+                <div className="sg-section-label" style={{ marginBottom: "0.75rem" }}>
+                  0G Compute Fine-Tuning
+                </div>
+                <div style={{ fontSize: "0.625rem", color: "#94a3b8", marginBottom: "0.75rem", fontFamily: "var(--font-jetbrains-mono, monospace)" }}>
+                  Upload attestation data as a training dataset to 0G Storage and get the CLI command to submit a fine-tuning task.
+                </div>
+                <FineTuneButton agentAddress={params.address} />
               </div>
             </>
           )}

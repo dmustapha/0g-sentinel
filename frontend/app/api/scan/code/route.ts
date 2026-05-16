@@ -27,6 +27,10 @@ export async function POST(req: NextRequest) {
   }
 
   const now = Date.now();
+  // Purge stale entries to prevent unbounded memory growth in long-lived processes
+  for (const [addr, ts] of scanCooldowns) {
+    if (now - ts > SCAN_COOLDOWN_MS) scanCooldowns.delete(addr);
+  }
   const lastScan = scanCooldowns.get(agentAddress.toLowerCase());
   if (lastScan && now - lastScan < SCAN_COOLDOWN_MS) {
     const retryAfter = Math.ceil((SCAN_COOLDOWN_MS - (now - lastScan)) / 1000);

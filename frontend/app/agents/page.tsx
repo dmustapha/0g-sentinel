@@ -47,17 +47,19 @@ async function fetchAgents(): Promise<AgentWithAttestation[]> {
 
   return Promise.all(
     agentAddresses.map(async (address) => {
-      const has = await attestationRegistry.hasAttestation(address);
       const name = agentDisplayName(address);
-      if (!has) {
+      // Single RPC call: getAttestation returns zero-value struct if no attestation.
+      // attestation_timestamp === 0 is the reliable "no attestation" sentinel.
+      const att = await attestationRegistry.getAttestation(address);
+      const hasAtt = BigInt(att.attestation_timestamp) > 0n;
+      if (!hasAtt) {
         return {
           address, name,
-          behavioral_score: 0, threat_level: 1 as const, code_risk: 1 as const,
+          behavioral_score: 0, threat_level: 0 as const, code_risk: 0 as const,
           code_findings: "", behavioral_receipt_hash: "", code_receipt_hash: "",
           evidence_hash: "", attestation_timestamp: 0, has_attestation: false,
         };
       }
-      const att = await attestationRegistry.getAttestation(address);
       return {
         address, name,
         behavioral_score: Number(att.behavioral_score),

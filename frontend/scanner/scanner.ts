@@ -291,22 +291,31 @@ async function blockScanFallback(agentAddress: string): Promise<BehavioralSignal
     provider.getBalance(agentAddress),
   ]);
 
-  const txs: BlockscoutTx[] = [];
   const scanDepth = 100; // 100 blocks ≈ ~20 minutes on 0G Aristotle
+  const BATCH_SIZE = 20; // avoid overwhelming the RPC node
 
+  const blockNumbers: number[] = [];
   for (let b = latestBlock; b > latestBlock - scanDepth && b > 0; b--) {
-    const block = await provider.getBlock(b, true);
-    if (!block) continue;
-    for (const tx of block.transactions as any[]) {
-      if (typeof tx === "object" && tx.from?.toLowerCase() === agentAddress.toLowerCase()) {
-        txs.push({
-          hash: tx.hash,
-          from: tx.from,
-          to: tx.to || "",
-          value: String(tx.value || "0"),
-          timeStamp: String(block.timestamp),
-          input: tx.data || "0x",
-        });
+    blockNumbers.push(b);
+  }
+
+  const txs: BlockscoutTx[] = [];
+  for (let i = 0; i < blockNumbers.length; i += BATCH_SIZE) {
+    const batch = blockNumbers.slice(i, i + BATCH_SIZE);
+    const blocks = await Promise.all(batch.map((b) => provider.getBlock(b, true)));
+    for (const block of blocks) {
+      if (!block) continue;
+      for (const tx of block.transactions as any[]) {
+        if (typeof tx === "object" && tx.from?.toLowerCase() === agentAddress.toLowerCase()) {
+          txs.push({
+            hash: tx.hash,
+            from: tx.from,
+            to: tx.to || "",
+            value: String(tx.value || "0"),
+            timeStamp: String(block.timestamp),
+            input: tx.data || "0x",
+          });
+        }
       }
     }
   }

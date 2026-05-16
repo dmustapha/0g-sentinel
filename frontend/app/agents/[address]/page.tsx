@@ -268,14 +268,14 @@ export default async function AgentDetailPage({ params }: Props) {
                     </span>
                   </div>
                   <div className="sg-data-field">
-                    <span className="sg-data-label">Attestation TX</span>
+                    <span className="sg-data-label">On-Chain Record</span>
                     <a
-                      href={`${explorerBase}/tx/${attestation.behavioralReceiptHash}`}
+                      href={`${explorerBase}/address/${params.address}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="sg-data-value"
                       style={{ color: "#00d4ff", fontSize: "0.625rem" }}
-                      title="View attestation on 0G Explorer"
+                      title="View agent transactions on 0G Explorer"
                     >
                       View on Explorer ↗
                     </a>

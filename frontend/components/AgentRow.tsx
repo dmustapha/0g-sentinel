@@ -6,7 +6,6 @@ import { AgentWithAttestation, THREAT_LABELS, CODE_RISK_LABELS } from "@/lib/typ
 interface AgentRowProps {
   agent: AgentWithAttestation;
   scanning: boolean;
-  onRescan?: (address: string) => void;
 }
 
 function getThreatClass(threatLevel: number, codeRisk: number): string {
@@ -23,7 +22,7 @@ function getBadgeClass(level: number): string {
   return "sg-badge sg-badge-neutral";
 }
 
-export function AgentRow({ agent, scanning, onRescan }: AgentRowProps) {
+export function AgentRow({ agent, scanning }: AgentRowProps) {
   const threatClass = getThreatClass(agent.threat_level, agent.code_risk);
   const shortAddr = `${agent.address.slice(0, 6)}…${agent.address.slice(-4)}`;
   const lastScanned = agent.attestation_timestamp
@@ -77,7 +76,7 @@ export function AgentRow({ agent, scanning, onRescan }: AgentRowProps) {
         )}
       </div>
 
-      {/* Badges + actions */}
+      {/* Badges + scan state */}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
         <div style={{ display: "flex", gap: 4 }}>
           <span className={getBadgeClass(agent.threat_level)}>
@@ -91,17 +90,7 @@ export function AgentRow({ agent, scanning, onRescan }: AgentRowProps) {
           <span className="sg-mono" style={{ color: "#334155", fontSize: "0.625rem" }}>
             {lastScanned}
           </span>
-          {onRescan && (
-            <button
-              onClick={() => onRescan(agent.address)}
-              disabled={scanning}
-              className="sg-btn-ghost"
-              style={{ padding: "0.125rem 0.375rem", fontSize: "0.625rem" }}
-            >
-              {scanning ? "…" : "Rescan"}
-            </button>
-          )}
-          {scanning && !onRescan && (
+          {scanning && (
             <span className="sg-mono" style={{ color: "#334155", fontSize: "0.625rem" }}>Scanning…</span>
           )}
         </div>

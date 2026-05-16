@@ -17,7 +17,7 @@ Security infrastructure for the AI agent era. 0G Sentinel scans every registered
 
 AI agents operate on-chain with real funds. There is currently no standard way to verify whether an agent is safe before granting it access to a protocol. 0G Sentinel fills that gap.
 
-It runs two parallel AI audits: a behavioral risk scan (transaction history, fund flows, access patterns) and a Solidity source code vulnerability scan. Both use 0G Compute's inference network, each producing a unique cryptographic receipt hash. The results are written as a single 8-field attestation struct to `AttestationRegistry` on 0G Chain — immutable, queryable by any contract.
+It runs two parallel AI audits: a behavioral risk scan (transaction history, fund flows, access patterns) and a Solidity source code vulnerability scan. Both use 0G Compute's inference network, each producing a unique cryptographic receipt hash. The results are written as a single 9-field attestation struct to `AttestationRegistry` on 0G Chain — immutable, queryable by any contract.
 
 AgentMesh audits developer code. 0G Sentinel audits live agents on mainnet and writes ERC-7857 on-chain identity attestations.
 
@@ -61,7 +61,7 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | Next.js 15, React, TypeScript |
+| Frontend | Next.js 14.2, React, TypeScript |
 | Smart Contracts | Solidity 0.8, Hardhat |
 | AI Inference | 0G Compute (`router-api.0g.ai/v1`), 0GM-1.0-35B-A3B model |
 | Evidence Storage | `@0gfoundation/0g-ts-sdk` 1.2.8, SHA256 content hash |

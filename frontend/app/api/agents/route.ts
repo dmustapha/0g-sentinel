@@ -12,14 +12,17 @@ export async function GET() {
 
     const agents = await Promise.all(
       agentAddresses.map(async (address) => {
-        const has = await attestationRegistry.hasAttestation(address);
-        if (!has) {
+        const name = agentDisplayName(address);
+        // Single RPC call — attestation_timestamp === 0 means no attestation written yet.
+        const att = await attestationRegistry.getAttestation(address);
+        const hasAtt = BigInt(att.attestation_timestamp) > 0n;
+        if (!hasAtt) {
           return {
             address,
-            name: agentDisplayName(address),
+            name,
             behavioral_score: 0,
-            threat_level: 1 as const,
-            code_risk: 1 as const,
+            threat_level: 0 as const,
+            code_risk: 0 as const,
             code_findings: "",
             behavioral_receipt_hash: "",
             code_receipt_hash: "",
@@ -28,10 +31,9 @@ export async function GET() {
             has_attestation: false,
           };
         }
-        const att = await attestationRegistry.getAttestation(address);
         return {
           address,
-          name: agentDisplayName(address),
+          name,
           behavioral_score: Number(att.behavioral_score),
           threat_level: Number(att.threat_level) as 0 | 1 | 2,
           code_risk: Number(att.code_risk) as 0 | 1 | 2,

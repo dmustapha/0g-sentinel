@@ -6,6 +6,7 @@ export interface AgentWithAttestation {
   threat_level: 0 | 1 | 2;
   code_risk: 0 | 1 | 2;
   code_findings: string;
+  reasoning: string;
   behavioral_receipt_hash: string;
   code_receipt_hash: string;
   evidence_hash: string;

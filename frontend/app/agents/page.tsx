@@ -6,7 +6,8 @@ import { getAttestationRegistry } from "@/lib/contracts";
 import { AgentWithAttestation } from "@/lib/types";
 import { RescanButton } from "@/components/RescanButton";
 import { ScanInput } from "@/components/ScanInput";
-import { agentDisplayName, KNOWN_0G_CONTRACTS } from "@/lib/constants";
+import { ChainDiscovery } from "@/components/ChainDiscovery";
+import { agentDisplayName } from "@/lib/constants";
 
 export const revalidate = 30;
 
@@ -40,23 +41,14 @@ function badgeLabel(agent: AgentWithAttestation): string {
   return "SAFE";
 }
 
-async function fetchAgents(): Promise<AgentWithAttestation[]> {
+async function fetchAgents(): Promise<{ agents: AgentWithAttestation[]; addresses: string[] }> {
   const attestationRegistry = getAttestationRegistry();
 
-  // Primary source: every address ever attested via Sentinel — no registration required.
-  // The AttestationRegistry on 0G Aristotle IS the registry.
+  // Source of truth: every address ever attested via Sentinel — no registration step.
   const attestedAddresses: string[] = await attestationRegistry.getAllAttestedAgents();
 
-  // Merge with known 0G contracts not yet attested — surface them as scan targets.
-  const attestedSet = new Set(attestedAddresses.map((a) => a.toLowerCase()));
-  const unseenKnown = KNOWN_0G_CONTRACTS.filter(
-    (a) => !attestedSet.has(a.toLowerCase())
-  );
-
-  const allAddresses = [...attestedAddresses, ...unseenKnown];
-
-  return Promise.all(
-    allAddresses.map(async (address) => {
+  const agents = await Promise.all(
+    attestedAddresses.map(async (address) => {
       const name = agentDisplayName(address);
       // Single RPC call: getAttestation returns zero-value struct if no attestation.
       // attestation_timestamp === 0 is the reliable "no attestation" sentinel.
@@ -84,14 +76,19 @@ async function fetchAgents(): Promise<AgentWithAttestation[]> {
       };
     })
   );
+
+  return { agents, addresses: attestedAddresses };
 }
 
 export default async function AgentsPage() {
   let agents: AgentWithAttestation[] = [];
+  let attestedAddresses: string[] = [];
   let fetchError = false;
 
   try {
-    agents = await fetchAgents();
+    const result = await fetchAgents();
+    agents = result.agents;
+    attestedAddresses = result.addresses;
   } catch {
     fetchError = true;
   }
@@ -218,7 +215,7 @@ export default async function AgentsPage() {
 
       <div className="sg-dash-footer">
         <span className="sg-dash-footer-text">
-          {agents.length} agent{agents.length !== 1 ? "s" : ""} on chain ·{" "}
+          {agents.length} attested ·{" "}
           {agents.filter((a) => a.has_attestation && a.threat_level === 0 && a.code_risk === 0).length} verified safe ·{" "}
           {agents.filter((a) => a.has_attestation && (a.threat_level === 2 || a.code_risk === 2)).length} threats detected
         </span>
@@ -226,6 +223,9 @@ export default async function AgentsPage() {
           Integration Proof →
         </Link>
       </div>
+
+      {/* Chain-discovered contracts — client-rendered, non-blocking */}
+      <ChainDiscovery attestedAddresses={attestedAddresses} />
     </div>
   );
 }

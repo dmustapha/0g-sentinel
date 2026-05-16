@@ -1,30 +1,19 @@
 // File: frontend/app/api/agents/route.ts
 import { NextResponse } from "next/server";
 import { getAttestationRegistry } from "@/lib/contracts";
-import { agentDisplayName, KNOWN_0G_CONTRACTS } from "@/lib/constants";
+import { agentDisplayName } from "@/lib/constants";
 
 export async function GET() {
   try {
     const attestationRegistry = getAttestationRegistry();
 
-    // Primary source: AttestationRegistry.getAllAttestedAgents()
-    // This returns every address that has ever been attested via Sentinel — no
-    // registration step required. The chain IS the registry.
+    // Source of truth: AttestationRegistry.getAllAttestedAgents()
+    // No registration step — the chain IS the registry.
     const attestedAddresses: string[] = await attestationRegistry.getAllAttestedAgents();
 
-    // Merge with known 0G contracts that haven't been attested yet.
-    // These appear as "NOT SCANNED" scan targets on the dashboard.
-    const attestedSet = new Set(attestedAddresses.map((a) => a.toLowerCase()));
-    const unseenKnown = KNOWN_0G_CONTRACTS.filter(
-      (a) => !attestedSet.has(a.toLowerCase())
-    );
-
-    const allAddresses = [...attestedAddresses, ...unseenKnown];
-
     const agents = await Promise.all(
-      allAddresses.map(async (address) => {
+      attestedAddresses.map(async (address) => {
         const name = agentDisplayName(address);
-        // Single RPC call — attestation_timestamp === 0 means no attestation written yet.
         const att = await attestationRegistry.getAttestation(address);
         const hasAtt = BigInt(att.attestation_timestamp) > 0n;
         if (!hasAtt) {

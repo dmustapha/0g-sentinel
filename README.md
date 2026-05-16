@@ -1,6 +1,6 @@
 # 0G Sentinel: On-chain security attestations for AI agents
 
-Security infrastructure for the AI agent era. 0G Sentinel scans every registered agent using two independent AI inference pipelines, then writes an immutable 9-field attestation to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single on-chain call and gate execution on the result.
+Security infrastructure for the AI agent era. 0G Sentinel discovers every active contract on 0G Aristotle via chain logs, scans them through two independent AI inference pipelines, and writes immutable 9-field attestations to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single call and gate execution on the result — no agent registration required.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity)](https://soliditylang.org/)
@@ -11,13 +11,21 @@ Security infrastructure for the AI agent era. 0G Sentinel scans every registered
 
 ![Dashboard](docs/images/dashboard.png)
 
+## Live Demo
+
+**[https://0g-sentinel.vercel.app](https://0g-sentinel.vercel.app)**
+
+Browse the live agent database, scan any 0G Aristotle address, and inspect on-chain attestation proofs.
+
 ---
 
 ## What Is 0G Sentinel?
 
 AI agents operate on-chain with real funds. There is currently no standard way to verify whether an agent is safe before granting it access to a protocol. 0G Sentinel fills that gap.
 
-It runs two parallel AI audits: a behavioral risk scan (transaction history, fund flows, access patterns) and a Solidity source code vulnerability scan. Both use 0G Compute's inference network, each producing a unique cryptographic receipt hash. The results are written as a single 9-field attestation struct to `AttestationRegistry` on 0G Chain — immutable, queryable by any contract.
+It discovers active contracts directly from chain logs (no manual registration), runs two parallel AI audits — behavioral risk (tx history, fund flows, access patterns) and Solidity vulnerability scan — and writes a 9-field attestation struct to `AttestationRegistry` on 0G Chain. Both AI calls go through 0G Compute's inference network, each returning a unique cryptographic receipt hash stored on-chain as proof of independent verification.
+
+A background queue auto-scans every newly discovered contract. Results appear progressively as each attestation lands on-chain. Any protocol can gate agent execution on the result with a single `isSafe()` call.
 
 AgentMesh audits developer code. 0G Sentinel audits live agents on mainnet and writes ERC-7857 on-chain identity attestations.
 
@@ -39,18 +47,25 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 
 ## Screenshots
 
-| Agent Dashboard | Integration Proof |
-|----------------|------------------|
-| ![Dashboard](docs/images/dashboard.png) | ![Proof](docs/images/proof.png) |
+| Agent Database | Chain Discovery |
+|----------------|-----------------|
+| ![Dashboard](docs/images/dashboard.png) | ![Chain Discovery](docs/images/chain-discovery.png) |
+
+| Agent Detail | Integration Proof |
+|--------------|------------------|
+| ![Agent Detail](docs/images/agent-detail.png) | ![Proof](docs/images/proof.png) |
 
 ---
 
 ## Features
 
+- **Chain-native discovery**: Scans the last 10,000 blocks via `eth_getLogs` to find every active contract — no pre-registration, no allowlist, the chain is the registry
+- **Background auto-scan queue**: All discovered contracts are queued for scanning automatically; results appear progressively as each attestation lands on-chain
 - **Dual AI pipelines**: Two independent 0G Compute inference calls per scan, each with a unique `zg-res-key` receipt UUID stored on-chain as proof of independent verification
 - **Behavioral risk scoring**: 0-100 risk score from tx frequency, fund outflow patterns, and contract interaction breadth
 - **Smart contract vulnerability scan**: Reentrancy, broken access control, and unchecked-call detection via AI code analysis
 - **Immutable on-chain attestations**: 9-field struct written to `AttestationRegistry` — queryable by any dApp with a single call; includes full LLM reasoning string
+- **Live agent database**: Paginated, searchable table of all attested agents with inline AI reasoning and threat badges
 - **AgentGate composability**: Drop-in security gate for any protocol; `isSafe()` and `isSafeWithAge()` read `AttestationRegistry` directly, no intermediary
 - **Evidence archival**: Full scan evidence JSON content-addressed and hashed; `evidence_hash` stored immutably in attestation struct
 - **OpenClaw skill**: `openclaw-skill/0g-sentinel-scan.json` enables AI orchestrators to trigger scans as a native tool call
@@ -111,11 +126,12 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
                   attestation verdict
 ```
 
-1. **Register**: Add an agent address to `AgentRegistry`
-2. **Scan**: Sentinel runs two parallel AI pipelines via 0G Compute
-3. **Archive**: Evidence JSON uploaded to 0G Storage; root hash stored
-4. **Attest**: Scanner writes 9-field attestation to `AttestationRegistry` on 0G Chain
-5. **Gate**: `AgentGate` reads attestation; reverts if agent is flagged or unscanned
+1. **Discover**: `/api/discover` scans last 10k blocks via `eth_getLogs` — every contract that emitted events is a candidate
+2. **Queue**: All discovered addresses enqueue for background auto-scanning (serial, nonce-safe)
+3. **Scan**: Two parallel AI pipelines run via 0G Compute for each address
+4. **Archive**: Evidence JSON uploaded to 0G Storage; SHA256 root hash stored
+5. **Attest**: Scanner writes 9-field attestation to `AttestationRegistry` on 0G Chain
+6. **Gate**: `AgentGate` reads attestation; reverts if agent is flagged or unscanned
 
 Each pipeline call produces a unique `zg-res-key` receipt UUID from the 0G router, converted to a bytes32 hash. Both hashes stored on-chain prove two independent AI verifications ran.
 
@@ -140,14 +156,13 @@ npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogTestnet
 npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogTestnet
 npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogTestnet
 
-# 5. Seed demo agents
-npx ts-node scripts/seed-demo.ts
-
-# 6. Run frontend
+# 5. Run frontend
 cd frontend && npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to view the dashboard.
+Open [http://localhost:3000/agents](http://localhost:3000/agents).
+
+The dashboard auto-discovers active contracts from chain logs on load. No seeding required — the chain is the registry. To scan an agent, paste any 0G Aristotle address into the hero scan panel and submit.
 
 ---
 
@@ -178,7 +193,9 @@ require(att.code_risk < 2, "Agent has vulnerabilities");
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/health` | Service health, RPC endpoint, registry address |
-| GET | `/api/agents` | All registered agents with on-chain attestation data |
+| GET | `/api/agents` | All attested agents with on-chain attestation data |
+| GET | `/api/discover` | Discover active contracts from chain logs (last 10k blocks) |
+| GET | `/api/scan/queue` | Background auto-scan queue status (queued, inFlight, completed, failed) |
 | POST | `/api/scan/behavioral` | Trigger behavioral + full scan for an agent address |
 | POST | `/api/scan/code` | Trigger code vulnerability scan only |
 
@@ -200,10 +217,21 @@ require(att.code_risk < 2, "Agent has vulnerabilities");
 │   └── storage.ts                # 0G Storage evidence archival
 ├── frontend/
 │   ├── app/
-│   │   ├── agents/               # Agent dashboard + detail pages
+│   │   ├── agents/               # Agent database + detail pages
 │   │   ├── proof/                # Integration proof page
-│   │   └── api/                  # Scan + health API routes
-│   └── components/               # AgentRow, shared UI
+│   │   └── api/
+│   │       ├── agents/           # Attested agent list
+│   │       ├── discover/         # Chain-native contract discovery
+│   │       └── scan/
+│   │           ├── behavioral/   # Full scan trigger
+│   │           └── queue/        # Auto-scan queue status
+│   ├── components/
+│   │   ├── AgentsTable.tsx       # Paginated, searchable agent list
+│   │   ├── ChainDiscovery.tsx    # Live chain contract discovery panel
+│   │   ├── QueueBanner.tsx       # Auto-scan progress bar
+│   │   └── ScanInput.tsx         # Hero scan input
+│   └── scanner/
+│       └── queue.ts              # Background auto-scan queue singleton
 ├── openclaw-skill/
 │   └── 0g-sentinel-scan.json     # OpenClaw skill manifest
 ├── scripts/

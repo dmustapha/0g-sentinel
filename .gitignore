@@ -71,3 +71,6 @@ ISSUE-REGISTRY.md
 TESTING-PLAN.md
 VERIFY-REPORT.md
 PULSE.md
+
+# Design proposals (local only)
+frontend/proposals/

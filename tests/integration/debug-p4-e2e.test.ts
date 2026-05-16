@@ -16,7 +16,7 @@ async function deployFullSystem() {
 
   const registry = await (await ethers.getContractFactory("AgentRegistry")).deploy() as unknown as AgentRegistry;
   const attestation = await (await ethers.getContractFactory("AttestationRegistry")).deploy() as unknown as AttestationRegistry;
-  const gate = await (await ethers.getContractFactory("AgentGate")).deploy(await attestation.getAddress()) as unknown as AgentGate;
+  const gate = await (await ethers.getContractFactory("AgentGate")).deploy(await attestation.getAddress(), false, false) as unknown as AgentGate;
 
   // Register 3 agents
   await registry.registerAgentsBatch(
@@ -115,13 +115,13 @@ describe("E2E Flow 2: Agent detail — attestation proof view", () => {
   it("Tier 1: AgentGate.isSafe correctly reflects current attestation state", async () => {
     const { attestation, gate, scanner, agentA } = await deployFullSystem();
     // Before attestation
-    const [safe1] = await gate.isSafe(agentA.address);
+    const [safe1] = await gate.isSafe.staticCall(agentA.address);
     expect(safe1).to.be.false;
     // After attestation (SAFE)
     await attestation.connect(scanner).writeAttestation(
       agentA.address, 10, 0, 0, "", "", HASH_A, HASH_B, HASH_C
     );
-    const [safe2] = await gate.isSafe(agentA.address);
+    const [safe2] = await gate.isSafe.staticCall(agentA.address);
     expect(safe2).to.be.true;
   });
 });
@@ -196,7 +196,7 @@ describe("E2E Flow 4: Full attestation → gate → execution flow", () => {
     );
 
     // Step 3: Gate confirms safe
-    const [safe] = await gate.isSafe(agentA.address);
+    const [safe] = await gate.isSafe.staticCall(agentA.address);
     expect(safe).to.be.true;
 
     // Step 4: Execute passes
@@ -213,7 +213,7 @@ describe("E2E Flow 4: Full attestation → gate → execution flow", () => {
     await attestation.connect(scanner).writeAttestation(
       agentB.address, 85, 2, 2, "reentrancy + fund drain", "", HASH_A, HASH_B, HASH_C
     );
-    const [safe, reason] = await gate.isSafe(agentB.address);
+    const [safe, reason] = await gate.isSafe.staticCall(agentB.address);
     expect(safe).to.be.false;
     expect(reason).to.include("FLAGGED");
 

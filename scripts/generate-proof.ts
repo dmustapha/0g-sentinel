@@ -35,7 +35,7 @@ async function main() {
   const attestationABI = [
     "function getAllAttestedAgents() view returns (address[])",
     "function hasAttestation(address agentAddress) view returns (bool)",
-    "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
+    "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, string reasoning, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
   ];
   const attestationRegistry = new ethers.Contract(registryAddr, attestationABI, provider);
 

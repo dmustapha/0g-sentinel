@@ -1,5 +1,5 @@
 // File: scanner/storage.ts
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -8,6 +8,8 @@ export interface EvidenceArchive {
   agent_address: string;
   scan_timestamp: number;
   behavioral_data: {
+    data_source?: string;
+    tx_count_analyzed?: number;
     activity_summary: Record<string, unknown>;
     verdict: string;
     reasoning: string;
@@ -22,6 +24,8 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
   const evidenceBuffer = Buffer.from(evidenceJson, "utf-8");
 
   let tmpPath: string | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let zgFile: any = null;
 
   try {
     const { ZgFile, Indexer } = await import("@0gfoundation/0g-ts-sdk");
@@ -34,18 +38,23 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     const privateKey = process.env.ZERO_G_PRIVATE_KEY || process.env.SCANNER_PRIVATE_KEY || "";
 
     // Write evidence to temp file — ZgFile only supports fromFilePath/fromNodeFileHandle
-    tmpPath = join(tmpdir(), `0g-evidence-${Date.now()}.json`);
+    // randomBytes(4) suffix prevents collision when two scans run in the same millisecond
+    tmpPath = join(tmpdir(), `0g-evidence-${Date.now()}-${randomBytes(4).toString("hex")}.json`);
     writeFileSync(tmpPath, evidenceBuffer);
 
-    const zgFile = await ZgFile.fromFilePath(tmpPath);
+    zgFile = await ZgFile.fromFilePath(tmpPath);
     const provider = new ethers.JsonRpcProvider(rpcEndpoint);
     const signer = new ethers.Wallet(privateKey, provider);
 
     const indexer = new Indexer(indexerRpc);
+    // Hard 30s timeout — SDK upload can hang indefinitely if the storage node is unresponsive
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [result, uploadErr] = await indexer.upload(zgFile, rpcEndpoint, signer as any);
-
-    await zgFile.close();
+    const [result, uploadErr] = await Promise.race([
+      indexer.upload(zgFile, rpcEndpoint, signer as any),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("0G Storage upload timeout (30s)")), 30_000)
+      ),
+    ]);
 
     if (uploadErr) throw new Error(`Upload error: ${uploadErr}`);
 
@@ -62,6 +71,9 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     console.warn(`[StorageClient] Evidence hash (fallback SHA256): ${fallbackHash}`);
     return fallbackHash;
   } finally {
+    if (zgFile) {
+      try { await zgFile.close(); } catch { /* ignore close errors */ }
+    }
     if (tmpPath) {
       try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
     }

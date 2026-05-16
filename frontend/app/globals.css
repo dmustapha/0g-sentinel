@@ -871,10 +871,10 @@ body::after {
 
 .sg-hero-headline {
   font-family: "Syne", sans-serif;
-  font-size: clamp(1.75rem, 3.5vw, 2.875rem);
+  font-size: clamp(2.5rem, 5vw, 4rem);
   font-weight: 800;
   letter-spacing: -0.03em;
-  line-height: 1.1;
+  line-height: 0.95;
   color: rgba(255,255,255,0.9);
   margin-bottom: 1rem;
 }
@@ -1077,10 +1077,10 @@ body::after {
 
 .sg-dash-title {
   font-family: "Syne", sans-serif;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.2em;
-  text-transform: uppercase;
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
   color: rgba(255,255,255,0.9);
   margin: 0;
 }

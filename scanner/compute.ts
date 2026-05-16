@@ -1,6 +1,4 @@
 // File: scanner/compute.ts
-import OpenAI from "openai";
-
 export interface ComputeResult {
   content: string;
   receipt_hash: string; // From 0G Compute response
@@ -10,11 +8,6 @@ export interface ComputeResult {
     completion_tokens: number;
   };
 }
-
-const client = new OpenAI({
-  baseURL: process.env.ZERO_G_COMPUTE_URL || "https://router-api.0g.ai/v1",
-  apiKey: process.env.ZERO_G_COMPUTE_API_KEY || "",
-});
 
 /**
  * Send a chat completion request to 0G Compute and return the response with a cryptographic
@@ -69,7 +62,7 @@ export async function callCompute(
   // 4. SHA256 fallback
   const zgResKey = response.headers.get("zg-res-key");
   let receiptHash: string =
-    (zgResKey ? "0x" + zgResKey.replace(/-/g, "").padEnd(64, "0") : "") ||
+    (zgResKey ? "0x" + zgResKey.replace(/-/g, "").slice(0, 64).padEnd(64, "0") : "") ||
     data.usage?.receipt_hash ||
     response.headers.get("x-receipt-hash") ||
     response.headers.get("x-compute-receipt") ||

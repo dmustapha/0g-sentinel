@@ -32,6 +32,9 @@ const config: HardhatUserConfig = {
   gasReporter: {
     enabled: false,
   },
+  paths: {
+    tests: "./tests",
+  },
 };
 
 export default config;

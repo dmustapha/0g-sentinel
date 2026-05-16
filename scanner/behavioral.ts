@@ -52,7 +52,18 @@ Classification:
 export async function runBehavioralAnalysis(
   signals: BehavioralSignals
 ): Promise<BehavioralResult> {
-  const userMessage = `Analyze these pre-computed behavioral signals for AI agent ${signals.address}:
+  const dataSourceNote =
+    signals.data_source === "chain_history"
+      ? `Data source: LIVE 0G chain history (${signals.tx_count_analyzed} real transactions analyzed)`
+      : signals.data_source === "limited_history"
+      ? `Data source: PARTIAL 0G chain history (${signals.tx_count_analyzed} txs found in recent blocks; some signals estimated)`
+      : signals.data_source === "no_history"
+      ? `Data source: NO HISTORY — zero outgoing transactions found. This agent has no verifiable on-chain activity. Absence of history is NOT a safety signal — treat this as UNKNOWN/CAUTION, not SAFE.`
+      : `Data source: ARCHETYPE MODEL (demo scenario — not real on-chain history)`;
+
+  const userMessage = `Analyze these pre-computed behavioral signals for AI agent ${signals.address}.
+
+${dataSourceNote}
 
 Transaction volume (30-day window):
   Total transactions: ${signals.tx_count_30d}
@@ -75,7 +86,7 @@ Anomaly flags:
   Call frequency spike: ${signals.call_frequency_spike}
   Burst activity detected: ${signals.burst_detected}
 
-Return JSON with behavioral_score, threat_level, and reasoning.`;
+Return JSON with behavioral_score, threat_level, and reasoning. In the reasoning field, mention the data source (e.g. "Based on 47 real on-chain transactions...").`;
 
   const result = await callCompute(BEHAVIORAL_SYSTEM_PROMPT, userMessage);
 
@@ -91,12 +102,28 @@ Return JSON with behavioral_score, threat_level, and reasoning.`;
     CAUTION: 1,
     FLAGGED: 2,
   };
-  const threat_level = threatLevelMap[parsed.threat_level] ?? 1;
+  const raw_level = threatLevelMap[parsed.threat_level] ?? 1;
+  let behavioral_score = Math.min(100, Math.max(0, Math.round(parsed.behavioral_score)));
+
+  // Cross-validate score and threat_level — the LLM can produce contradictory values.
+  // Clamp score into the correct range for the declared threat level:
+  //   SAFE (0):    score must be 0-29
+  //   CAUTION (1): score must be 30-59
+  //   FLAGGED (2): score must be 60-100
+  let threat_level = raw_level;
+  if (raw_level === 2 && behavioral_score < 60) behavioral_score = 60;
+  else if (raw_level === 1 && behavioral_score < 30) behavioral_score = 30;
+  else if (raw_level === 1 && behavioral_score >= 60) behavioral_score = 59;
+  else if (raw_level === 0 && behavioral_score >= 60) threat_level = 2;  // score says FLAGGED, trust score
+  else if (raw_level === 0 && behavioral_score >= 30) threat_level = 1;  // SAFE label but CAUTION score → upgrade
+
+  // Truncate reasoning to MAX_REASONING_BYTES (1000) — matching the on-chain contract limit.
+  const reasoning = (parsed.reasoning || "").slice(0, 1000);
 
   return {
-    behavioral_score: Math.min(100, Math.max(0, Math.round(parsed.behavioral_score))),
+    behavioral_score,
     threat_level,
-    reasoning: parsed.reasoning || "",
+    reasoning,
     receipt_hash: result.receipt_hash,
   };
 }

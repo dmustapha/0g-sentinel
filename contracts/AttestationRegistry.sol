@@ -40,6 +40,7 @@ contract AttestationRegistry is Ownable {
     }
 
     mapping(address => Attestation) private attestations;
+    mapping(address => Attestation[]) private attestationHistory;
     mapping(address => bool) private authorizedScanners;
     address[] private attestedAgents;
 
@@ -93,6 +94,10 @@ contract AttestationRegistry is Ownable {
         require(code_risk <= 2, "Invalid code_risk");
 
         bool isNew = attestations[agentAddress].attestation_timestamp == 0;
+
+        if (!isNew) {
+            attestationHistory[agentAddress].push(attestations[agentAddress]);
+        }
 
         attestations[agentAddress] = Attestation({
             behavioral_score: behavioral_score,
@@ -160,5 +165,24 @@ contract AttestationRegistry is Ownable {
     /// @notice Returns the total number of unique attested agents.
     function getAttestedCount() external view returns (uint256) {
         return attestedAgents.length;
+    }
+
+    /// @notice Returns the most recent `limit` historical attestations for an agent (before the current one).
+    function getAttestationHistory(address agentAddress, uint256 limit)
+        external view returns (Attestation[] memory)
+    {
+        Attestation[] storage history = attestationHistory[agentAddress];
+        uint256 len = history.length;
+        if (limit == 0 || limit > len) limit = len;
+        Attestation[] memory result = new Attestation[](limit);
+        for (uint256 i = 0; i < limit; i++) {
+            result[i] = history[len - limit + i];
+        }
+        return result;
+    }
+
+    /// @notice Returns the number of historical attestations (rescans) for an agent.
+    function getAttestationHistoryCount(address agentAddress) external view returns (uint256) {
+        return attestationHistory[agentAddress].length;
     }
 }

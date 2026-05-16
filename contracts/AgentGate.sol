@@ -39,6 +39,7 @@ contract AgentGate {
 
     event AgentBlocked(address indexed agentAddress, string reason);
     event AgentAllowed(address indexed agentAddress);
+    event SentinelChecked(address indexed agent, bool safe, uint256 score, uint256 timestamp);
 
     constructor(address registryAddress) {
         registry = IAttestationRegistry(registryAddress);
@@ -47,7 +48,6 @@ contract AgentGate {
     /// @notice Check if an agent passes the safety threshold.
     function isSafe(address agentAddress)
         public
-        view
         returns (bool safe, string memory reason)
     {
         return isSafeWithAge(agentAddress, 0);
@@ -57,26 +57,30 @@ contract AgentGate {
     /// @param maxAgeSeconds Maximum seconds since attestation_timestamp. Pass 0 to skip expiry check.
     function isSafeWithAge(address agentAddress, uint256 maxAgeSeconds)
         public
-        view
         returns (bool safe, string memory reason)
     {
         if (!registry.hasAttestation(agentAddress)) {
+            emit SentinelChecked(agentAddress, false, 0, block.timestamp);
             return (false, "Agent has no attestation from 0G Sentinel");
         }
 
         IAttestationRegistry.Attestation memory att = registry.getAttestation(agentAddress);
 
         if (maxAgeSeconds > 0 && block.timestamp - att.attestation_timestamp > maxAgeSeconds) {
+            emit SentinelChecked(agentAddress, false, 0, block.timestamp);
             return (false, "Attestation expired: rescan required");
         }
 
         if (att.threat_level > MAX_THREAT_LEVEL) {
+            emit SentinelChecked(agentAddress, false, att.behavioral_score, block.timestamp);
             return (false, "Agent behavioral risk: FLAGGED");
         }
         if (att.code_risk > MAX_CODE_RISK) {
+            emit SentinelChecked(agentAddress, false, att.behavioral_score, block.timestamp);
             return (false, "Agent code_risk: VULNERABLE");
         }
 
+        emit SentinelChecked(agentAddress, true, att.behavioral_score, block.timestamp);
         return (true, "");
     }
 

@@ -23,6 +23,7 @@ const config: HardhatUserConfig = {
       url: "https://evmrpc.0g.ai",
       chainId: 16661, // VERIFIED: live eth_chainId call returned 0x4115 = 16661
       accounts: process.env.DEPLOYER_PRIVATE_KEY ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+      timeout: 120000,
     },
     hardhat: {
       chainId: 31337,

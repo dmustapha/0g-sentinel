@@ -1,6 +1,6 @@
 # 0G Sentinel — Submission Proof
 
-Generated: 2026-05-15T22:20:00.000Z
+Generated: 2026-05-16T00:00:00.000Z
 Network: 0G Aristotle Mainnet (Chain ID: 16661)
 RPC: https://evmrpc.0g.ai
 
@@ -8,9 +8,9 @@ RPC: https://evmrpc.0g.ai
 
 | Contract | Address | Explorer | Live |
 |----------|---------|----------|------|
-| AttestationRegistry | `0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba` | [View](https://chainscan.0g.ai/address/0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba) | ✅ |
-| AgentRegistry | `0x0c578A4B7F0985D4599A319634649ACbd8D377d4` | [View](https://chainscan.0g.ai/address/0x0c578A4B7F0985D4599A319634649ACbd8D377d4) | ✅ |
-| AgentGate | `0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012` | [View](https://chainscan.0g.ai/address/0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012) | ✅ |
+| AttestationRegistry | `0xB3E7048cef229fF5043CD2dBba296bF278d3F88d` | [View](https://chainscan.0g.ai/address/0xB3E7048cef229fF5043CD2dBba296bF278d3F88d) | ✅ |
+| AgentRegistry | `0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc` | [View](https://chainscan.0g.ai/address/0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc) | ✅ |
+| AgentGate | `0xCA3338Af9A1E0Df0539c3C8967597A56044D9360` | [View](https://chainscan.0g.ai/address/0xCA3338Af9A1E0Df0539c3C8967597A56044D9360) | ✅ |
 
 ## Agents in Registry
 
@@ -28,10 +28,12 @@ Threats detected (FLAGGED or VULNERABLE): 3 (all agents have at least one risk s
 
 ## 0G Integration Summary
 
-- **0G Compute**: Two independent AI inference pipelines via `https://router-api.0g.ai/v1` — behavioral analysis (Pipeline 1) + code vulnerability scan (Pipeline 2). Each produces a unique `zg-res-key` receipt hash stored on-chain in the attestation struct.
-- **0G Storage**: Evidence JSON uploaded to 0G distributed storage via `@0gfoundation/0g-ts-sdk` 1.2.8 (indexer: `indexer-storage-turbo.0g.ai`). Content-addressed root hash stored in `attestation.evidence_hash`. All 3 evidence archives are live on the 0G storage network with on-chain storage transaction proofs above.
-- **0G Chain**: All attestations written to `AttestationRegistry` on 0G Aristotle Mainnet (Chain ID: 16661). Immutable 9-field struct (including LLM reasoning) verifiable by any dApp via `getAttestation()`.
-- **AgentGate**: Composability primitive — gates agent execution based on attestation verdict. Reads directly from `AttestationRegistry` with freshness check via `isSafeWithAge()`.
+- **0G Compute**: Two independent AI inference pipelines via `https://router-api.0g.ai/v1` — behavioral analysis (Pipeline 1) + code vulnerability scan (Pipeline 2). Each produces a unique `zg-res-key` receipt hash (bytes32 encoding a TEE chatID) stored on-chain. UI decodes receipts back to UUIDs, linkable to hardware-attested executions on Intel TDX + H100/H200 at pc.0g.ai.
+- **0G Storage**: Evidence JSON uploaded to 0G distributed storage via `@0gfoundation/0g-ts-sdk`. Content-addressed root hash stored in `attestation.evidence_hash`. Merkle proof verification available via `POST /api/verify-evidence` (Indexer.download with proof=true).
+- **0G Chain**: All attestations written to `AttestationRegistry` on 0G Aristotle Mainnet (Chain ID: 16661). Registry v2 adds append-only history (`getAttestationHistory`, `getAttestationHistoryCount`) — rescans preserve prior verdicts. Public REST API at `/api/v1/attestation/:address`.
+- **AgentGate**: Composability primitive — gates agent execution based on attestation verdict. Emits `SentinelChecked(agent, safe, score, timestamp)` on every call for downstream monitoring.
+- **ERC-7857**: Generic iNFT interface detection via `supportsInterface(0x4f694152)` + `dataHashesOf()` fallback — works for any ERC-7857 compliant contract, not just a specific deployment.
+- **Fine-Tuning**: Attestation data packaged as `distilbert-base-uncased` training dataset, uploaded to 0G Storage, CLI command returned for `0g-compute-cli fine-tuning create-task`.
 
 ## Dashboard
 

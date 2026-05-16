@@ -5,6 +5,7 @@ export const AGENT_NAMES: Record<string, string> = {
   "0xaaaa000000000000000000000000000000000001": "Agent Alpha",
   "0xbbbb000000000000000000000000000000000002": "Agent Beta",
   "0xcccc000000000000000000000000000000000003": "Agent Gamma",
+  "0x62d4144db0f0a6fbbaeb6296c785c71b3d57c526": "0G Flow Protocol",
 };
 
 /** Resolve a display name from a lowercase address. */

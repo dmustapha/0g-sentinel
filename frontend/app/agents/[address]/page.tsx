@@ -431,9 +431,10 @@ export default async function AgentDetailPage({ params }: Props) {
                 <p style={{
                   fontFamily: "DM Mono, monospace",
                   fontSize: "0.75rem",
-                  color: "rgba(255,255,255,0.55)",
+                  color: "rgba(255,255,255,0.8)",
                   lineHeight: 1.65,
                   fontStyle: "italic",
+                  margin: 0,
                 }}>
                   &ldquo;{attestation.reasoning}&rdquo;
                 </p>

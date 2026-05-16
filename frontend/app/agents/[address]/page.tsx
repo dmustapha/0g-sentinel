@@ -138,7 +138,7 @@ export default async function AgentDetailPage({ params }: Props) {
             fontSize: "0.5625rem",
             color: "#a78bfa",
             border: "1px solid rgba(167,139,250,0.35)",
-            borderRadius: "4px",
+            borderRadius: 8,
             padding: "0.2rem 0.5rem",
             letterSpacing: "0.08em",
           }}>
@@ -373,16 +373,16 @@ export default async function AgentDetailPage({ params }: Props) {
                     </div>
                   )}
                   <a
-                    href="https://pc.0g.ai"
+                    href={`${explorerBase}/address/${address}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     style={{
                       display: "inline-block",
                       marginTop: "0.25rem",
                       padding: "0.375rem 0.75rem",
-                      background: "rgba(0, 212, 255, 0.08)",
-                      border: "1px solid rgba(0, 212, 255, 0.25)",
-                      borderRadius: "4px",
+                      background: "rgba(6, 182, 212, 0.08)",
+                      border: "1px solid rgba(6, 182, 212, 0.25)",
+                      borderRadius: 8,
                       color: "#06b6d4",
                       fontFamily: "var(--font-dm-mono, monospace)",
                       fontSize: "0.5625rem",
@@ -390,7 +390,7 @@ export default async function AgentDetailPage({ params }: Props) {
                       letterSpacing: "0.05em",
                     }}
                   >
-                    Verify on 0G Proof Cloud →
+                    View Attestation on 0G Explorer ↗
                   </a>
                 </div>
               )}

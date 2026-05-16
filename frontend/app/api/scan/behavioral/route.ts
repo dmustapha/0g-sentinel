@@ -65,23 +65,29 @@ export async function POST(req: NextRequest) {
   } catch (error: unknown) {
     // Clear cooldown on failure — user should be able to retry immediately
     scanCooldowns.delete(agentAddress.toLowerCase());
-    console.error("[BehavioralScanAPI] Scan error:", error);
+    // Log full error details — visible in Vercel function logs for diagnosis
+    const rawMsg = error instanceof Error ? error.message : String(error);
+    console.error("[BehavioralScanAPI] Scan error for", agentAddress, "—", rawMsg);
 
     // Surface actionable error messages to the client
-    const msg = String(error);
+    const msg = rawMsg.toLowerCase();
     let userError = "Scan failed. Please try again.";
-    if (msg.includes("timeout") || msg.includes("ETIMEDOUT")) {
+    if (msg.includes("timeout") || msg.includes("etimedout") || msg.includes("aborted") || msg.includes("timed out")) {
       userError = "Scan timed out — 0G network may be congested. Retry in 30s.";
-    } else if (msg.includes("API error: 4") || msg.includes("401") || msg.includes("403")) {
+    } else if (msg.includes("api error: 4") || msg.includes("401") || msg.includes("403") || msg.includes("unauthorized")) {
       userError = "0G Compute API authentication error. Check API key configuration.";
-    } else if (msg.includes("0G Storage") || msg.includes("StorageClient")) {
+    } else if (msg.includes("0g storage") || msg.includes("storageclient")) {
       userError = "Evidence archival failed. Check 0G Storage connectivity and retry.";
-    } else if (msg.includes("nonce") || msg.includes("replacement fee")) {
+    } else if (msg.includes("nonce") || msg.includes("replacement fee") || msg.includes("underpriced") || msg.includes("already known") || msg.includes("same hash")) {
       userError = "Transaction nonce conflict. Retry in 10s.";
     } else if (msg.includes("insufficient funds")) {
       userError = "Scanner wallet has insufficient funds for gas.";
-    } else if (msg.includes("Invalid agent address")) {
+    } else if (msg.includes("invalid agent address")) {
       userError = "Invalid agent address format.";
+    } else if (msg.includes("failed to parse")) {
+      userError = "AI model returned unexpected response. Retry in a few seconds.";
+    } else if (msg.includes("execution reverted") || msg.includes("call_exception")) {
+      userError = "On-chain write failed — contract rejected transaction. Retry in 10s.";
     }
 
     return NextResponse.json({ error: userError }, { status: 500 });

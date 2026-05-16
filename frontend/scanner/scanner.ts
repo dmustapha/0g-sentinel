@@ -300,46 +300,65 @@ function computeSignalsFromTxList(
 /**
  * Fallback block scan: fetch full block data for the last N blocks and extract
  * transactions from the agent address. Used when the explorer API is unavailable.
- * Scans up to 100 blocks (vs the original 5) for better signal coverage.
+ * Uses Promise.allSettled so individual block fetch failures don't abort the whole scan.
+ * Wraps the entire function in try-catch so any RPC error returns a safe no_history profile.
  */
 async function blockScanFallback(agentAddress: string): Promise<BehavioralSignals> {
-  const provider = getProvider();
-  const [latestBlock, balance] = await Promise.all([
-    provider.getBlockNumber(),
-    provider.getBalance(agentAddress),
-  ]);
+  const noHistory = (): BehavioralSignals => ({
+    address: agentAddress,
+    tx_count_30d: 0, tx_count_7d: 0,
+    fund_outflow_pct: 0, max_single_transfer_pct: 0,
+    method_concentration: 0.5, timing_regularity_cv: 0.5,
+    hour_entropy: 0, counterparty_herfindahl: 0.5,
+    nonce_gap_rate: 0.5, value_entropy: 0,
+    call_frequency_spike: false, large_outflow_detected: false, burst_detected: false,
+    data_source: "no_history", tx_count_analyzed: 0,
+  });
 
-  const scanDepth = 100; // 100 blocks ≈ ~20 minutes on 0G Aristotle
-  const BATCH_SIZE = 20; // avoid overwhelming the RPC node
+  try {
+    const provider = getProvider();
+    const [latestBlock, balance] = await Promise.all([
+      provider.getBlockNumber(),
+      provider.getBalance(agentAddress),
+    ]);
 
-  const blockNumbers: number[] = [];
-  for (let b = latestBlock; b > latestBlock - scanDepth && b > 0; b--) {
-    blockNumbers.push(b);
-  }
+    const scanDepth = 50; // 50 blocks — keeps RPC call count reasonable
+    const BATCH_SIZE = 10; // smaller batches to avoid overwhelming the RPC node
 
-  const txs: BlockscoutTx[] = [];
-  for (let i = 0; i < blockNumbers.length; i += BATCH_SIZE) {
-    const batch = blockNumbers.slice(i, i + BATCH_SIZE);
-    const blocks = await Promise.all(batch.map((b) => provider.getBlock(b, true)));
-    for (const block of blocks) {
-      if (!block) continue;
-      for (const tx of block.transactions as any[]) {
-        if (typeof tx === "object" && tx.from?.toLowerCase() === agentAddress.toLowerCase()) {
-          txs.push({
-            hash: tx.hash,
-            from: tx.from,
-            to: tx.to || "",
-            value: String(tx.value || "0"),
-            timeStamp: String(block.timestamp),
-            input: tx.data || "0x",
-          });
+    const blockNumbers: number[] = [];
+    for (let b = latestBlock; b > latestBlock - scanDepth && b > 0; b--) {
+      blockNumbers.push(b);
+    }
+
+    const txs: BlockscoutTx[] = [];
+    for (let i = 0; i < blockNumbers.length; i += BATCH_SIZE) {
+      const batch = blockNumbers.slice(i, i + BATCH_SIZE);
+      // allSettled — a failed block fetch is skipped, not fatal
+      const results = await Promise.allSettled(batch.map((b) => provider.getBlock(b, true)));
+      for (const res of results) {
+        if (res.status !== "fulfilled" || !res.value) continue;
+        const block = res.value;
+        for (const tx of block.transactions as any[]) {
+          if (typeof tx === "object" && tx.from?.toLowerCase() === agentAddress.toLowerCase()) {
+            txs.push({
+              hash: tx.hash,
+              from: tx.from,
+              to: tx.to || "",
+              value: String(tx.value || "0"),
+              timeStamp: String(block.timestamp),
+              input: tx.data || "0x",
+            });
+          }
         }
       }
     }
-  }
 
-  const source = txs.length === 0 ? "no_history" : "limited_history";
-  return computeSignalsFromTxList(agentAddress, txs, BigInt(balance), source);
+    const source = txs.length === 0 ? "no_history" : "limited_history";
+    return computeSignalsFromTxList(agentAddress, txs, BigInt(balance), source);
+  } catch (err) {
+    console.warn(`[Scanner] blockScanFallback failed for ${agentAddress}:`, err);
+    return noHistory();
+  }
 }
 
 /**

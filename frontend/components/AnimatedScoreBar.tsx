@@ -8,7 +8,7 @@ interface Props {
 
 export function AnimatedScoreBar({ score }: Props) {
   const fillRef = useRef<HTMLDivElement>(null);
-  const color = score >= 60 ? "#ef4444" : score >= 30 ? "#f59e0b" : "#10b981";
+  const color = score >= 60 ? "#f43f5e" : score >= 30 ? "#fbbf24" : "#10b981";
 
   useEffect(() => {
     const el = fillRef.current;

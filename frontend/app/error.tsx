@@ -24,27 +24,27 @@ export default function Error({
       gap: "1.5rem",
     }}>
       <div style={{
-        fontFamily: "var(--font-jetbrains-mono, monospace)",
+        fontFamily: "var(--font-dm-mono, monospace)",
         fontSize: "0.6875rem",
-        color: "#ef4444",
+        color: "#f43f5e",
         letterSpacing: "0.1em",
         textTransform: "uppercase",
       }}>
         Error
       </div>
       <div style={{
-        fontFamily: "Space Grotesk, sans-serif",
+        fontFamily: "Syne, sans-serif",
         fontSize: "1.25rem",
         fontWeight: 600,
-        color: "#e2e8f0",
+        color: "rgba(255,255,255,0.9)",
         textAlign: "center",
       }}>
         Something went wrong
       </div>
       <div style={{
-        fontFamily: "var(--font-jetbrains-mono, monospace)",
+        fontFamily: "var(--font-dm-mono, monospace)",
         fontSize: "0.75rem",
-        color: "#334155",
+        color: "rgba(255,255,255,0.15)",
         textAlign: "center",
         maxWidth: 400,
       }}>

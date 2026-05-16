@@ -20,20 +20,20 @@ export function VerifyEvidenceButton({ evidenceHash }: { evidenceHash: string })
   }
 
   if (state === "verified") return (
-    <span style={{ color: "#10b981", fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem" }}>
+    <span style={{ color: "#10b981", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
       MERKLE VERIFIED ({detail})
     </span>
   );
   if (state === "failed") return (
-    <span style={{ color: "#ef4444", fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem" }}>
+    <span style={{ color: "#f43f5e", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
       VERIFY FAILED: {detail}
     </span>
   );
 
   return (
     <button onClick={verify} disabled={state === "loading"}
-      style={{ background: "transparent", border: "1px solid rgba(0,212,255,0.3)", color: "#00d4ff",
-        fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.5625rem", padding: "0.3rem 0.6rem",
+      style={{ background: "transparent", border: "1px solid rgba(6,182,212,0.3)", color: "#06b6d4",
+        fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", padding: "0.3rem 0.6rem",
         borderRadius: "4px", cursor: "pointer", letterSpacing: "0.05em" }}>
       {state === "loading" ? "VERIFYING..." : "VERIFY EVIDENCE"}
     </button>

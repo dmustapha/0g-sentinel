@@ -51,8 +51,8 @@ export function QueueBanner() {
     <div style={{
       background: done
         ? "rgba(16,185,129,0.06)"
-        : "rgba(0,212,255,0.04)",
-      border: `1px solid ${done ? "rgba(16,185,129,0.25)" : "rgba(0,212,255,0.15)"}`,
+        : "rgba(6,182,212,0.04)",
+      border: `1px solid ${done ? "rgba(16,185,129,0.25)" : "rgba(6,182,212,0.15)"}`,
       borderRadius: "4px",
       padding: "0.75rem 1rem",
       marginBottom: "1.25rem",
@@ -65,14 +65,14 @@ export function QueueBanner() {
       <div style={{ flex: "1 1 160px", minWidth: 120 }}>
         <div style={{
           height: 3,
-          background: "rgba(0,212,255,0.1)",
+          background: "rgba(6,182,212,0.1)",
           borderRadius: 2,
           overflow: "hidden",
         }}>
           <div style={{
             height: "100%",
             width: `${pct}%`,
-            background: done ? "#10b981" : "#00d4ff",
+            background: done ? "#10b981" : "#06b6d4",
             borderRadius: 2,
             transition: "width 0.6s ease",
           }} />
@@ -80,19 +80,19 @@ export function QueueBanner() {
       </div>
 
       {/* Status text */}
-      <div style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.5625rem", color: "#64748b" }}>
+      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.35)" }}>
         {done ? (
           <span style={{ color: "#10b981" }}>
             ✓ Auto-scan complete. {status.completed} agents attested.
-            {status.failed > 0 && <span style={{ color: "#f59e0b" }}> · {status.failed} failed</span>}
+            {status.failed > 0 && <span style={{ color: "#fbbf24" }}> · {status.failed} failed</span>}
           </span>
         ) : (
           <>
-            <span style={{ color: "#00d4ff" }}>Auto-scanning</span>
+            <span style={{ color: "#06b6d4" }}>Auto-scanning</span>
             {" · "}{status.completed}/{status.total} done
             {status.queued > 0 && <> · {status.queued} queued</>}
             {status.inFlight && (
-              <span style={{ color: "#475569" }}>
+              <span style={{ color: "rgba(255,255,255,0.25)" }}>
                 {" · scanning "}{status.inFlight.slice(0, 8)}…{status.inFlight.slice(-4)}
               </span>
             )}
@@ -100,7 +100,7 @@ export function QueueBanner() {
         )}
       </div>
 
-      <div style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.5rem", color: "#334155" }}>
+      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5rem", color: "rgba(255,255,255,0.15)" }}>
         {done ? "" : "New attestations appear on refresh"}
       </div>
     </div>

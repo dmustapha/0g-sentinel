@@ -87,7 +87,7 @@ export default async function Home() {
             <div className="sg-feat-name">AgentGate</div>
             <div className="sg-feat-desc">
               Any protocol can gate execution on{" "}
-              <code style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", color: "#00d4ff", fontSize: "0.75rem" }}>
+              <code style={{ fontFamily: "var(--font-dm-mono, monospace)", color: "#06b6d4", fontSize: "0.75rem" }}>
                 isSafe()
               </code>{" "}
               . No centralized oracle required.
@@ -102,8 +102,8 @@ export default async function Home() {
         gap: "2rem",
         flexWrap: "wrap",
         padding: "1.25rem 0",
-        borderTop: "1px solid rgba(0,212,255,0.08)",
-        borderBottom: "1px solid rgba(0,212,255,0.08)",
+        borderTop: "1px solid rgba(6,182,212,0.08)",
+        borderBottom: "1px solid rgba(6,182,212,0.08)",
         marginBottom: "0.5rem",
       }}>
         {[
@@ -114,18 +114,18 @@ export default async function Home() {
         ].map(({ label, value }) => (
           <div key={label} style={{ flex: "1 1 120px", minWidth: 0 }}>
             <div style={{
-              fontFamily: "var(--font-jetbrains-mono, monospace)",
+              fontFamily: "var(--font-dm-mono, monospace)",
               fontSize: "clamp(1.25rem, 3vw, 2rem)",
               fontWeight: 700,
-              color: "#00d4ff",
+              color: "#06b6d4",
               lineHeight: 1,
             }}>
               {value}
             </div>
             <div style={{
-              fontFamily: "Inter, sans-serif",
+              fontFamily: "DM Mono, monospace",
               fontSize: "0.6875rem",
-              color: "#334155",
+              color: "rgba(255,255,255,0.15)",
               marginTop: "0.25rem",
               textTransform: "uppercase",
               letterSpacing: "0.08em",

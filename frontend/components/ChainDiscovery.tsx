@@ -58,7 +58,7 @@ function ScanButton({ address }: { address: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
       {state.error && (
-        <div style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.5625rem", color: "#ef4444", maxWidth: 130, textAlign: "right", lineHeight: 1.3 }}>
+        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "#f43f5e", maxWidth: 130, textAlign: "right", lineHeight: 1.3 }}>
           {state.error}
         </div>
       )}
@@ -114,7 +114,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
           Live on 0G Chain
         </h2>
         {latestBlock !== null && (
-          <span style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.5625rem", color: "#475569" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.25)" }}>
             block #{latestBlock.toLocaleString()} · last 10k blocks · sorted by activity
           </span>
         )}
@@ -131,13 +131,14 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
             value={filter}
             onChange={(e) => { setFilter(e.target.value); setPage(1); }}
             placeholder="Filter by address…"
+            aria-label="Filter contracts by address"
             style={{
-              fontFamily: "var(--font-jetbrains-mono, monospace)",
-              fontSize: "0.75rem",
-              color: "#c8d3e8",
-              background: "rgba(0,212,255,0.03)",
-              border: "1px solid rgba(0,212,255,0.12)",
-              borderRadius: 2,
+              fontFamily: "var(--font-dm-mono, monospace)",
+              fontSize: "1rem",
+              color: "rgba(255,255,255,0.6)",
+              background: "rgba(6,182,212,0.03)",
+              border: "1px solid rgba(6,182,212,0.12)",
+              borderRadius: 8,
               padding: "0.375rem 0.75rem",
               outline: "none",
               width: "100%",
@@ -145,7 +146,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
             }}
           />
           {filter && (
-            <span style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem", color: "#475569", marginLeft: "0.75rem" }}>
+            <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "rgba(255,255,255,0.25)", marginLeft: "0.75rem" }}>
               {filtered.length} of {contracts.length}
             </span>
           )}
@@ -153,15 +154,15 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
       )}
 
       {loading ? (
-        <div style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.75rem", color: "#475569", padding: "2rem 0" }}>
+        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "rgba(255,255,255,0.25)", padding: "2rem 0" }}>
           Indexing chain logs…
         </div>
       ) : error ? (
-        <div style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.75rem", color: "#ef4444", padding: "2rem 0" }}>
+        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "#f43f5e", padding: "2rem 0" }}>
           {error}
         </div>
       ) : contracts.length === 0 ? (
-        <div style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.75rem", color: "#334155", padding: "2rem 0" }}>
+        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "rgba(255,255,255,0.15)", padding: "2rem 0" }}>
           All active contracts in this window have already been attested.
         </div>
       ) : (
@@ -190,14 +191,14 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
                       target="_blank"
                       rel="noopener noreferrer"
                       className="sg-tbl-agent-addr"
-                      style={{ color: "#00d4ff", textDecoration: "none" }}
+                      style={{ color: "#06b6d4", textDecoration: "none" }}
                     >
                       {c.address.slice(0, 8)}…{c.address.slice(-6)}
                     </a>
                   </td>
                   <td className="sg-score-cell">
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <span style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.75rem", color: "#94a3b8", minWidth: "2.5rem", textAlign: "right" }}>
+                      <span style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "rgba(255,255,255,0.55)", minWidth: "2.5rem", textAlign: "right" }}>
                         {c.logCount}
                       </span>
                       <div className="sg-tbl-score-track" style={{ width: 60 }}>
@@ -205,7 +206,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
                           className="sg-tbl-score-fill"
                           style={{
                             width: `${Math.min(100, (c.logCount / (contracts[0]?.logCount || 1)) * 100)}%`,
-                            background: "#334155",
+                            background: "rgba(255,255,255,0.15)",
                           }}
                         />
                       </div>
@@ -234,7 +235,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
             </div>
           )}
 
-          <div style={{ marginTop: "0.75rem", fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.5625rem", color: "#334155" }}>
+          <div style={{ marginTop: "0.75rem", fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.15)" }}>
             {filter ? `${filtered.length} matching · ` : ""}{contracts.length} unscanned contracts discovered · source: eth_getLogs · auto-scanning in background
           </div>
         </>

@@ -6,8 +6,8 @@
 // Runs entirely client-side so it never blocks the initial server render.
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { agentDisplayName } from "@/lib/constants";
-import { THREAT_LABELS } from "@/lib/types";
 
 const PAGE_SIZE = 20;
 
@@ -20,7 +20,6 @@ interface ScanState {
   scanning: boolean;
   elapsed: number;
   error: string | null;
-  result: { label: string; score: number } | null;
 }
 
 function ScanButton({ address }: { address: string }) {
@@ -29,7 +28,6 @@ function ScanButton({ address }: { address: string }) {
     scanning: false,
     elapsed: 0,
     error: null,
-    result: null,
   });
 
   useEffect(() => {
@@ -39,7 +37,7 @@ function ScanButton({ address }: { address: string }) {
   }, [state.scanning]);
 
   async function handleScan() {
-    setState({ scanning: true, elapsed: 0, error: null, result: null });
+    setState({ scanning: true, elapsed: 0, error: null });
     try {
       const res = await fetch("/api/scan/behavioral", {
         method: "POST",
@@ -50,10 +48,7 @@ function ScanButton({ address }: { address: string }) {
         const data = await res.json().catch(() => ({}));
         setState((s) => ({ ...s, scanning: false, error: data.error || `Scan failed (${res.status})` }));
       } else {
-        const data = await res.json();
-        const label = THREAT_LABELS[data.threat_level as 0 | 1 | 2] ?? "UNKNOWN";
-        setState((s) => ({ ...s, scanning: false, result: { label, score: data.behavioral_score ?? 0 } }));
-        router.refresh();
+        router.push(`/agents/${address}`);
       }
     } catch {
       setState((s) => ({ ...s, scanning: false, error: "Scan failed — network error" }));
@@ -65,15 +60,6 @@ function ScanButton({ address }: { address: string }) {
       {state.error && (
         <div style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.5625rem", color: "#ef4444", maxWidth: 130, textAlign: "right", lineHeight: 1.3 }}>
           {state.error}
-        </div>
-      )}
-      {state.result && (
-        <div style={{
-          fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.5625rem",
-          color: state.result.label === "FLAGGED" ? "#ef4444" : state.result.label === "CAUTION" ? "#f59e0b" : "#10b981",
-          textAlign: "right",
-        }}>
-          ✓ {state.result.label} ({state.result.score})
         </div>
       )}
       <button
@@ -194,7 +180,9 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
               {visible.map((c, i) => (
                 <tr key={c.address} className="sg-agent-tr" style={{ animationDelay: `${i * 30}ms` }}>
                   <td>
-                    <div className="sg-tbl-agent-name">{agentDisplayName(c.address)}</div>
+                    <Link href={`/agents/${c.address}`} style={{ textDecoration: "none" }}>
+                      <div className="sg-tbl-agent-name" style={{ cursor: "pointer" }}>{agentDisplayName(c.address)}</div>
+                    </Link>
                   </td>
                   <td>
                     <a

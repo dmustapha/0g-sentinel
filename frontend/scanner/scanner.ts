@@ -34,16 +34,29 @@ export interface FullScanResult {
 // Agent Beta has a real reentrancy vulnerability so the code scan returns VULNERABLE with a receipt.
 const DEFAULT_CONTRACT_SOURCES: Record<string, string> = {
   "0xaaaa000000000000000000000000000000000001": `
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.20;
+// AgentAlpha: read-only registry agent. No external calls, no state-mutating logic.
+// Stores a task counter and emits events — zero reentrancy or access-control surface.
 contract AgentAlpha {
-  address owner;
+  address public immutable owner;
+  uint256 public taskCount;
+  event TaskRecorded(address indexed by, uint256 taskId, bytes32 dataHash);
+
   constructor() { owner = msg.sender; }
-  function execute(address target, bytes calldata data) external onlyOwner returns (bytes memory) {
-    (bool ok, bytes memory result) = target.call(data);
-    require(ok, "execution failed");
-    return result;
+
+  modifier onlyOwner() {
+    require(msg.sender == owner, "not owner");
+    _;
   }
-  modifier onlyOwner() { require(msg.sender == owner); _; }
+
+  function recordTask(bytes32 dataHash) external onlyOwner returns (uint256 taskId) {
+    taskId = ++taskCount;
+    emit TaskRecorded(msg.sender, taskId, dataHash);
+  }
+
+  function getTaskCount() external view returns (uint256) {
+    return taskCount;
+  }
 }`,
   "0xbbbb000000000000000000000000000000000002": `
 pragma solidity ^0.7.0;

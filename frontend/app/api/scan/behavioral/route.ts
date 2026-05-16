@@ -42,6 +42,8 @@ export async function POST(req: NextRequest) {
       { status: 429 }
     );
   }
+  // Set cooldown at start to prevent parallel scans for the same address.
+  // Cleared on failure so the user can retry immediately after a failed scan.
   scanCooldowns.set(agentAddress.toLowerCase(), now);
 
   try {
@@ -60,11 +62,28 @@ export async function POST(req: NextRequest) {
       evidence_hash: result.evidence_hash,
       attestation_tx_hash: result.attestation_tx_hash,
     });
-  } catch (error) {
+  } catch (error: unknown) {
+    // Clear cooldown on failure — user should be able to retry immediately
+    scanCooldowns.delete(agentAddress.toLowerCase());
     console.error("[BehavioralScanAPI] Scan error:", error);
-    return NextResponse.json(
-      { error: "Scan failed — see server logs for details" },
-      { status: 500 }
-    );
+
+    // Surface actionable error messages to the client
+    const msg = String(error);
+    let userError = "Scan failed. Please try again.";
+    if (msg.includes("timeout") || msg.includes("ETIMEDOUT")) {
+      userError = "Scan timed out — 0G network may be congested. Retry in 30s.";
+    } else if (msg.includes("API error: 4") || msg.includes("401") || msg.includes("403")) {
+      userError = "0G Compute API authentication error. Check API key configuration.";
+    } else if (msg.includes("0G Storage") || msg.includes("StorageClient")) {
+      userError = "Evidence archival failed. Check 0G Storage connectivity and retry.";
+    } else if (msg.includes("nonce") || msg.includes("replacement fee")) {
+      userError = "Transaction nonce conflict. Retry in 10s.";
+    } else if (msg.includes("insufficient funds")) {
+      userError = "Scanner wallet has insufficient funds for gas.";
+    } else if (msg.includes("Invalid agent address")) {
+      userError = "Invalid agent address format.";
+    }
+
+    return NextResponse.json({ error: userError }, { status: 500 });
   }
 }

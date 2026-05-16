@@ -1,5 +1,5 @@
 // File: scanner/storage.ts
-import { createHash } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -38,7 +38,8 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     const privateKey = process.env.ZERO_G_PRIVATE_KEY || process.env.SCANNER_PRIVATE_KEY || "";
 
     // Write evidence to temp file — ZgFile only supports fromFilePath/fromNodeFileHandle
-    tmpPath = join(tmpdir(), `0g-evidence-${Date.now()}.json`);
+    // randomBytes(4) suffix prevents collision when two scans run in the same millisecond
+    tmpPath = join(tmpdir(), `0g-evidence-${Date.now()}-${randomBytes(4).toString("hex")}.json`);
     writeFileSync(tmpPath, evidenceBuffer);
 
     zgFile = await ZgFile.fromFilePath(tmpPath);

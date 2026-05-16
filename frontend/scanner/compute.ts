@@ -26,6 +26,7 @@ export async function callCompute(
     {
       method: "POST",
       keepalive: false,
+      signal: AbortSignal.timeout(90_000), // 90s — prevents hanging forever if 0G Compute is unresponsive
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.ZERO_G_COMPUTE_API_KEY}`,

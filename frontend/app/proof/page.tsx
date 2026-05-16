@@ -72,12 +72,12 @@ export default async function ProofPage() {
     {
       label: "0G Compute",
       status: pulse.compute ? "live" : "degraded",
-      detail: "Two independent inference pipelines — behavioral analysis + code vulnerability scan. Each returns a verifiable receipt hash via zg-res-key UUID header.",
+      detail: "Two independent inference pipelines: behavioral analysis and code vulnerability scan. Each returns a verifiable receipt hash via zg-res-key UUID header.",
     },
     {
       label: "0G Storage",
       status: pulse.storage ? "live" : "degraded",
-      detail: "Evidence JSON archived to 0G distributed storage via @0gfoundation/0g-ts-sdk 1.2.8. Content-addressed root hash stored in attestation.evidence_hash — permanently retrievable from the 0G storage network.",
+      detail: "Evidence JSON archived to 0G distributed storage via @0gfoundation/0g-ts-sdk 1.2.8. Content-addressed root hash stored in attestation.evidence_hash, permanently retrievable from the 0G storage network.",
     },
     {
       label: "0G Chain",
@@ -87,7 +87,7 @@ export default async function ProofPage() {
     {
       label: "AgentGate",
       status: pulse.gate ? "live" : "degraded",
-      detail: "Composability primitive — any protocol can require attestation before execution. isSafe() and isSafeWithAge() read directly from AttestationRegistry with optional freshness check.",
+      detail: "Composability primitive: any protocol can require attestation before execution. isSafe() and isSafeWithAge() read directly from AttestationRegistry with optional freshness check.",
     },
   ];
 
@@ -295,7 +295,7 @@ export default async function ProofPage() {
             lineHeight: 1.6,
           }}>
             Off-chain attestations can be forged. On-chain records are immutable, verifiable by any smart contract,
-            and composable — AgentGate requires no centralized oracle.
+            and composable. AgentGate requires no centralized oracle.
           </p>
         </div>
 
@@ -311,7 +311,7 @@ export default async function ProofPage() {
           }}>
             Each 0G Compute call returns a unique{" "}
             <span className="sg-mono" style={{ color: "#94a3b8" }}>zg-res-key</span> UUID.
-            Two independent hashes — behavioral + code — prove two separate AI inferences ran.
+            Two independent hashes (behavioral and code) prove two separate AI inferences ran.
           </p>
         </div>
 

@@ -36,7 +36,7 @@ Return a JSON object with these exact fields:
 {
   "behavioral_score": <integer 0-100, where 100 is highest risk>,
   "threat_level": <"SAFE" | "CAUTION" | "FLAGGED">,
-  "reasoning": <string, 2-3 sentences citing specific signal values that drove the verdict>
+  "reasoning": <string, 2-3 sentences in plain English for a non-technical user. Describe what the agent's behavior looks like and why it is safe, risky, or unknown. Do NOT mention metric names (method_concentration, timing_regularity_cv, counterparty_herfindahl, HHI, CV, hour_entropy, nonce_gap_rate, value_entropy) or raw numeric values. Do NOT include data source labels like "ARCHETYPE MODEL" or "no_history". Write naturally: e.g. "This agent shows varied, human-like transaction patterns with no signs of fund draining or automation.", "No transaction history found yet, so safety cannot be confirmed.", "Suspicious activity detected: funds are moving repeatedly to a single address with machine-like precision.">
 }
 
 Classification:
@@ -86,7 +86,7 @@ Anomaly flags:
   Call frequency spike: ${signals.call_frequency_spike}
   Burst activity detected: ${signals.burst_detected}
 
-Return JSON with behavioral_score, threat_level, and reasoning. In the reasoning field, mention the data source (e.g. "Based on 47 real on-chain transactions...").`;
+Return JSON with behavioral_score, threat_level, and reasoning. Write the reasoning in plain English for a non-technical user. No metric names, no raw numbers. Just describe what the behavior looks like and why it is safe, risky, or unknown.`;
 
   const result = await callCompute(BEHAVIORAL_SYSTEM_PROMPT, userMessage);
 

@@ -48,7 +48,7 @@ export function RescanButton({ address }: Props) {
         router.refresh();
       }
     } catch {
-      setError("Scan failed — check network connection");
+      setError("Scan failed. Check network connection.");
     } finally {
       setScanning(false);
     }

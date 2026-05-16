@@ -61,7 +61,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
         color: "#334155",
         textAlign: "center",
       }}>
-        No agents attested yet — auto-scan is indexing the chain
+        No agents attested yet. Auto-scan is indexing the chain.
       </div>
     );
   }

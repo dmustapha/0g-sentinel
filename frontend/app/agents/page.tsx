@@ -117,7 +117,7 @@ export default async function AgentsPage() {
           color: "#ef4444",
           textAlign: "center",
         }}>
-          Failed to load agents — check RPC connection
+          Failed to load agents. Check RPC connection.
         </div>
       ) : (
         <AgentsTable agents={agents} />

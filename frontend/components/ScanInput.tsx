@@ -48,7 +48,7 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
 
       router.push(`/agents/${addr}`);
     } catch {
-      setError("Scan failed — check network connection");
+      setError("Scan failed. Check network connection.");
     } finally {
       setScanning(false);
     }

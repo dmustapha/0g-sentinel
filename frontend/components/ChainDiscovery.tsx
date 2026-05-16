@@ -51,7 +51,7 @@ function ScanButton({ address }: { address: string }) {
         router.push(`/agents/${address}`);
       }
     } catch {
-      setState((s) => ({ ...s, scanning: false, error: "Scan failed — network error" }));
+      setState((s) => ({ ...s, scanning: false, error: "Scan failed. Network error." }));
     }
   }
 
@@ -120,7 +120,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
         )}
       </div>
       <div className="sg-dash-subtitle" style={{ marginBottom: "1.25rem" }}>
-        Active contracts discovered from chain logs — not pre-registered. Scan any to attest.
+        Active contracts discovered from chain logs. Not pre-registered. Scan any to attest.
       </div>
 
       {/* Filter input */}
@@ -171,7 +171,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
               <tr>
                 <th>CONTRACT</th>
                 <th>ADDRESS</th>
-                <th className="sg-score-cell" title="Number of on-chain events emitted — higher means more active">ACTIVITY</th>
+                <th className="sg-score-cell" title="Number of on-chain events emitted. Higher means more active.">ACTIVITY</th>
                 <th>STATUS</th>
                 <th />
               </tr>

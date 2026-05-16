@@ -83,14 +83,17 @@ export default async function AgentDetailPage({ params }: Props) {
   // Fetch attestation and bytecode in parallel.
   // Only check ERC-7857 if the address has bytecode — saves 2 RPC calls for EOAs.
   const { ethers } = await import("ethers");
+  // Normalize to EIP-55 checksum — ethers v6 throws INVALID_ARGUMENT for mixed-case
+  // addresses with wrong checksum when encoding them as Solidity `address` parameters.
+  const address = ethers.getAddress(params.address.toLowerCase());
   const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
   const [attestation, bytecode] = await Promise.all([
-    getAttestation(params.address),
-    new ethers.JsonRpcProvider(rpcUrl).getCode(params.address),
+    getAttestation(address),
+    new ethers.JsonRpcProvider(rpcUrl).getCode(address),
   ]);
-  const isERC7857 = bytecode !== "0x" ? await checkIsERC7857(params.address) : false;
+  const isERC7857 = bytecode !== "0x" ? await checkIsERC7857(address) : false;
   const explorerBase = "https://chainscan.0g.ai";
-  const shortAddr = `${params.address.slice(0, 8)}…${params.address.slice(-6)}`;
+  const shortAddr = `${address.slice(0, 8)}…${address.slice(-6)}`;
 
   const threatColor = attestation
     ? attestation.threatLevel === 2
@@ -145,7 +148,7 @@ export default async function AgentDetailPage({ params }: Props) {
         <div style={{ width: 1, height: 14, background: "#0f1c30" }} />
         <span className="sg-mono" style={{ color: "#334155" }}>{shortAddr}</span>
         <a
-          href={`${explorerBase}/address/${params.address}`}
+          href={`${explorerBase}/address/${address}`}
           target="_blank"
           rel="noopener noreferrer"
           className="sg-mono"
@@ -193,7 +196,7 @@ export default async function AgentDetailPage({ params }: Props) {
                 <div className="sg-label" style={{ marginBottom: "0.625rem", fontSize: "0.5625rem" }}>
                   Scan this agent
                 </div>
-                <ScanInput defaultAddress={params.address} />
+                <ScanInput defaultAddress={address} />
               </div>
             </div>
           ) : (
@@ -319,13 +322,13 @@ export default async function AgentDetailPage({ params }: Props) {
                   <div className="sg-data-field">
                     <span className="sg-data-label">Agent Address</span>
                     <span className="sg-data-value" style={{ color: "#00d4ff" }}>
-                      {params.address}
+                      {address}
                     </span>
                   </div>
                   <div className="sg-data-field">
                     <span className="sg-data-label">On-Chain Record</span>
                     <a
-                      href={`${explorerBase}/address/${params.address}`}
+                      href={`${explorerBase}/address/${address}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="sg-data-value"
@@ -400,7 +403,7 @@ export default async function AgentDetailPage({ params }: Props) {
                 <div style={{ fontSize: "0.625rem", color: "#94a3b8", marginBottom: "0.75rem", fontFamily: "var(--font-jetbrains-mono, monospace)" }}>
                   Upload attestation data as a training dataset to 0G Storage and get the CLI command to submit a fine-tuning task.
                 </div>
-                <FineTuneButton agentAddress={params.address} />
+                <FineTuneButton agentAddress={address} />
               </div>
             </>
           )}
@@ -481,7 +484,7 @@ export default async function AgentDetailPage({ params }: Props) {
           <div className="sg-rule" />
 
           <a
-            href={`${explorerBase}/address/${params.address}`}
+            href={`${explorerBase}/address/${address}`}
             target="_blank"
             rel="noopener noreferrer"
             className="sg-btn-primary"

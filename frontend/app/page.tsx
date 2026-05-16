@@ -19,16 +19,13 @@ async function getLiveStats(): Promise<LiveStats> {
       agentRegistry.getAllAgents() as Promise<string[]>,
       attestationRegistry.getAttestedCount() as Promise<bigint>,
     ]);
-    // Fetch attestations to count threats (fine for small agent count)
+    // Fetch attestations to count threats — single call per agent (timestamp==0 → no attestation)
     const attestations = await Promise.all(
-      agentAddresses.slice(0, 20).map(async (addr) => {
-        const has = await attestationRegistry.hasAttestation(addr);
-        if (!has) return null;
-        return attestationRegistry.getAttestation(addr);
-      })
+      agentAddresses.slice(0, 20).map((addr) => attestationRegistry.getAttestation(addr))
     );
     const threatsDetected = attestations.filter(
-      (a) => a && (Number(a.threat_level) === 2 || Number(a.code_risk) === 2)
+      (a) => BigInt(a.attestation_timestamp) > 0n &&
+             (Number(a.threat_level) === 2 || Number(a.code_risk) === 2)
     ).length;
     return {
       totalAgents: agentAddresses.length,

@@ -1,8 +1,7 @@
 "use client";
 // File: frontend/components/ScanInput.tsx
 // Allows any user to scan an arbitrary agent address — not just pre-registered ones.
-// Checks for an existing attestation first; if found, navigates directly to the report.
-// If not found, triggers a full scan and navigates to results on completion.
+// Triggers a full scan and navigates to the agent report on completion.
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -48,7 +47,6 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
       }
 
       router.push(`/agents/${addr}`);
-      router.refresh();
     } catch {
       setError("Scan failed — check network connection");
     } finally {

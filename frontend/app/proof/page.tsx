@@ -2,7 +2,7 @@
 import { getAttestationRegistry } from "@/lib/contracts";
 
 const COMPUTE_URL = process.env.ZERO_G_COMPUTE_URL || "https://router-api.0g.ai/v1";
-const COMPUTE_KEY = process.env.ZERO_G_API_KEY || "";
+const COMPUTE_KEY = process.env.ZERO_G_COMPUTE_API_KEY || "";
 
 interface PulseStatus {
   chain: boolean;

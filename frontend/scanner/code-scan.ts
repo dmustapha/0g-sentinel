@@ -51,6 +51,12 @@ export async function runCodeScan(
     };
   }
 
+  if (contractSource.length > 6000) {
+    console.warn(
+      `[CodeScan] Contract source truncated from ${contractSource.length} to 6000 chars for ${agentAddress}`
+    );
+  }
+
   const userMessage = `Analyze this smart contract for security vulnerabilities:
 
 Contract address: ${agentAddress}

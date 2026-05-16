@@ -44,8 +44,14 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     const signer = new ethers.Wallet(privateKey, provider);
 
     const indexer = new Indexer(indexerRpc);
+    // Hard 30s timeout — SDK upload can hang indefinitely if the storage node is unresponsive
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [result, uploadErr] = await indexer.upload(zgFile, rpcEndpoint, signer as any);
+    const [result, uploadErr] = await Promise.race([
+      indexer.upload(zgFile, rpcEndpoint, signer as any),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error("0G Storage upload timeout (30s)")), 30_000)
+      ),
+    ]);
 
     await zgFile.close();
 

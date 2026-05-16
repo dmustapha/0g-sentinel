@@ -426,7 +426,7 @@ export default async function AgentDetailPage({ params }: Props) {
         }}>
           {attestation?.reasoning ? (
             <>
-              <div>
+              <div style={{ textAlign: "center" }}>
                 <div className="sg-label" style={{ marginBottom: "0.75rem" }}>AI Reasoning</div>
                 <p style={{
                   fontFamily: "DM Mono, monospace",

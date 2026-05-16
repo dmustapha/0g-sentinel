@@ -215,6 +215,16 @@ body::after {
   color: rgba(255,255,255,0.35);
 }
 
+/* Section heading — Syne 700, readable contrast, used on card interiors */
+.sg-section-label {
+  font-family: "Syne", sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.75);
+}
+
 /* Pull quote — editorial moment */
 .sg-pull-quote {
   padding: 1.25rem 0 1.25rem 1.5rem;
@@ -520,7 +530,7 @@ body::after {
 .sg-data-label {
   font-family: "DM Mono", monospace;
   font-size: 0.625rem;
-  color: rgba(255,255,255,0.15);
+  color: rgba(255,255,255,0.35);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 }

@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
+import "@openzeppelin/contracts/access/Ownable.sol";
+
 interface IAttestationRegistry {
     struct Attestation {
         uint8 behavioral_score;
@@ -23,37 +25,97 @@ interface IAttestationRegistry {
  * @dev Composability primitive — reads 0G Sentinel attestations and gates agent execution.
  *      Any DeFi protocol integrates this to ensure only attested-safe agents are trusted.
  *
- *      Note: executeIfSafe() forwards arbitrary calls for this demo. Production use should
- *      add a function-selector whitelist to prevent abuse of the forwarding mechanism.
- *      MAX_THREAT_LEVEL and MAX_CODE_RISK are currently protocol-wide constants; production
- *      integrators may want per-deployment configurability via constructor parameters.
+ *      Changes from v1.0.0:
+ *      - DEFAULT_MAX_AGE = 30 days applied by isSafe() (was 0 = no expiry check)
+ *      - Target whitelist: when enabled, executeIfSafe() only forwards to approvedTargets
+ *      - Caller identity option: requireCallerIsAgent enforces msg.sender == agentAddress
+ *      - Ownable: gate configuration is owner-controlled
  */
-contract AgentGate {
-    string public constant VERSION = "1.0.0";
+contract AgentGate is Ownable {
+    string public constant VERSION = "1.1.0";
 
     IAttestationRegistry public immutable registry;
+
+    /// @notice Default attestation freshness window applied by isSafe().
+    ///         Attestations older than 30 days are treated as expired.
+    uint256 public constant DEFAULT_MAX_AGE = 30 days;
 
     // Max allowed: threat_level <= 1 (SAFE or CAUTION), code_risk <= 1 (CLEAN or WARNING)
     uint8 public constant MAX_THREAT_LEVEL = 1;
     uint8 public constant MAX_CODE_RISK = 1;
 
+    /// @notice When true, executeIfSafe() only forwards calls to whitelisted target addresses.
+    bool public whitelistEnabled;
+
+    /// @notice When true, executeIfSafe() requires msg.sender == agentAddress (strict identity).
+    bool public requireCallerIsAgent;
+
+    /// @notice Approved call targets when whitelistEnabled is active.
+    mapping(address => bool) public approvedTargets;
+
     event AgentBlocked(address indexed agentAddress, string reason);
     event AgentAllowed(address indexed agentAddress);
     event SentinelChecked(address indexed agent, bool safe, uint256 score, uint256 timestamp);
+    event TargetApproved(address indexed target);
+    event TargetRemoved(address indexed target);
+    event WhitelistToggled(bool enabled);
+    event CallerIdentityToggled(bool required);
 
-    constructor(address registryAddress) {
+    /// @param registryAddress        AttestationRegistry contract address.
+    /// @param _whitelistEnabled      True to restrict executeIfSafe() to approvedTargets.
+    /// @param _requireCallerIsAgent  True to enforce msg.sender == agentAddress in executeIfSafe().
+    constructor(
+        address registryAddress,
+        bool _whitelistEnabled,
+        bool _requireCallerIsAgent
+    ) Ownable(msg.sender) {
         registry = IAttestationRegistry(registryAddress);
+        whitelistEnabled = _whitelistEnabled;
+        requireCallerIsAgent = _requireCallerIsAgent;
     }
 
-    /// @notice Check if an agent passes the safety threshold.
+    // -------------------------------------------------------------------------
+    // Owner configuration
+    // -------------------------------------------------------------------------
+
+    /// @notice Add a target address to the call whitelist.
+    function approveTarget(address target) external onlyOwner {
+        require(target != address(0), "Invalid target");
+        approvedTargets[target] = true;
+        emit TargetApproved(target);
+    }
+
+    /// @notice Remove a target address from the call whitelist.
+    function removeTarget(address target) external onlyOwner {
+        approvedTargets[target] = false;
+        emit TargetRemoved(target);
+    }
+
+    /// @notice Enable or disable the target whitelist.
+    function setWhitelistEnabled(bool enabled) external onlyOwner {
+        whitelistEnabled = enabled;
+        emit WhitelistToggled(enabled);
+    }
+
+    /// @notice Enable or disable strict caller-identity enforcement.
+    function setRequireCallerIsAgent(bool required) external onlyOwner {
+        requireCallerIsAgent = required;
+        emit CallerIdentityToggled(required);
+    }
+
+    // -------------------------------------------------------------------------
+    // Safety checks
+    // -------------------------------------------------------------------------
+
+    /// @notice Check if an agent passes the safety threshold using DEFAULT_MAX_AGE (30 days).
     function isSafe(address agentAddress)
         public
         returns (bool safe, string memory reason)
     {
-        return isSafeWithAge(agentAddress, 0);
+        return isSafeWithAge(agentAddress, DEFAULT_MAX_AGE);
     }
 
-    /// @notice Check safety with an attestation freshness requirement.
+    /// @notice Check safety with a custom attestation freshness requirement.
     /// @param maxAgeSeconds Maximum seconds since attestation_timestamp. Pass 0 to skip expiry check.
     function isSafeWithAge(address agentAddress, uint256 maxAgeSeconds)
         public
@@ -84,22 +146,33 @@ contract AgentGate {
         return (true, "");
     }
 
+    // -------------------------------------------------------------------------
+    // Gated execution
+    // -------------------------------------------------------------------------
+
     /**
      * @dev Execute a call to target on behalf of a verified-safe agent.
      *      Reverts with the original revert reason if the inner call fails.
      *
-     *      Design note: msg.sender is NOT required to equal agentAddress by design.
-     *      This implements a delegated-call model: any orchestrator or protocol contract
-     *      can submit a call on behalf of an attested agent. The gate enforces that the
-     *      declared agentAddress holds a valid 0G Sentinel attestation — it does not
-     *      enforce that the caller IS that agent. Production integrations that require
-     *      strict caller identity should add `require(msg.sender == agentAddress)`.
+     *      When requireCallerIsAgent is true: msg.sender must equal agentAddress.
+     *      When whitelistEnabled is true: target must be in approvedTargets.
+     *      Both guards are disabled by default and can be toggled by the owner.
      */
     function executeIfSafe(
         address agentAddress,
         address target,
         bytes calldata data
     ) external returns (bytes memory) {
+        // Caller identity guard
+        if (requireCallerIsAgent) {
+            require(msg.sender == agentAddress, "Caller must be the agent");
+        }
+
+        // Target whitelist guard
+        if (whitelistEnabled) {
+            require(approvedTargets[target], "Target not whitelisted");
+        }
+
         (bool safe, string memory reason) = isSafe(agentAddress);
         if (!safe) {
             emit AgentBlocked(agentAddress, reason);

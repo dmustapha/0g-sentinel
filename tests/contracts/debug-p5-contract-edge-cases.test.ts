@@ -14,7 +14,7 @@ async function deployAll() {
   const [owner, scanner, agentA, agentB, notOwner] = await ethers.getSigners();
   const registry = await (await ethers.getContractFactory("AgentRegistry")).deploy() as unknown as AgentRegistry;
   const attestation = await (await ethers.getContractFactory("AttestationRegistry")).deploy() as unknown as AttestationRegistry;
-  const gate = await (await ethers.getContractFactory("AgentGate")).deploy(await attestation.getAddress()) as unknown as AgentGate;
+  const gate = await (await ethers.getContractFactory("AgentGate")).deploy(await attestation.getAddress(), false, false) as unknown as AgentGate;
   return { registry, attestation, gate, owner, scanner, agentA, agentB, notOwner };
 }
 
@@ -223,7 +223,7 @@ describe("Edge: AttestationRegistry — authorizeScanner/revokeScanner()", () =>
 describe("Edge: AgentGate — isSafe()", () => {
   it("Zero agent address → returns false (no attestation)", async () => {
     const { gate } = await deployAll();
-    const [safe] = await gate.isSafe(ethers.ZeroAddress);
+    const [safe] = await gate.isSafe.staticCall(ethers.ZeroAddress);
     expect(safe).to.be.false;
   });
 
@@ -233,7 +233,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     await attestation.connect(scanner).writeAttestation(
       agentA.address, 59, 1, 0, "", "", HASH_A, HASH_B, HASH_C
     );
-    const [safe] = await gate.isSafe(agentA.address);
+    const [safe] = await gate.isSafe.staticCall(agentA.address);
     expect(safe).to.be.true;
   });
 
@@ -243,7 +243,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     await attestation.connect(scanner).writeAttestation(
       agentA.address, 60, 2, 0, "", "", HASH_A, HASH_B, HASH_C
     );
-    const [safe] = await gate.isSafe(agentA.address);
+    const [safe] = await gate.isSafe.staticCall(agentA.address);
     expect(safe).to.be.false;
   });
 
@@ -253,7 +253,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     await attestation.connect(scanner).writeAttestation(
       agentA.address, 10, 0, 1, "warning only", "", HASH_A, HASH_B, HASH_C
     );
-    const [safe] = await gate.isSafe(agentA.address);
+    const [safe] = await gate.isSafe.staticCall(agentA.address);
     expect(safe).to.be.true;
   });
 
@@ -263,7 +263,7 @@ describe("Edge: AgentGate — isSafe()", () => {
     await attestation.connect(scanner).writeAttestation(
       agentA.address, 10, 0, 2, "reentrancy", "", HASH_A, HASH_B, HASH_C
     );
-    const [safe] = await gate.isSafe(agentA.address);
+    const [safe] = await gate.isSafe.staticCall(agentA.address);
     expect(safe).to.be.false;
   });
 });

@@ -51,6 +51,12 @@ export async function runCodeScan(
     };
   }
 
+  if (contractSource.length > 6000) {
+    console.warn(
+      `[CodeScan] Contract source truncated from ${contractSource.length} to 6000 chars for ${agentAddress}`
+    );
+  }
+
   const userMessage = `Analyze this smart contract for security vulnerabilities:
 
 Contract address: ${agentAddress}
@@ -77,9 +83,13 @@ Return JSON with code_risk and code_findings.`;
   };
   const code_risk = codeRiskMap[parsed.code_risk] ?? 1;
 
+  // Truncate to MAX_FINDINGS_BYTES (500) — the contract enforces this on-chain.
+  // Byte-safe: findings are ASCII vulnerability descriptions so slice by char is equivalent.
+  const code_findings = (parsed.code_findings || "").slice(0, 500);
+
   return {
     code_risk,
-    code_findings: parsed.code_findings || "",
+    code_findings,
     receipt_hash: result.receipt_hash,
   };
 }

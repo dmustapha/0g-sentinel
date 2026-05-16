@@ -254,7 +254,7 @@ export default async function ProofPage() {
                 padding: "0.5rem 0.75rem",
                 background: ok ? "rgba(16,185,129,0.03)" : "rgba(245,158,11,0.04)",
                 border: `1px solid ${ok ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)"}`,
-                borderRadius: 2,
+                borderRadius: 8,
               }}>
                 <div style={{
                   width: 6,

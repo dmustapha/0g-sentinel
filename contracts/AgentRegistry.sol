@@ -9,15 +9,13 @@ import "@openzeppelin/contracts/access/Ownable.sol";
  * @dev Index of AI agent addresses monitored by 0G Sentinel on 0G mainnet.
  *      Pre-populated with known demo agents via registerAgentsBatch().
  *
- *      Note: Registration is intentionally owner-only for this demo. In production,
- *      this would be replaced by a permissionless ERC-7857 iNFT registration flow.
- *
- *      Note: tokenId is accepted in the interface for ERC-7857 compatibility signaling
- *      but is not stored — the AgentRegistry tracks addresses, not token ownership.
- *      Full NFT binding is a post-hackathon integration point.
+ *      Changes from v1.0.0:
+ *      - tokenId now stored in agentTokenIds mapping (full ERC-7857 binding)
+ *      - AgentRegistered event now emits tokenId
+ *      - getAgentsPaged() added to mirror AttestationRegistry paged API
  */
 contract AgentRegistry is Ownable {
-    string public constant VERSION = "1.0.0";
+    string public constant VERSION = "1.1.0";
 
     struct Agent {
         address agentAddress;
@@ -25,16 +23,21 @@ contract AgentRegistry is Ownable {
     }
 
     mapping(address => Agent) private agents;
+    /// @notice Maps agent address to its ERC-7857 tokenId (0 if not an iNFT).
+    mapping(address => uint256) public agentTokenIds;
     address[] private agentList;
 
-    event AgentRegistered(address indexed agentAddress);
+    event AgentRegistered(address indexed agentAddress, uint256 tokenId);
     event AgentDeactivated(address indexed agentAddress);
 
     constructor() Ownable(msg.sender) {}
 
-    /// @param tokenId Accepted for ERC-7857 compatibility but not stored in this demo version.
+    /**
+     * @notice Register a single agent. Idempotent — re-registering the same address is a no-op.
+     * @param agentAddress The agent's wallet or contract address.
+     * @param tokenId      ERC-7857 iNFT tokenId. Pass 0 for non-iNFT agents.
+     */
     function registerAgent(address agentAddress, uint256 tokenId) external onlyOwner {
-        tokenId; // unused — accepted for interface compatibility
         require(agentAddress != address(0), "Invalid address");
         if (agents[agentAddress].agentAddress == address(0)) {
             agents[agentAddress] = Agent({
@@ -42,11 +45,16 @@ contract AgentRegistry is Ownable {
                 active: true
             });
             agentList.push(agentAddress);
-            emit AgentRegistered(agentAddress);
+            agentTokenIds[agentAddress] = tokenId;
+            emit AgentRegistered(agentAddress, tokenId);
         }
     }
 
-    /// @param tokenIds Accepted for ERC-7857 compatibility but not stored in this demo version.
+    /**
+     * @notice Register multiple agents atomically. Zero addresses and duplicates are silently skipped.
+     * @param addresses  Agent addresses to register.
+     * @param tokenIds   Corresponding ERC-7857 tokenIds (0 for non-iNFT agents).
+     */
     function registerAgentsBatch(address[] calldata addresses, uint256[] calldata tokenIds) external onlyOwner {
         require(addresses.length == tokenIds.length, "Length mismatch");
         for (uint256 i = 0; i < addresses.length; i++) {
@@ -56,7 +64,8 @@ contract AgentRegistry is Ownable {
                     active: true
                 });
                 agentList.push(addresses[i]);
-                emit AgentRegistered(addresses[i]);
+                agentTokenIds[addresses[i]] = tokenIds[i];
+                emit AgentRegistered(addresses[i], tokenIds[i]);
             }
         }
     }
@@ -68,8 +77,27 @@ contract AgentRegistry is Ownable {
     }
 
     /// @notice Returns all registered agent addresses (including deactivated ones).
+    /// @dev    For large registries use getAgentsPaged to avoid block gas limits.
     function getAllAgents() external view returns (address[] memory) {
         return agentList;
+    }
+
+    /// @notice Returns a page of agent addresses. Safe for large registries.
+    /// @param offset Zero-based start index.
+    /// @param limit  Maximum number of addresses to return.
+    function getAgentsPaged(uint256 offset, uint256 limit)
+        external
+        view
+        returns (address[] memory)
+    {
+        uint256 total = agentList.length;
+        if (offset >= total) return new address[](0);
+        uint256 end = offset + limit > total ? total : offset + limit;
+        address[] memory page = new address[](end - offset);
+        for (uint256 i = offset; i < end; i++) {
+            page[i - offset] = agentList[i];
+        }
+        return page;
     }
 
     /// @notice Returns the total number of registered agents.

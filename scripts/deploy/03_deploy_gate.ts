@@ -14,7 +14,9 @@ async function main() {
   console.log("Deploying AgentGate with attestation:", attestationAddr);
 
   const AgentGate = await ethers.getContractFactory("AgentGate");
-  const gate = await AgentGate.deploy(attestationAddr);
+  // whitelistEnabled=false, requireCallerIsAgent=false — both guards off by default.
+  // Enable via approveTarget()/setWhitelistEnabled(true) after deploy if needed.
+  const gate = await AgentGate.deploy(attestationAddr, false, false);
   await gate.waitForDeployment();
 
   const address = await gate.getAddress();

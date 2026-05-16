@@ -67,12 +67,14 @@ export default async function AgentsPage() {
 
   return (
     <div className="sg-dash-section">
-      <div className="sg-dash-header">
-        <div>
-          <h1 className="sg-dash-title">Agents on 0G Chain</h1>
-          <div className="sg-dash-subtitle">
-            Source: AttestationRegistry · Behavioral audit · Code scan · 0G Aristotle
-          </div>
+      {/* Display hero */}
+      <div style={{ marginBottom: "2.5rem" }}>
+        <h1 className="sg-dash-title">
+          Verify every AI agent<br />
+          <span style={{ color: "#06b6d4" }}>on-chain.</span>
+        </h1>
+        <div className="sg-dash-subtitle" style={{ marginTop: "0.75rem" }}>
+          Behavioral audit · Code scan · 0G Aristotle · AttestationRegistry
         </div>
       </div>
 
@@ -80,7 +82,7 @@ export default async function AgentsPage() {
       <div style={{
         background: "rgba(6,182,212,0.04)",
         border: "1px solid rgba(6,182,212,0.18)",
-        borderRadius: "6px",
+        borderRadius: 12,
         padding: "1.5rem",
         marginBottom: "2rem",
       }}>

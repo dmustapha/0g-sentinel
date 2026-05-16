@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>0G Sentinel — Pitch Deck</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #000; font-family: 'Inter', system-ui, sans-serif; color: #fff; }
+
+  .deck { width: 100%; }
+  .slide {
+    width: 100%; min-height: 100vh;
+    display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    padding: 80px;
+    border-bottom: 1px solid rgba(6,182,212,0.08);
+    position: relative;
+    overflow: hidden;
+  }
+  .slide::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 0%, rgba(6,182,212,0.06) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  /* Corner marks */
+  .corner { position: absolute; width: 40px; height: 40px; border-color: rgba(6,182,212,0.25); border-style: solid; }
+  .corner.tl { top: 32px; left: 32px; border-width: 2px 0 0 2px; }
+  .corner.tr { top: 32px; right: 32px; border-width: 2px 2px 0 0; }
+  .corner.bl { bottom: 32px; left: 32px; border-width: 0 0 2px 2px; }
+  .corner.br { bottom: 32px; right: 32px; border-width: 0 2px 2px 0; }
+
+  .slide-num {
+    position: absolute; top: 36px; right: 80px;
+    font-family: 'Courier New', monospace; font-size: 12px;
+    color: rgba(6,182,212,0.4); letter-spacing: 2px;
+  }
+
+  .eyebrow {
+    font-family: 'Courier New', monospace;
+    font-size: 12px; letter-spacing: 3px; text-transform: uppercase;
+    color: #06b6d4; margin-bottom: 20px;
+  }
+  h1 {
+    font-size: clamp(48px, 6vw, 88px);
+    font-weight: 900; line-height: 1.0; letter-spacing: -2px;
+    background: linear-gradient(135deg, #22d3ee, #06b6d4);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text; margin-bottom: 16px;
+  }
+  h2 { font-size: clamp(32px, 4vw, 56px); font-weight: 800; line-height: 1.1; margin-bottom: 20px; }
+  .subtitle { font-size: 20px; color: rgba(255,255,255,0.6); line-height: 1.6; max-width: 640px; text-align: center; }
+
+  /* Problem slide */
+  .stat-big {
+    font-size: clamp(72px, 10vw, 120px);
+    font-weight: 900; color: #f43f5e;
+    text-shadow: 0 0 40px rgba(244,63,94,0.4);
+    line-height: 1; margin-bottom: 12px;
+  }
+  .stat-label { font-size: 22px; color: rgba(255,255,255,0.7); margin-bottom: 48px; }
+
+  .problem-list { list-style: none; display: flex; flex-direction: column; gap: 18px; max-width: 680px; }
+  .problem-list li {
+    display: flex; align-items: flex-start; gap: 16px;
+    font-size: 18px; color: rgba(255,255,255,0.75); line-height: 1.5;
+  }
+  .problem-list li::before {
+    content: '—'; color: #f43f5e; font-weight: 700; flex-shrink: 0; margin-top: 2px;
+  }
+
+  /* Solution */
+  .cards-row { display: flex; gap: 24px; width: 100%; max-width: 1100px; flex-wrap: wrap; justify-content: center; }
+  .card {
+    flex: 1; min-width: 240px; max-width: 320px;
+    background: rgba(6,182,212,0.05);
+    border: 1px solid rgba(6,182,212,0.18);
+    border-radius: 16px; padding: 28px 28px 24px;
+  }
+  .card .card-icon {
+    font-family: 'Courier New', monospace; font-size: 11px; letter-spacing: 2px;
+    text-transform: uppercase; color: #06b6d4; margin-bottom: 12px;
+  }
+  .card h3 { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+  .card p { font-size: 15px; color: rgba(255,255,255,0.6); line-height: 1.55; }
+
+  .card.amber { border-color: rgba(245,158,11,0.25); background: rgba(245,158,11,0.05); }
+  .card.amber .card-icon { color: #f59e0b; }
+  .card.green { border-color: rgba(16,185,129,0.25); background: rgba(16,185,129,0.05); }
+  .card.green .card-icon { color: #10b981; }
+
+  /* How it works */
+  .pipeline {
+    display: flex; align-items: stretch; gap: 0;
+    width: 100%; max-width: 1000px; position: relative;
+  }
+  .pipeline-step {
+    flex: 1; text-align: center;
+    padding: 28px 20px;
+    background: rgba(6,182,212,0.04);
+    border: 1px solid rgba(6,182,212,0.15);
+    position: relative;
+  }
+  .pipeline-step:not(:last-child)::after {
+    content: '→';
+    position: absolute; right: -18px; top: 50%;
+    transform: translateY(-50%);
+    color: rgba(6,182,212,0.5); font-size: 22px; font-weight: 700;
+    z-index: 2;
+  }
+  .pipeline-step:first-child { border-radius: 12px 0 0 12px; }
+  .pipeline-step:last-child { border-radius: 0 12px 12px 0; }
+  .step-num {
+    font-family: 'Courier New', monospace; font-size: 11px;
+    color: #06b6d4; letter-spacing: 2px; margin-bottom: 10px;
+  }
+  .step-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+  .step-desc { font-size: 13px; color: rgba(255,255,255,0.5); line-height: 1.5; }
+
+  /* Stack */
+  .stack-row { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; max-width: 1000px; }
+  .stack-item {
+    display: flex; flex-direction: column; gap: 8px;
+    padding: 22px 28px; border-radius: 12px; min-width: 200px;
+    border: 1px solid rgba(6,182,212,0.2);
+    background: rgba(6,182,212,0.04);
+  }
+  .stack-item .tag {
+    font-family: 'Courier New', monospace; font-size: 10px;
+    letter-spacing: 2px; text-transform: uppercase; color: #06b6d4;
+  }
+  .stack-item .name { font-size: 20px; font-weight: 700; }
+  .stack-item .role { font-size: 13px; color: rgba(255,255,255,0.5); }
+
+  /* Contracts */
+  .contracts { width: 100%; max-width: 800px; display: flex; flex-direction: column; gap: 14px; }
+  .contract-row {
+    display: flex; align-items: center; gap: 20px;
+    padding: 18px 24px;
+    background: rgba(6,182,212,0.04);
+    border: 1px solid rgba(6,182,212,0.18);
+    border-radius: 10px;
+  }
+  .contract-row .cn { font-size: 15px; font-weight: 600; min-width: 200px; }
+  .contract-row .addr {
+    font-family: 'Courier New', monospace; font-size: 13px;
+    color: #06b6d4; flex: 1;
+  }
+  .contract-row .badge {
+    font-size: 11px; padding: 3px 10px;
+    background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3);
+    border-radius: 20px; color: #10b981;
+    font-family: 'Courier New', monospace; letter-spacing: 1px;
+  }
+
+  /* Stats grid */
+  .stats-grid { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; }
+  .stat-box {
+    text-align: center; padding: 32px 40px;
+    background: rgba(6,182,212,0.04);
+    border: 1px solid rgba(6,182,212,0.18);
+    border-radius: 16px; min-width: 180px;
+  }
+  .stat-box .val {
+    font-family: 'Courier New', monospace;
+    font-size: 52px; font-weight: 700;
+    color: #06b6d4; line-height: 1;
+    text-shadow: 0 0 24px rgba(6,182,212,0.4);
+    margin-bottom: 8px;
+  }
+  .stat-box .lbl { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); margin-bottom: 4px; }
+  .stat-box .sub { font-size: 12px; color: rgba(255,255,255,0.35); }
+
+  /* CTA */
+  .cta-links { display: flex; gap: 20px; flex-wrap: wrap; justify-content: center; margin-top: 8px; }
+  .cta-link {
+    font-family: 'Courier New', monospace; font-size: 15px;
+    color: #06b6d4; text-decoration: none;
+    padding: 12px 28px;
+    border: 1px solid rgba(6,182,212,0.3);
+    border-radius: 8px;
+    background: rgba(6,182,212,0.06);
+    letter-spacing: 0.5px;
+  }
+  .cta-link:hover { background: rgba(6,182,212,0.12); }
+
+  .divider {
+    width: 60px; height: 2px;
+    background: linear-gradient(90deg, #06b6d4, transparent);
+    margin: 24px auto;
+  }
+
+  .receipts {
+    display: flex; gap: 20px; flex-wrap: wrap; justify-content: center;
+    margin-top: 32px; width: 100%; max-width: 800px;
+  }
+  .receipt {
+    flex: 1; min-width: 220px;
+    padding: 20px 24px;
+    border-radius: 12px;
+  }
+  .receipt.green { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); }
+  .receipt.cyan  { background: rgba(6,182,212,0.1);  border: 1px solid rgba(6,182,212,0.25); }
+  .receipt .r-label { font-family: 'Courier New', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #10b981; margin-bottom: 6px; }
+  .receipt.cyan .r-label { color: #06b6d4; }
+  .receipt .r-hash { font-family: 'Courier New', monospace; font-size: 15px; color: #fff; margin-bottom: 4px; }
+  .receipt .r-sub { font-size: 12px; color: rgba(255,255,255,0.45); }
+
+  @media print {
+    .slide { page-break-after: always; min-height: 100vh; }
+  }
+</style>
+</head>
+<body>
+<div class="deck">
+
+  <!-- 1. TITLE -->
+  <div class="slide" style="text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">01 / 09</div>
+    <div class="eyebrow">0G APAC Hackathon 2026 · Aristotle Mainnet</div>
+    <h1>0G SENTINEL</h1>
+    <p class="subtitle">The security layer the AI agent economy needs. Scan any agent, verify on 0G Compute, write the verdict permanently to 0G Chain.</p>
+    <div class="divider"></div>
+    <div class="eyebrow" style="margin-bottom:0; letter-spacing:2px; font-size:13px; color:rgba(255,255,255,0.4);">Live today &nbsp;·&nbsp; 0g-sentinel.vercel.app</div>
+  </div>
+
+  <!-- 2. PROBLEM -->
+  <div class="slide" style="text-align:center; align-items:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">02 / 09</div>
+    <div class="eyebrow">The Problem</div>
+    <div class="stat-big">$88.88M</div>
+    <div class="stat-label">lost to AI-agent exploits in 2024 alone</div>
+    <ul class="problem-list" style="text-align:left;">
+      <li>40% of on-chain transactions are now executed by autonomous agents — and that number is growing every month</li>
+      <li>There is no standard way to verify whether an agent is safe before letting it into your protocol</li>
+      <li>No trust infrastructure. No security scoring. No on-chain record. Just hope it doesn't drain your treasury.</li>
+    </ul>
+  </div>
+
+  <!-- 3. SOLUTION -->
+  <div class="slide" style="align-items:center; text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">03 / 09</div>
+    <div class="eyebrow">The Solution</div>
+    <h2>Trust every agent.<br/>Verify on-chain.</h2>
+    <p class="subtitle" style="margin-bottom: 48px;">0G Sentinel scans any agent address through two independent AI pipelines, writes a permanent 9-field attestation to 0G Chain, and lets any protocol gate execution on the result.</p>
+    <div class="cards-row">
+      <div class="card">
+        <div class="card-icon">Step 1</div>
+        <h3>Discover</h3>
+        <p>Scan the last 10,000 blocks via eth_getLogs. Every active contract on 0G Aristotle is a candidate — no manual registration needed.</p>
+      </div>
+      <div class="card amber">
+        <div class="card-icon">Step 2</div>
+        <h3>Scan</h3>
+        <p>Two independent AI inference calls through 0G Compute. Behavioral risk + Solidity vulnerability analysis run in parallel.</p>
+      </div>
+      <div class="card green">
+        <div class="card-icon">Step 3</div>
+        <h3>Attest</h3>
+        <p>Results written immutably to AttestationRegistry on 0G Chain. Evidence archived to 0G Storage. Any dApp can query it in one call.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. HOW IT WORKS -->
+  <div class="slide" style="align-items:center; text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">04 / 09</div>
+    <div class="eyebrow">Under the Hood</div>
+    <h2 style="margin-bottom:48px;">Two pipelines. One verdict. Permanent record.</h2>
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-num">01</div>
+        <div class="step-title">Agent Address</div>
+        <div class="step-desc">Any 0G Aristotle address — paste it or auto-discover from chain</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">02</div>
+        <div class="step-title">0G Compute</div>
+        <div class="step-desc">Two parallel AI calls. Each returns a unique receipt hash (zg-res-key)</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">03</div>
+        <div class="step-title">0G Storage</div>
+        <div class="step-desc">Full evidence JSON archived. SHA-256 root hash stored on-chain</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">04</div>
+        <div class="step-title">0G Chain</div>
+        <div class="step-desc">9-field attestation struct written immutably to AttestationRegistry</div>
+      </div>
+      <div class="pipeline-step">
+        <div class="step-num">05</div>
+        <div class="step-title">AgentGate</div>
+        <div class="step-desc">Any protocol calls isSafe() — one line blocks unscanned or flagged agents</div>
+      </div>
+    </div>
+    <div class="receipts">
+      <div class="receipt green">
+        <div class="r-label">Behavioral Receipt</div>
+        <div class="r-hash">0x7f3a9c...b8e2</div>
+        <div class="r-sub">Transaction pattern analysis</div>
+      </div>
+      <div class="receipt cyan">
+        <div class="r-label">Code Receipt</div>
+        <div class="r-hash">0x2e8f41...d903</div>
+        <div class="r-sub">Solidity vulnerability scan</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. 0G STACK -->
+  <div class="slide" style="align-items:center; text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">05 / 09</div>
+    <div class="eyebrow">0G Integration Stack</div>
+    <h2 style="margin-bottom: 16px;">Built on 0G — all the way down</h2>
+    <p class="subtitle" style="margin-bottom: 48px;">Every meaningful operation routes through a 0G service. This isn't a bolt-on integration — 0G is the architecture.</p>
+    <div class="stack-row">
+      <div class="stack-item">
+        <div class="tag">Primary</div>
+        <div class="name">0G Compute</div>
+        <div class="role">AI inference for both scan pipelines. OpenAI-compatible endpoint, 0GM-1.0-35B-A3B model. Every call returns a unique receipt hash stored on-chain as proof.</div>
+      </div>
+      <div class="stack-item">
+        <div class="tag">Primary</div>
+        <div class="name">0G Chain</div>
+        <div class="role">AttestationRegistry, AgentRegistry, and AgentGate deployed to Aristotle Mainnet. Immutable 9-field attestation struct per scan.</div>
+      </div>
+      <div class="stack-item">
+        <div class="tag">Secondary</div>
+        <div class="name">0G Storage</div>
+        <div class="role">Full scan evidence JSON archived and content-addressed. SHA-256 root hash stored in each attestation struct.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. LIVE CONTRACTS -->
+  <div class="slide" style="align-items:center; text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">06 / 09</div>
+    <div class="eyebrow">Mainnet Deployment</div>
+    <h2 style="margin-bottom: 16px;">3 contracts live on 0G Aristotle</h2>
+    <p class="subtitle" style="margin-bottom: 40px;">Chain ID 16661. Every scan writes to the registry in real time — no testnet, no simulation.</p>
+    <div class="contracts">
+      <div class="contract-row">
+        <div class="cn">AttestationRegistry</div>
+        <div class="addr">0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba</div>
+        <div class="badge">LIVE</div>
+      </div>
+      <div class="contract-row">
+        <div class="cn">AgentRegistry</div>
+        <div class="addr">0x0c578A4B7F0985D4599A319634649ACbd8D377d4</div>
+        <div class="badge">LIVE</div>
+      </div>
+      <div class="contract-row">
+        <div class="cn">AgentGate</div>
+        <div class="addr">0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012</div>
+        <div class="badge">LIVE</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. TRACTION / STATS -->
+  <div class="slide" style="align-items:center; text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">07 / 09</div>
+    <div class="eyebrow">What We Built</div>
+    <h2 style="margin-bottom: 48px;">Everything deployed. Everything working.</h2>
+    <div class="stats-grid">
+      <div class="stat-box">
+        <div class="val">3</div>
+        <div class="lbl">Contracts Live</div>
+        <div class="sub">0G Aristotle Mainnet</div>
+      </div>
+      <div class="stat-box">
+        <div class="val">2x</div>
+        <div class="lbl">AI Pipelines</div>
+        <div class="sub">per scan, independent</div>
+      </div>
+      <div class="stat-box">
+        <div class="val">100%</div>
+        <div class="lbl">On-Chain Attestations</div>
+        <div class="sub">immutable, queryable</div>
+      </div>
+      <div class="stat-box">
+        <div class="val">1</div>
+        <div class="lbl">Line to Integrate</div>
+        <div class="sub">isSafe(address)</div>
+      </div>
+    </div>
+    <div style="margin-top: 40px; display:flex; gap:32px; flex-wrap:wrap; justify-content:center;">
+      <div style="text-align:left; padding: 20px 28px; border: 1px solid rgba(6,182,212,0.18); border-radius:12px; background:rgba(6,182,212,0.04);">
+        <div class="eyebrow" style="margin-bottom:10px;">REST API</div>
+        <div style="font-size:14px; color:rgba(255,255,255,0.6); line-height:1.8;">
+          POST /api/scan/behavioral<br/>
+          GET /api/agents/:address<br/>
+          GET /api/discover
+        </div>
+      </div>
+      <div style="text-align:left; padding: 20px 28px; border: 1px solid rgba(245,158,11,0.2); border-radius:12px; background:rgba(245,158,11,0.04);">
+        <div class="eyebrow" style="margin-bottom:10px; color:#f59e0b;">OpenClaw Skill</div>
+        <div style="font-size:14px; color:rgba(255,255,255,0.6); line-height:1.8;">
+          AI agents query 0G Sentinel<br/>
+          directly via skill registry.<br/>
+          Agent checking agent.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. MARKET -->
+  <div class="slide" style="align-items:center; text-align:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">08 / 09</div>
+    <div class="eyebrow">Why This Wins</div>
+    <h2 style="margin-bottom: 24px;">Security is underserved.<br/>The timing is perfect.</h2>
+    <div class="cards-row" style="max-width:900px;">
+      <div class="card" style="max-width:260px;">
+        <div class="card-icon">Timing</div>
+        <h3>Right now</h3>
+        <p>Autonomous agents are moving real money today. The security layer doesn't exist yet. We built it first, on 0G.</p>
+      </div>
+      <div class="card amber" style="max-width:260px;">
+        <div class="card-icon">Depth</div>
+        <h3>3-layer 0G</h3>
+        <p>0G Compute + 0G Chain + 0G Storage. Not a bolt-on — every meaningful operation routes through a 0G service.</p>
+      </div>
+      <div class="card green" style="max-width:260px;">
+        <div class="card-icon">Proof</div>
+        <h3>Live on mainnet</h3>
+        <p>Not a demo, not a prototype. Three contracts deployed. Every scan writes a real on-chain attestation you can verify right now.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. CTA -->
+  <div class="slide" style="text-align:center; align-items:center;">
+    <div class="corner tl"></div><div class="corner tr"></div>
+    <div class="corner bl"></div><div class="corner br"></div>
+    <div class="slide-num">09 / 09</div>
+    <div class="eyebrow">On-Chain AI Agent Security</div>
+    <h1>0G SENTINEL</h1>
+    <p class="subtitle">Trust every agent. Verify on-chain.</p>
+    <div class="divider"></div>
+    <div class="cta-links">
+      <a class="cta-link" href="https://0g-sentinel.vercel.app">Live App</a>
+      <a class="cta-link" href="https://github.com/dmustapha/0g-sentinel">GitHub</a>
+      <a class="cta-link" href="https://chainscan.0g.ai">0G Chain Explorer</a>
+    </div>
+    <div style="margin-top: 48px; font-family: 'Courier New', monospace; font-size: 13px; color: rgba(255,255,255,0.25); letter-spacing: 1px;">
+      Built for 0G APAC Hackathon 2026 &nbsp;·&nbsp; 0G Aristotle Mainnet &nbsp;·&nbsp; Chain ID 16661
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

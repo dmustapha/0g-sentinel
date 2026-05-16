@@ -59,8 +59,8 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 
 ## Features
 
-- **Chain-native discovery**: Scans the last 10,000 blocks via `eth_getLogs` to find every active contract — no pre-registration, no allowlist, the chain is the registry
-- **Background auto-scan queue**: All discovered contracts are queued for scanning automatically; results appear progressively as each attestation lands on-chain
+- **Chain-native discovery**: Scans the last 10,000 blocks via `eth_getLogs` to find every active contract on 0G Aristotle — sorted by event activity, no manual setup required
+- **Background auto-scan queue**: All discovered contracts are enqueued for scanning automatically; scans run serially to avoid nonce collisions; results appear progressively as each attestation lands on-chain (requires a persistent server process)
 - **Dual AI pipelines**: Two independent 0G Compute inference calls per scan, each with a unique `zg-res-key` receipt UUID stored on-chain as proof of independent verification
 - **Behavioral risk scoring**: 0-100 risk score from tx frequency, fund outflow patterns, and contract interaction breadth
 - **Smart contract vulnerability scan**: Reentrancy, broken access control, and unchecked-call detection via AI code analysis
@@ -162,7 +162,7 @@ cd frontend && npm run dev
 
 Open [http://localhost:3000/agents](http://localhost:3000/agents).
 
-The dashboard auto-discovers active contracts from chain logs on load. No seeding required — the chain is the registry. To scan an agent, paste any 0G Aristotle address into the hero scan panel and submit.
+The dashboard auto-discovers active contracts from chain logs on load. To scan an agent, paste any 0G Aristotle address into the hero scan panel and submit.
 
 ---
 

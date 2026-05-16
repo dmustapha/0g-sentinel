@@ -35,9 +35,9 @@ AgentMesh audits developer code. 0G Sentinel audits live agents on mainnet and w
 
 | Contract | Address | Explorer |
 |----------|---------|---------|
-| AttestationRegistry | `0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba` | [View](https://chainscan.0g.ai/address/0x3c0331A8B7a4543284a05990432B3Bb2f2a749Ba) |
-| AgentRegistry | `0x0c578A4B7F0985D4599A319634649ACbd8D377d4` | [View](https://chainscan.0g.ai/address/0x0c578A4B7F0985D4599A319634649ACbd8D377d4) |
-| AgentGate | `0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012` | [View](https://chainscan.0g.ai/address/0xFdEc01255F37Ad49AEcbdfD690309efD97dc5012) |
+| AttestationRegistry | `0xB3E7048cef229fF5043CD2dBba296bF278d3F88d` | [View](https://chainscan.0g.ai/address/0xB3E7048cef229fF5043CD2dBba296bF278d3F88d) |
+| AgentRegistry | `0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc` | [View](https://chainscan.0g.ai/address/0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc) |
+| AgentGate | `0xCA3338Af9A1E0Df0539c3C8967597A56044D9360` | [View](https://chainscan.0g.ai/address/0xCA3338Af9A1E0Df0539c3C8967597A56044D9360) |
 
 Chain ID: 16661 (0G Aristotle Mainnet)
 

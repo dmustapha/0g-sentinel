@@ -12,9 +12,9 @@ AgentMesh 审计开发者代码，而 0G Sentinel 审计主网上的实际运行
 
 | 合约 | 地址 | 区块浏览器 |
 |------|------|-----------|
-| AttestationRegistry | `0xB9431b3be9a56a1eeA8E728326332f8B4dD51382` | [chainscan.0g.ai](https://chainscan.0g.ai/address/0xB9431b3be9a56a1eeA8E728326332f8B4dD51382) |
-| AgentRegistry | `0x5F6a3AbC97E421f7B3930fc504D6a0CE4eE41e06` | [chainscan.0g.ai](https://chainscan.0g.ai/address/0x5F6a3AbC97E421f7B3930fc504D6a0CE4eE41e06) |
-| AgentGate | `0x8E107bAC6f430aecB8Aa11B383E9690e9a5214bE` | [chainscan.0g.ai](https://chainscan.0g.ai/address/0x8E107bAC6f430aecB8Aa11B383E9690e9a5214bE) |
+| AttestationRegistry | `0xB3E7048cef229fF5043CD2dBba296bF278d3F88d` | [chainscan.0g.ai](https://chainscan.0g.ai/address/0xB3E7048cef229fF5043CD2dBba296bF278d3F88d) |
+| AgentRegistry | `0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc` | [chainscan.0g.ai](https://chainscan.0g.ai/address/0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc) |
+| AgentGate | `0xCA3338Af9A1E0Df0539c3C8967597A56044D9360` | [chainscan.0g.ai](https://chainscan.0g.ai/address/0xCA3338Af9A1E0Df0539c3C8967597A56044D9360) |
 
 链 ID：16661（0G Aristotle 主网）
 

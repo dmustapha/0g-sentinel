@@ -69,34 +69,35 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
           style={{
             flex: 1,
             minWidth: 0,
-            fontFamily: "var(--font-jetbrains-mono, monospace)",
-            fontSize: "0.75rem",
-            color: "#c8d3e8",
-            background: "rgba(0,212,255,0.03)",
-            border: `1px solid ${error ? "rgba(239,68,68,0.4)" : address && !isValid ? "rgba(245,158,11,0.35)" : "rgba(0,212,255,0.15)"}`,
-            borderRadius: 2,
-            padding: "0.5rem 0.75rem",
+            fontFamily: "var(--font-dm-mono, monospace)",
+            fontSize: "1rem",
+            color: "rgba(255,255,255,0.8)",
+            background: "rgba(255,255,255,0.04)",
+            border: `1px solid ${error ? "rgba(244,63,94,0.4)" : address && !isValid ? "rgba(251,191,36,0.35)" : "rgba(255,255,255,0.12)"}`,
+            borderRadius: 8,
+            padding: "0.5rem 0.875rem",
             outline: "none",
-            transition: "border-color 0.2s",
+            transition: "border-color 0.2s ease-out",
           }}
         />
         <button
           type="submit"
           disabled={scanning || !isValid}
           style={{
-            fontFamily: "Space Grotesk, sans-serif",
-            fontSize: "0.75rem",
+            fontFamily: "var(--font-syne, sans-serif)",
+            fontSize: "0.875rem",
             fontWeight: 600,
             letterSpacing: "0.08em",
             textTransform: "uppercase",
-            color: scanning || !isValid ? "#334155" : "#00d4ff",
+            color: scanning || !isValid ? "rgba(255,255,255,0.15)" : "#06b6d4",
             background: "transparent",
-            border: `1px solid ${scanning || !isValid ? "rgba(51,65,85,0.4)" : "rgba(0,212,255,0.35)"}`,
-            borderRadius: 2,
-            padding: "0.5rem 1rem",
+            border: `1px solid ${scanning || !isValid ? "rgba(255,255,255,0.08)" : "rgba(6,182,212,0.35)"}`,
+            borderRadius: 8,
+            padding: "0.5rem 1.25rem",
+            minHeight: 44,
             cursor: scanning || !isValid ? "not-allowed" : "pointer",
             whiteSpace: "nowrap",
-            transition: "all 0.2s",
+            transition: "background 0.2s ease-out, border-color 0.2s ease-out",
           }}
         >
           {scanning ? `Scanning… ${elapsed}s` : "Scan →"}
@@ -104,9 +105,9 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
       </div>
       {error && (
         <div style={{
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
-          fontSize: "0.625rem",
-          color: "#ef4444",
+          fontFamily: "var(--font-dm-mono, monospace)",
+          fontSize: "0.75rem",
+          color: "#f43f5e",
           lineHeight: 1.4,
         }}>
           {error}
@@ -114,9 +115,9 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
       )}
       {address && !isValid && !scanning && (
         <div style={{
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
-          fontSize: "0.625rem",
-          color: "#f59e0b",
+          fontFamily: "var(--font-dm-mono, monospace)",
+          fontSize: "0.75rem",
+          color: "#fbbf24",
         }}>
           Must be a valid 0x address (42 chars)
         </div>

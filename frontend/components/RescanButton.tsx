@@ -58,9 +58,9 @@ export function RescanButton({ address }: Props) {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
       {error && (
         <div style={{
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontFamily: "var(--font-dm-mono, monospace)",
           fontSize: "0.5625rem",
-          color: "#ef4444",
+          color: "#f43f5e",
           maxWidth: 120,
           textAlign: "right",
           lineHeight: 1.3,
@@ -70,9 +70,9 @@ export function RescanButton({ address }: Props) {
       )}
       {result && !scanning && (
         <div style={{
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontFamily: "var(--font-dm-mono, monospace)",
           fontSize: "0.5625rem",
-          color: result.label === "FLAGGED" ? "#ef4444" : result.label === "CAUTION" ? "#f59e0b" : "#10b981",
+          color: result.label === "FLAGGED" ? "#f43f5e" : result.label === "CAUTION" ? "#fbbf24" : "#10b981",
           maxWidth: 120,
           textAlign: "right",
           lineHeight: 1.3,

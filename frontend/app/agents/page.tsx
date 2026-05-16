@@ -78,16 +78,16 @@ export default async function AgentsPage() {
 
       {/* Hero scan panel — prominent primary action */}
       <div style={{
-        background: "rgba(0,212,255,0.04)",
-        border: "1px solid rgba(0,212,255,0.18)",
+        background: "rgba(6,182,212,0.04)",
+        border: "1px solid rgba(6,182,212,0.18)",
         borderRadius: "6px",
         padding: "1.5rem",
         marginBottom: "2rem",
       }}>
         <div style={{
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontFamily: "var(--font-dm-mono, monospace)",
           fontSize: "0.6875rem",
-          color: "#00d4ff",
+          color: "#06b6d4",
           letterSpacing: "0.1em",
           textTransform: "uppercase",
           marginBottom: "0.5rem",
@@ -95,9 +95,9 @@ export default async function AgentsPage() {
           Scan any agent address
         </div>
         <div style={{
-          fontFamily: "Inter, sans-serif",
+          fontFamily: "DM Mono, monospace",
           fontSize: "0.75rem",
-          color: "#475569",
+          color: "rgba(255,255,255,0.25)",
           marginBottom: "1rem",
           lineHeight: 1.5,
         }}>
@@ -112,9 +112,9 @@ export default async function AgentsPage() {
       {fetchError ? (
         <div style={{
           padding: "4rem 0",
-          fontFamily: "var(--font-jetbrains-mono, monospace)",
+          fontFamily: "var(--font-dm-mono, monospace)",
           fontSize: "0.75rem",
-          color: "#ef4444",
+          color: "#f43f5e",
           textAlign: "center",
         }}>
           Failed to load agents. Check RPC connection.
@@ -129,7 +129,7 @@ export default async function AgentsPage() {
           {agents.filter((a) => a.has_attestation && a.threat_level === 0 && a.code_risk === 0).length} verified safe ·{" "}
           {agents.filter((a) => a.has_attestation && (a.threat_level === 2 || a.code_risk === 2)).length} threats detected
         </span>
-        <Link href="/proof" style={{ color: "#00d4ff", fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.6875rem", textDecoration: "none" }}>
+        <Link href="/proof" style={{ color: "#06b6d4", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.6875rem", textDecoration: "none" }}>
           Integration Proof →
         </Link>
       </div>

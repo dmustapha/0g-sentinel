@@ -19,9 +19,9 @@ function relativeTime(ts: number): string {
 }
 
 function scoreColor(agent: AgentWithAttestation): string {
-  if (!agent.has_attestation) return "#334155";
-  if (agent.behavioral_score >= 60) return "#ef4444";
-  if (agent.behavioral_score >= 30) return "#f59e0b";
+  if (!agent.has_attestation) return "rgba(255,255,255,0.15)";
+  if (agent.behavioral_score >= 60) return "#f43f5e";
+  if (agent.behavioral_score >= 30) return "#fbbf24";
   return "#10b981";
 }
 
@@ -56,9 +56,9 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
     return (
       <div style={{
         padding: "4rem 0",
-        fontFamily: "var(--font-jetbrains-mono, monospace)",
+        fontFamily: "var(--font-dm-mono, monospace)",
         fontSize: "0.75rem",
-        color: "#334155",
+        color: "rgba(255,255,255,0.15)",
         textAlign: "center",
       }}>
         No agents attested yet. Auto-scan is indexing the chain.
@@ -75,13 +75,14 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           value={query}
           onChange={(e) => { setQuery(e.target.value); setPage(1); }}
           placeholder="Filter by address or name…"
+          aria-label="Filter agents by address or name"
           style={{
-            fontFamily: "var(--font-jetbrains-mono, monospace)",
-            fontSize: "0.75rem",
-            color: "#c8d3e8",
-            background: "rgba(0,212,255,0.03)",
-            border: "1px solid rgba(0,212,255,0.12)",
-            borderRadius: 2,
+            fontFamily: "var(--font-dm-mono, monospace)",
+            fontSize: "1rem",
+            color: "rgba(255,255,255,0.6)",
+            background: "rgba(6,182,212,0.03)",
+            border: "1px solid rgba(6,182,212,0.12)",
+            borderRadius: 8,
             padding: "0.375rem 0.75rem",
             outline: "none",
             width: "100%",
@@ -89,7 +90,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           }}
         />
         {query && (
-          <span style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem", color: "#475569" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "rgba(255,255,255,0.25)" }}>
             {filtered.length} of {agents.length}
           </span>
         )}
@@ -135,9 +136,9 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
                     {agent.has_attestation && agent.code_risk > 0 && (
                       <span
                         style={{
-                          fontFamily: "var(--font-jetbrains-mono, monospace)",
+                          fontFamily: "var(--font-dm-mono, monospace)",
                           fontSize: "0.5rem",
-                          color: agent.code_risk === 2 ? "#ef4444" : "#f59e0b",
+                          color: agent.code_risk === 2 ? "#f43f5e" : "#fbbf24",
                           letterSpacing: "0.04em",
                         }}
                         title="Code scan result"
@@ -168,9 +169,9 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
                 </span>
                 {agent.reasoning && (
                   <div style={{
-                    fontFamily: "var(--font-jetbrains-mono, monospace)",
+                    fontFamily: "var(--font-dm-mono, monospace)",
                     fontSize: "0.5rem",
-                    color: "#475569",
+                    color: "rgba(255,255,255,0.25)",
                     marginTop: "0.25rem",
                     maxWidth: 160,
                     overflow: "hidden",
@@ -207,7 +208,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           >
             ← Prev
           </button>
-          <span style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem", color: "#475569" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "rgba(255,255,255,0.25)" }}>
             {page} / {totalPages}
           </span>
           <button
@@ -218,7 +219,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           >
             Next →
           </button>
-          <span style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.5625rem", color: "#334155", marginLeft: "0.5rem" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.15)", marginLeft: "0.5rem" }}>
             {filtered.length} agents
           </span>
         </div>

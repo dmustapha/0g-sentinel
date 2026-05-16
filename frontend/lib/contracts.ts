@@ -1,9 +1,16 @@
 // File: frontend/lib/contracts.ts
 import { ethers } from "ethers";
 
-const ATTESTATION_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS!;
-const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS!;
+const ATTESTATION_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS ?? "";
+const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS ?? "";
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
+
+if (!ATTESTATION_REGISTRY_ADDRESS) {
+  console.warn("[contracts] NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS is not set");
+}
+if (!AGENT_REGISTRY_ADDRESS) {
+  console.warn("[contracts] NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS is not set");
+}
 
 const ATTESTATION_ABI = [
   "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, string reasoning, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
@@ -19,8 +26,12 @@ const AGENT_REGISTRY_ABI = [
   "function getAgentCount() view returns (uint256)",
 ];
 
+// Module-level singleton — avoids creating a new HTTP connection per RPC call
+// (previously a new JsonRpcProvider was created on every getAttestationRegistry() call).
+let _provider: ethers.JsonRpcProvider | null = null;
 export function getProvider() {
-  return new ethers.JsonRpcProvider(RPC_URL);
+  if (!_provider) _provider = new ethers.JsonRpcProvider(RPC_URL);
+  return _provider;
 }
 
 export function getAttestationRegistry(signerOrProvider?: ethers.Signer | ethers.Provider) {

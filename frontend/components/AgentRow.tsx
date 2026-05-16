@@ -1,16 +1,13 @@
 "use client";
 // File: frontend/components/AgentRow.tsx
 import Link from "next/link";
-import { AgentWithAttestation } from "@/lib/types";
+import { AgentWithAttestation, THREAT_LABELS, CODE_RISK_LABELS } from "@/lib/types";
 
 interface AgentRowProps {
   agent: AgentWithAttestation;
   scanning: boolean;
   onRescan?: (address: string) => void;
 }
-
-const THREAT_LABELS = ["SAFE", "CAUTION", "FLAGGED"];
-const CODE_LABELS = ["CLEAN", "WARNING", "VULN"];
 
 function getThreatClass(threatLevel: number, codeRisk: number): string {
   if (threatLevel === 2 || codeRisk === 2) return "danger";
@@ -87,7 +84,7 @@ export function AgentRow({ agent, scanning, onRescan }: AgentRowProps) {
             {THREAT_LABELS[agent.threat_level] ?? "?"}
           </span>
           <span className={getBadgeClass(agent.code_risk)}>
-            {CODE_LABELS[agent.code_risk] ?? "?"}
+            {CODE_RISK_LABELS[agent.code_risk] ?? "?"}
           </span>
         </div>
         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>

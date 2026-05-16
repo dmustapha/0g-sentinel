@@ -44,7 +44,10 @@ export async function POST(req: NextRequest) {
     );
     return NextResponse.json({ success: true, result });
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error("[CodeScanAPI] Scan error:", err);
+    return NextResponse.json(
+      { error: "Code scan failed — see server logs for details" },
+      { status: 500 }
+    );
   }
 }

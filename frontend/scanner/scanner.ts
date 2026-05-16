@@ -98,60 +98,118 @@ function getRegistry(): ethers.Contract {
   return new ethers.Contract(address, ATTESTATION_ABI, signer);
 }
 
+// ── Blockscout API types ──────────────────────────────────────────────────────
+interface BlockscoutTx {
+  hash: string;
+  from: string;
+  to: string | null;
+  value: string;         // decimal string (wei)
+  timeStamp: string;     // unix seconds string
+  input: string;         // 0x-prefixed calldata
+  isError?: string;      // "0" or "1"
+}
+
+const EXPLORER_BASE = process.env.ZERO_G_EXPLORER_URL || "https://chainscan.0g.ai";
+
 /**
- * Build behavioral signals for an agent.
- * Known demo agents use pre-computed seed profiles (differentiated, meaningful).
- * Unknown addresses fall back to a live on-chain fetch of the last 5 blocks.
+ * Try to fetch the last 100 outgoing transactions for an address from the
+ * Blockscout Etherscan-compatible API. Returns null on any network or parse error.
  */
-async function fetchAgentActivity(agentAddress: string): Promise<BehavioralSignals> {
-  // Use seeded profile for known demo agents — avoids the 5-block/30-day mismatch
-  const seed = getSeedProfile(agentAddress);
-  if (seed) return seed;
+async function fetchExplorerTxs(agentAddress: string): Promise<BlockscoutTx[] | null> {
+  try {
+    const url = `${EXPLORER_BASE}/api?module=account&action=txlist&address=${agentAddress}&startblock=0&endblock=latest&sort=desc&offset=100&page=1`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(6000),
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) return null;
+    const json = await res.json() as { status: string; result: BlockscoutTx[] | string };
+    if (json.status !== "1" || !Array.isArray(json.result)) return null;
+    // Return only outgoing transactions from the agent
+    return (json.result as BlockscoutTx[]).filter(
+      (tx) => tx.from?.toLowerCase() === agentAddress.toLowerCase()
+    );
+  } catch {
+    return null;
+  }
+}
 
-  // Unknown address: fetch on-chain and compute basic signals
-  const provider = getProvider();
-  const latestBlock = await provider.getBlockNumber();
-  const fromBlock = Math.max(0, latestBlock - 1000);
+/** Compute real behavioral signals from a list of outgoing transactions. */
+function computeSignalsFromTxList(
+  agentAddress: string,
+  txs: BlockscoutTx[],
+  currentBalanceWei: bigint,
+  source: "chain_history" | "limited_history"
+): BehavioralSignals {
+  if (txs.length === 0) {
+    // No outgoing transactions: all signals are minimal-risk by definition
+    return {
+      address: agentAddress,
+      tx_count_30d: 0,
+      tx_count_7d: 0,
+      fund_outflow_pct: 0,
+      max_single_transfer_pct: 0,
+      method_concentration: 0,
+      timing_regularity_cv: 1.0,
+      hour_entropy: 3.58,
+      counterparty_herfindahl: 0,
+      nonce_gap_rate: 1.0,
+      value_entropy: 3.58,
+      call_frequency_spike: false,
+      large_outflow_detected: false,
+      burst_detected: false,
+      data_source: source,
+      tx_count_analyzed: 0,
+    };
+  }
 
-  const transactions: Array<{ hash: string; value: bigint; to: string; timestamp: number }> = [];
+  const now = Math.floor(Date.now() / 1000);
+  const thirtyDaysAgo = now - 30 * 86400;
+  const sevenDaysAgo = now - 7 * 86400;
+
   let totalOutflow = BigInt(0);
   let maxSingleTransfer = BigInt(0);
   const contractsSet = new Set<string>();
   const methodCounts: Record<string, number> = {};
   const timestamps: number[] = [];
+  const valuesSeen: bigint[] = [];
+  const hourCounts = new Array(24).fill(0);
+  let tx30d = 0;
+  let tx7d = 0;
 
-  for (let b = latestBlock; b > latestBlock - 5 && b > fromBlock; b--) {
-    const block = await provider.getBlock(b, true);
-    if (!block) continue;
-    for (const tx of block.transactions as any[]) {
-      if (typeof tx === "object" && tx.from?.toLowerCase() === agentAddress.toLowerCase()) {
-        const value = BigInt(tx.value || 0);
-        totalOutflow += value;
-        if (value > maxSingleTransfer) maxSingleTransfer = value;
-        if (tx.to) contractsSet.add(tx.to);
-        const selector = tx.data?.length >= 10 ? tx.data.slice(0, 10) : "0x";
-        methodCounts[selector] = (methodCounts[selector] || 0) + 1;
-        timestamps.push(block.timestamp);
-        transactions.push({ hash: tx.hash, value, to: tx.to || "", timestamp: block.timestamp });
-      }
-    }
+  for (const tx of txs) {
+    const ts = parseInt(tx.timeStamp, 10);
+    const value = BigInt(tx.value || "0");
+
+    totalOutflow += value;
+    if (value > maxSingleTransfer) maxSingleTransfer = value;
+    if (tx.to) contractsSet.add(tx.to.toLowerCase());
+
+    const selector = tx.input && tx.input.length >= 10 ? tx.input.slice(0, 10) : "0x";
+    methodCounts[selector] = (methodCounts[selector] || 0) + 1;
+    timestamps.push(ts);
+    valuesSeen.push(value);
+    hourCounts[new Date(ts * 1000).getUTCHours()]++;
+
+    if (ts >= thirtyDaysAgo) tx30d++;
+    if (ts >= sevenDaysAgo) tx7d++;
   }
 
-  const balance = await provider.getBalance(agentAddress);
-  const totalBalance = BigInt(balance) + totalOutflow;
+  const totalBalance = currentBalanceWei + totalOutflow;
   const outflowPct = totalBalance > 0n ? Number((totalOutflow * 100n) / totalBalance) : 0;
   const maxTransferPct = totalBalance > 0n ? Number((maxSingleTransfer * 100n) / totalBalance) : 0;
 
-  // Method concentration: Herfindahl index over observed selectors
-  const totalTx = transactions.length || 1;
+  // Method concentration (Herfindahl index over call selectors)
+  const totalTx = txs.length;
   const methodConcentration = Object.values(methodCounts).reduce(
     (sum, count) => sum + (count / totalTx) ** 2, 0
   );
 
-  // Timing regularity CV (inter-block variance — coarse proxy for demo)
-  let timingCV = 0.5;
-  if (timestamps.length > 2) {
-    const intervals = timestamps.slice(1).map((t, i) => t - timestamps[i]);
+  // Timing regularity — CV of inter-transaction intervals (sorted oldest-first)
+  const sortedTs = [...timestamps].sort((a, b) => a - b);
+  let timingCV = 0.5; // neutral if < 3 txs
+  if (sortedTs.length > 2) {
+    const intervals = sortedTs.slice(1).map((t, i) => t - sortedTs[i]);
     const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
     if (mean > 0) {
       const std = Math.sqrt(intervals.reduce((s, v) => s + (v - mean) ** 2, 0) / intervals.length);
@@ -159,25 +217,159 @@ async function fetchAgentActivity(agentAddress: string): Promise<BehavioralSigna
     }
   }
 
+  // Shannon entropy helpers
+  function shannonEntropy(counts: number[]): number {
+    const total = counts.reduce((a, b) => a + b, 0);
+    if (total === 0) return 0;
+    return counts.filter((c) => c > 0).reduce((h, c) => {
+      const p = c / total;
+      return h - p * Math.log2(p);
+    }, 0);
+  }
+
+  // Hour-of-day entropy (max 3.58 bits for 24 hours)
+  const hourEntropy = shannonEntropy(hourCounts);
+
+  // Counterparty Herfindahl (concentration of recipients)
+  const recipientCounts: Record<string, number> = {};
+  for (const tx of txs) {
+    if (tx.to) {
+      const key = tx.to.toLowerCase();
+      recipientCounts[key] = (recipientCounts[key] || 0) + 1;
+    }
+  }
+  const counterpartyHHI = Object.values(recipientCounts).reduce(
+    (sum, count) => sum + (count / totalTx) ** 2, 0
+  );
+
+  // Value entropy — bin values into deciles to compute distribution
+  const sortedValues = [...valuesSeen].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const median = sortedValues[Math.floor(sortedValues.length / 2)] || 0n;
+  const valueBuckets: number[] = new Array(10).fill(0);
+  for (const v of valuesSeen) {
+    const idx = median > 0n ? Math.min(9, Number((v * 10n) / (median * 2n + 1n))) : 0;
+    valueBuckets[idx]++;
+  }
+  const valueEntropy = shannonEntropy(valueBuckets);
+
+  // Nonce gap rate: estimate from tx timestamps (gaps > 1h between sorted txs)
+  let gapCount = 0;
+  for (let i = 1; i < sortedTs.length; i++) {
+    if (sortedTs[i] - sortedTs[i - 1] > 3600) gapCount++;
+  }
+  const nonceGapRate = sortedTs.length > 1 ? gapCount / (sortedTs.length - 1) : 0.5;
+
   return {
     address: agentAddress,
-    tx_count_30d: transactions.length,
-    tx_count_7d: Math.floor(transactions.length * 0.5),
+    tx_count_30d: tx30d,
+    tx_count_7d: tx7d,
     fund_outflow_pct: outflowPct,
     max_single_transfer_pct: maxTransferPct,
     method_concentration: methodConcentration,
     timing_regularity_cv: timingCV,
-    hour_entropy: 2.0,   // neutral — can't compute from 5 blocks
-    counterparty_herfindahl: contractsSet.size > 0 ? 1 / contractsSet.size : 0.5,
-    nonce_gap_rate: 0.1, // neutral default
-    value_entropy: 2.0,  // neutral default
-    call_frequency_spike: transactions.length > 50,
+    hour_entropy: hourEntropy,
+    counterparty_herfindahl: counterpartyHHI,
+    nonce_gap_rate: nonceGapRate,
+    value_entropy: valueEntropy,
+    call_frequency_spike: tx7d > 50,
     large_outflow_detected: outflowPct > 80,
-    burst_detected: transactions.length > 20,
+    burst_detected: tx7d > 20,
+    data_source: source,
+    tx_count_analyzed: txs.length,
   };
 }
 
-/** Returns Solidity source for an agent from env override or built-in defaults. */
+/**
+ * Fallback block scan: fetch full block data for the last N blocks and extract
+ * transactions from the agent address. Used when the explorer API is unavailable.
+ * Scans up to 100 blocks (vs the original 5) for better signal coverage.
+ */
+async function blockScanFallback(agentAddress: string): Promise<BehavioralSignals> {
+  const provider = getProvider();
+  const [latestBlock, balance] = await Promise.all([
+    provider.getBlockNumber(),
+    provider.getBalance(agentAddress),
+  ]);
+
+  const txs: BlockscoutTx[] = [];
+  const scanDepth = 100; // 100 blocks ≈ ~20 minutes on 0G Aristotle
+
+  for (let b = latestBlock; b > latestBlock - scanDepth && b > 0; b--) {
+    const block = await provider.getBlock(b, true);
+    if (!block) continue;
+    for (const tx of block.transactions as any[]) {
+      if (typeof tx === "object" && tx.from?.toLowerCase() === agentAddress.toLowerCase()) {
+        txs.push({
+          hash: tx.hash,
+          from: tx.from,
+          to: tx.to || "",
+          value: String(tx.value || "0"),
+          timeStamp: String(block.timestamp),
+          input: tx.data || "0x",
+        });
+      }
+    }
+  }
+
+  return computeSignalsFromTxList(agentAddress, txs, BigInt(balance), "limited_history");
+}
+
+/**
+ * Also try to fetch real verified contract source from the 0G explorer.
+ * Returns empty string if contract is unverified or address is an EOA.
+ */
+async function fetchVerifiedContractSource(agentAddress: string): Promise<string> {
+  try {
+    const url = `${EXPLORER_BASE}/api?module=contract&action=getsourcecode&address=${agentAddress}`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(5000),
+      headers: { "Accept": "application/json" },
+    });
+    if (!res.ok) return "";
+    const json = await res.json() as { status: string; result: Array<{ SourceCode?: string }> };
+    if (json.status !== "1" || !Array.isArray(json.result)) return "";
+    const source = json.result[0]?.SourceCode || "";
+    // Blockscout wraps multi-file sources in {{ }}; strip outer wrapper for single-file
+    return source.startsWith("{{") ? "" : source;
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Build behavioral signals for an agent.
+ *
+ * Priority chain:
+ * 1. Known demo agents → pre-computed archetype profile (fictional addresses, no real history)
+ * 2. Unknown addresses → Blockscout Etherscan-compatible API (full tx history, all signals real)
+ * 3. Explorer unavailable → block scan of last 100 blocks (partial real data)
+ */
+async function fetchAgentActivity(agentAddress: string): Promise<BehavioralSignals> {
+  // Known demo agents: fictional addresses with no real chain history.
+  // Use archetype models that demonstrate the full Safe/Caution/Flagged spectrum.
+  const seed = getSeedProfile(agentAddress);
+  if (seed) return seed;
+
+  console.log(`[Scanner] Fetching real tx history for ${agentAddress} from 0G explorer...`);
+
+  // Try Blockscout API first — returns full history, best signal quality
+  const explorerTxs = await fetchExplorerTxs(agentAddress);
+  if (explorerTxs !== null) {
+    console.log(`[Scanner] Explorer returned ${explorerTxs.length} outgoing txs for ${agentAddress}`);
+    const balance = await getProvider().getBalance(agentAddress);
+    const source = explorerTxs.length >= 10 ? "chain_history" : "limited_history";
+    return computeSignalsFromTxList(agentAddress, explorerTxs, BigInt(balance), source);
+  }
+
+  // Explorer unavailable — fall back to direct block scanning
+  console.log(`[Scanner] Explorer unavailable, falling back to block scan for ${agentAddress}`);
+  return blockScanFallback(agentAddress);
+}
+
+/**
+ * Returns Solidity source for an agent.
+ * Priority: env override → built-in demo defaults → Blockscout verified source → empty string.
+ */
 async function fetchContractSource(agentAddress: string): Promise<string> {
   // Env var override — allows deployment-specific sources without code changes
   const knownSources = process.env.KNOWN_CONTRACT_SOURCES;
@@ -187,11 +379,24 @@ async function fetchContractSource(agentAddress: string): Promise<string> {
       const src = sources[agentAddress.toLowerCase()];
       if (src) return src;
     } catch {
-      // ignore parse errors — fall through to defaults
+      // ignore parse errors — fall through
     }
   }
-  // Built-in defaults for the three demo agents
-  return DEFAULT_CONTRACT_SOURCES[agentAddress.toLowerCase()] || "";
+
+  // Built-in defaults for the three demo agents (intentional vulnerability scenarios)
+  const builtIn = DEFAULT_CONTRACT_SOURCES[agentAddress.toLowerCase()];
+  if (builtIn) return builtIn;
+
+  // Unknown address: try to fetch verified source from 0G chain explorer
+  console.log(`[Scanner] Fetching verified contract source for ${agentAddress} from explorer...`);
+  const explorerSource = await fetchVerifiedContractSource(agentAddress);
+  if (explorerSource) {
+    console.log(`[Scanner] Found verified contract source (${explorerSource.length} chars)`);
+    return explorerSource;
+  }
+
+  // No source available — code scan will return WARNING with note
+  return "";
 }
 
 export async function runFullScan(agentAddress: string): Promise<FullScanResult> {
@@ -224,6 +429,8 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
     agent_address: agentAddress,
     scan_timestamp: Math.floor(Date.now() / 1000),
     behavioral_data: {
+      data_source: signals.data_source,
+      tx_count_analyzed: signals.tx_count_analyzed,
       activity_summary: {
         tx_count_30d: signals.tx_count_30d,
         fund_outflow_pct: signals.fund_outflow_pct,

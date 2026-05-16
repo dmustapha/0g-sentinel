@@ -4,12 +4,11 @@
 // Kept separate so agents/page.tsx can be a server component with ISR.
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { THREAT_LABELS } from "@/lib/types";
 
 interface Props {
   address: string;
 }
-
-const THREAT_LABELS = ["SAFE", "CAUTION", "FLAGGED"] as const;
 
 export function RescanButton({ address }: Props) {
   const router = useRouter();

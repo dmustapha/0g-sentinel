@@ -1,17 +1,7 @@
 // File: frontend/app/api/agents/route.ts
 import { NextResponse } from "next/server";
 import { getAttestationRegistry, getAgentRegistry } from "@/lib/contracts";
-
-const AGENT_NAMES: Record<string, string> = {
-  [process.env.AGENT_A_ADDRESS?.toLowerCase() ?? ""]: "Agent Alpha",
-  [process.env.AGENT_B_ADDRESS?.toLowerCase() ?? ""]: "Agent Beta",
-  [process.env.AGENT_C_ADDRESS?.toLowerCase() ?? ""]: "Agent Gamma",
-  [process.env.AGENT_D_ADDRESS?.toLowerCase() ?? ""]: "Agent Delta",
-  [process.env.AGENT_E_ADDRESS?.toLowerCase() ?? ""]: "Agent Epsilon",
-  [process.env.AGENT_F_ADDRESS?.toLowerCase() ?? ""]: "Agent Zeta",
-  [process.env.AGENT_G_ADDRESS?.toLowerCase() ?? ""]: "Agent Eta",
-  [process.env.AGENT_H_ADDRESS?.toLowerCase() ?? ""]: "Agent Theta",
-};
+import { agentDisplayName } from "@/lib/constants";
 
 export async function GET() {
   try {
@@ -26,7 +16,7 @@ export async function GET() {
         if (!has) {
           return {
             address,
-            name: AGENT_NAMES[address.toLowerCase()] || `Agent ${address.slice(0, 6)}...${address.slice(-4)}`,
+            name: agentDisplayName(address),
             behavioral_score: 0,
             threat_level: 1 as const,
             code_risk: 1 as const,
@@ -41,7 +31,7 @@ export async function GET() {
         const att = await attestationRegistry.getAttestation(address);
         return {
           address,
-          name: AGENT_NAMES[address.toLowerCase()] || `Agent ${address.slice(0, 6)}...${address.slice(-4)}`,
+          name: agentDisplayName(address),
           behavioral_score: Number(att.behavioral_score),
           threat_level: Number(att.threat_level) as 0 | 1 | 2,
           code_risk: Number(att.code_risk) as 0 | 1 | 2,

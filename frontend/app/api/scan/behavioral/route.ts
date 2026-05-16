@@ -57,7 +57,10 @@ export async function POST(req: NextRequest) {
       attestation_tx_hash: result.attestation_tx_hash,
     });
   } catch (error) {
-    console.error("[BehavioralScanAPI]", error);
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    console.error("[BehavioralScanAPI] Scan error:", error);
+    return NextResponse.json(
+      { error: "Scan failed — see server logs for details" },
+      { status: 500 }
+    );
   }
 }

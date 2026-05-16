@@ -8,6 +8,8 @@ export interface EvidenceArchive {
   agent_address: string;
   scan_timestamp: number;
   behavioral_data: {
+    data_source?: string;
+    tx_count_analyzed?: number;
     activity_summary: Record<string, unknown>;
     verdict: string;
     reasoning: string;

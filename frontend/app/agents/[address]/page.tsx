@@ -1,6 +1,6 @@
 // File: frontend/app/agents/[address]/page.tsx
 import { getAttestationRegistry } from "@/lib/contracts";
-import { AttestationData } from "@/lib/types";
+import { AttestationData, THREAT_LABELS, CODE_RISK_LABELS } from "@/lib/types";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnimatedScoreBar } from "@/components/AnimatedScoreBar";
@@ -35,8 +35,7 @@ async function getAttestation(address: string): Promise<AttestationData | null> 
   }
 }
 
-const THREAT_LABELS = ["SAFE", "CAUTION", "FLAGGED"];
-const RISK_LABELS = ["CLEAN", "WARNING", "VULNERABLE"];
+const RISK_LABELS = CODE_RISK_LABELS;
 
 function threatBadgeClass(level: number) {
   if (level === 2) return "sg-badge sg-badge-danger";
@@ -267,6 +266,19 @@ export default async function AgentDetailPage({ params }: Props) {
                     <span className="sg-data-value" style={{ color: "#00d4ff" }}>
                       {params.address}
                     </span>
+                  </div>
+                  <div className="sg-data-field">
+                    <span className="sg-data-label">Attestation TX</span>
+                    <a
+                      href={`${explorerBase}/tx/${attestation.behavioralReceiptHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="sg-data-value"
+                      style={{ color: "#00d4ff", fontSize: "0.625rem" }}
+                      title="View attestation on 0G Explorer"
+                    >
+                      View on Explorer ↗
+                    </a>
                   </div>
                 </div>
               </div>

@@ -1,9 +1,54 @@
 // File: frontend/app/proof/page.tsx
-export default function ProofPage() {
+import { getAttestationRegistry } from "@/lib/contracts";
+
+const COMPUTE_URL = process.env.ZERO_G_COMPUTE_URL || "https://router-api.0g.ai/v1";
+const COMPUTE_KEY = process.env.ZERO_G_API_KEY || "";
+
+interface PulseStatus {
+  chain: boolean;
+  compute: boolean;
+  storage: boolean;
+  gate: boolean;
+}
+
+async function checkSystemPulse(): Promise<PulseStatus> {
+  const results = await Promise.allSettled([
+    // Chain: try to read the attestation count — proves RPC + contract are live
+    Promise.race([
+      getAttestationRegistry().getAttestedCount(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 4000)),
+    ]),
+    // Compute: hit the /models endpoint to verify the API is accepting requests
+    Promise.race([
+      fetch(`${COMPUTE_URL}/models`, {
+        method: "GET",
+        headers: COMPUTE_KEY ? { Authorization: `Bearer ${COMPUTE_KEY}` } : {},
+        signal: AbortSignal.timeout(4000),
+      }).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 4500)),
+    ]),
+  ]);
+
+  const chainOk = results[0].status === "fulfilled";
+  const computeOk = results[1].status === "fulfilled";
+
+  return {
+    chain: chainOk,
+    compute: computeOk,
+    // Storage is part of the same 0G infrastructure — infer from chain health
+    storage: chainOk,
+    // AgentGate lives on the same chain
+    gate: chainOk,
+  };
+}
+
+export default async function ProofPage() {
   const attestationAddr = process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS ?? "Not deployed";
   const agentRegistryAddr = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS ?? "Not deployed";
   const gateAddr = process.env.NEXT_PUBLIC_AGENT_GATE_ADDRESS ?? "Not deployed";
   const explorerBase = "https://chainscan.0g.ai/address";
+
+  const pulse = await checkSystemPulse();
 
   const contracts = [
     {
@@ -26,22 +71,22 @@ export default function ProofPage() {
   const integrations = [
     {
       label: "0G Compute",
-      status: "live",
+      status: pulse.compute ? "live" : "degraded",
       detail: "Two independent inference pipelines — behavioral analysis + code vulnerability scan. Each returns a verifiable receipt hash via zg-res-key UUID header.",
     },
     {
       label: "0G Storage",
-      status: "live",
+      status: pulse.storage ? "live" : "degraded",
       detail: "Evidence JSON archived to 0G distributed storage via @0gfoundation/0g-ts-sdk 1.2.8. Content-addressed root hash stored in attestation.evidence_hash — permanently retrievable from the 0G storage network.",
     },
     {
       label: "0G Chain",
-      status: "live",
+      status: pulse.chain ? "live" : "degraded",
       detail: "ERC-7857 attestations written to AttestationRegistry on 0G Aristotle mainnet (chain ID: 16661). All 9 fields on-chain, immutable, verifiable.",
     },
     {
       label: "AgentGate",
-      status: "live",
+      status: pulse.gate ? "live" : "degraded",
       detail: "Composability primitive — any protocol can require attestation before execution. isSafe() and isSafeWithAge() read directly from AttestationRegistry with optional freshness check.",
     },
   ];
@@ -197,10 +242,10 @@ export default function ProofPage() {
           <div className="sg-label" style={{ marginBottom: "1rem" }}>System Pulse</div>
           <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
             {[
-              { label: "0G Compute", ok: true, detail: "Inference active" },
-              { label: "0G Storage", ok: true, detail: "Content-addressed" },
-              { label: "0G Chain", ok: true, detail: "Chain ID 16661" },
-              { label: "AgentGate", ok: true, detail: "isSafeWithAge() live" },
+              { label: "0G Compute", ok: pulse.compute, detail: pulse.compute ? "Inference active" : "Unreachable" },
+              { label: "0G Storage", ok: pulse.storage, detail: pulse.storage ? "Content-addressed" : "Check chain" },
+              { label: "0G Chain", ok: pulse.chain, detail: pulse.chain ? "Chain ID 16661" : "RPC unreachable" },
+              { label: "AgentGate", ok: pulse.gate, detail: pulse.gate ? "isSafeWithAge() live" : "Check chain" },
             ].map(({ label, ok, detail }) => (
               <div key={label} style={{
                 display: "flex",

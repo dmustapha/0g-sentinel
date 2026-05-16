@@ -23,12 +23,16 @@ export interface BehavioralSignals {
   call_frequency_spike: boolean;
   large_outflow_detected: boolean;
   burst_detected: boolean;
+  // Data provenance — passed through to LLM prompt so reasoning is honest
+  data_source: "chain_history" | "archetype_model" | "limited_history";
+  tx_count_analyzed: number; // actual number of transactions used to compute signals
 }
 
 // Seed profiles for the three demo agents.
 const SEED_PROFILES: Record<string, BehavioralSignals> = {
-  // Agent Alpha — SAFE
+  // Agent Alpha — archetype: SAFE behavioral, VULNERABLE code
   // Diverse method calls, low outflow, irregular human-like timing, many counterparties.
+  // data_source = archetype_model: this is a fictional demo address with no real chain history.
   "0xaaaa000000000000000000000000000000000001": {
     address: "0xAAaA000000000000000000000000000000000001",
     tx_count_30d: 28,
@@ -44,9 +48,11 @@ const SEED_PROFILES: Record<string, BehavioralSignals> = {
     call_frequency_spike: false,
     large_outflow_detected: false,
     burst_detected: false,
+    data_source: "archetype_model",
+    tx_count_analyzed: 28,
   },
 
-  // Agent Beta — FLAGGED
+  // Agent Beta — archetype: FLAGGED (fund-drain bot pattern)
   // Machine-precision method concentration, near-total fund drain, single-counterparty,
   // continuous nonce sequence (no gaps), extremely regular sub-second timing intervals.
   "0xbbbb000000000000000000000000000000000002": {
@@ -64,10 +70,11 @@ const SEED_PROFILES: Record<string, BehavioralSignals> = {
     call_frequency_spike: true,
     large_outflow_detected: true,
     burst_detected: true,
+    data_source: "archetype_model",
+    tx_count_analyzed: 147,
   },
 
-  // Agent Gamma — CAUTION
-  // Burst-pattern activity, elevated outflow, moderate method concentration.
+  // Agent Gamma — archetype: CAUTION (burst activity, elevated outflow)
   // Not clearly malicious but shows coordinated short-window behavior.
   "0xcccc000000000000000000000000000000000003": {
     address: "0xccCc000000000000000000000000000000000003",
@@ -84,6 +91,8 @@ const SEED_PROFILES: Record<string, BehavioralSignals> = {
     call_frequency_spike: true,
     large_outflow_detected: false,
     burst_detected: true,
+    data_source: "archetype_model",
+    tx_count_analyzed: 67,
   },
 };
 

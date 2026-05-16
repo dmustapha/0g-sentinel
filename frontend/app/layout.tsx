@@ -1,6 +1,7 @@
 // File: frontend/app/layout.tsx
 import type { Metadata } from "next";
 import { Syne, DM_Mono } from "next/font/google";
+import Image from "next/image";
 import "./globals.css";
 import { GridOverlays } from "@/components/GridOverlays";
 import { NavLinks } from "@/components/NavLinks";
@@ -21,6 +22,7 @@ const dmMono = DM_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  icons: { icon: "/favicon.ico", apple: "/logo.png" },
   title: "0G Sentinel: Agent Security Dashboard",
   description: "On-chain security attestations for AI agents. Powered by 0G Compute, 0G Storage, and 0G Chain.",
   openGraph: {
@@ -43,7 +45,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <GridOverlays />
         {/* Top bar */}
         <header role="banner" className="sg-topbar">
-          <a href="/" className="sg-topbar-brand">
+          <a href="/" className="sg-topbar-brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <Image src="/logo.png" alt="0G Sentinel" width={28} height={28} style={{ borderRadius: "4px" }} />
             0G <span>Sentinel</span>
           </a>
           <NavLinks />

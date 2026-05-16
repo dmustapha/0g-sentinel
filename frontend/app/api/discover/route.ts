@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
+import { waitUntil } from "@vercel/functions";
 import { enqueueAddresses } from "@scanner/queue";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
@@ -36,8 +37,9 @@ export async function GET() {
     const now = Date.now();
 
     if (cache && now - cache.cachedAt < CACHE_TTL_MS) {
-      // Re-enqueue even on cache hit — queue resets on server restart but cache may still be valid
-      enqueueAddresses(cache.contracts.map((c) => c.address));
+      // Re-enqueue even on cache hit — queue resets on server restart but cache may still be valid.
+      // waitUntil keeps the Vercel function alive after the response is sent so the queue can run.
+      waitUntil(Promise.resolve().then(() => enqueueAddresses(cache!.contracts.map((c) => c.address))));
       return NextResponse.json({
         contracts: cache.contracts,
         latestBlock: cache.latestBlock,
@@ -67,8 +69,9 @@ export async function GET() {
     cache = { contracts, latestBlock: latest, cachedAt: now };
 
     // Kick off background auto-scan for all discovered contracts.
+    // waitUntil keeps the Vercel function alive after the response is sent so the queue can run.
     // The queue checks hasAttestation() before each scan — safe to enqueue all.
-    enqueueAddresses(contracts.map((c) => c.address));
+    waitUntil(Promise.resolve().then(() => enqueueAddresses(contracts.map((c) => c.address))));
 
     return NextResponse.json({
       contracts,

@@ -88,6 +88,8 @@ export async function POST(req: NextRequest) {
       userError = "AI model returned unexpected response. Retry in a few seconds.";
     } else if (msg.includes("execution reverted") || msg.includes("call_exception")) {
       userError = "On-chain write failed — contract rejected transaction. Retry in 10s.";
+    } else if (msg.includes("scanner_busy")) {
+      userError = "Auto-scan queue is writing to chain — retry in 15s.";
     }
 
     return NextResponse.json({ error: userError }, { status: 500 });

@@ -83,6 +83,12 @@ contract AgentGamma is Ownable {
 }`,
 };
 
+// Module-level write lock — prevents concurrent writeAttestation calls from
+// colliding on the scanner wallet's nonce. The queue runs serially but a
+// manual /api/scan/behavioral call can race the queue; this lock serialises
+// both paths without needing a separate wallet.
+let writeInFlight = false;
+
 // Safely convert any hash string to bytes32 (0x + 64 hex chars)
 function toBytes32(hash: string): string {
   if (/^0x[0-9a-fA-F]{64}$/.test(hash)) return hash;
@@ -506,52 +512,61 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
     code_receipt: codeScan.receipt_hash,
   });
 
-  // Write attestation to 0G Chain — retry once on nonce collision (concurrent scan race)
+  // Write attestation to 0G Chain — serialised via writeInFlight lock to prevent
+  // concurrent scans (queue + manual trigger) from colliding on the wallet nonce.
   console.log(`[Scanner] Writing attestation to 0G Chain...`);
+  if (writeInFlight) {
+    throw new Error("scanner_busy: another scan is writing to chain — retry in 15s");
+  }
+  writeInFlight = true;
   let receipt: ethers.TransactionReceipt | null = null;
 
   // 60-second hard timeout on the entire write + confirmation cycle
   const WRITE_TIMEOUT_MS = 60_000;
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const registry = getRegistry();
-      const writeTx = registry.writeAttestation(
-        agentAddress,
-        behavioral.behavioral_score,
-        behavioral.threat_level,
-        codeScan.code_risk,
-        codeScan.code_findings,
-        behavioral.reasoning,
-        toBytes32(behavioral.receipt_hash),
-        toBytes32(codeScan.receipt_hash),
-        toBytes32(evidenceHash)
-      );
+  try {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const registry = getRegistry();
+        const writeTx = registry.writeAttestation(
+          agentAddress,
+          behavioral.behavioral_score,
+          behavioral.threat_level,
+          codeScan.code_risk,
+          codeScan.code_findings,
+          behavioral.reasoning,
+          toBytes32(behavioral.receipt_hash),
+          toBytes32(codeScan.receipt_hash),
+          toBytes32(evidenceHash)
+        );
 
-      const tx = await Promise.race([
-        writeTx,
-        new Promise<never>((_, rej) =>
-          setTimeout(() => rej(new Error("writeAttestation timeout (25s)")), WRITE_TIMEOUT_MS)
-        ),
-      ]);
+        const tx = await Promise.race([
+          writeTx,
+          new Promise<never>((_, rej) =>
+            setTimeout(() => rej(new Error("writeAttestation timeout (25s)")), WRITE_TIMEOUT_MS)
+          ),
+        ]);
 
-      receipt = await Promise.race([
-        (tx as Awaited<typeof writeTx>).wait(),
-        new Promise<never>((_, rej) =>
-          setTimeout(() => rej(new Error("tx.wait() timeout (25s)")), WRITE_TIMEOUT_MS)
-        ),
-      ]);
-      break;
-    } catch (err: unknown) {
-      const msg = String(err);
-      const isNonce = msg.includes("replacement fee too low") || msg.includes("nonce") || msg.includes("already known");
-      if (isNonce && attempt < 3) {
-        console.warn(`[Scanner] Nonce collision on attempt ${attempt}, retrying in ${attempt * 2}s...`);
-        await new Promise(r => setTimeout(r, attempt * 2000));
-        continue;
+        receipt = await Promise.race([
+          (tx as Awaited<typeof writeTx>).wait(),
+          new Promise<never>((_, rej) =>
+            setTimeout(() => rej(new Error("tx.wait() timeout (25s)")), WRITE_TIMEOUT_MS)
+          ),
+        ]);
+        break;
+      } catch (err: unknown) {
+        const msg = String(err);
+        const isNonce = msg.includes("replacement fee too low") || msg.includes("nonce") || msg.includes("already known");
+        if (isNonce && attempt < 3) {
+          console.warn(`[Scanner] Nonce collision on attempt ${attempt}, retrying in ${attempt * 2}s...`);
+          await new Promise(r => setTimeout(r, attempt * 2000));
+          continue;
+        }
+        throw err;
       }
-      throw err;
     }
+  } finally {
+    writeInFlight = false;
   }
   if (!receipt) throw new Error("Transaction not mined — no receipt returned");
   console.log(`[Scanner] Attestation written: ${receipt.hash}`);

@@ -8,7 +8,7 @@ export const AGENT_NAMES: Record<string, string> = {
   "0xcccc000000000000000000000000000000000003": "Agent Gamma",
   "0x62d4144db0f0a6fbbaeb6296c785c71b3d57c526": "0G Flow Protocol",
   // 0G Sentinel system contracts (real contracts on 0G Aristotle)
-  "0xb3e7048cef229ff5043cd2dba296bf278d3f88d": "0G Sentinel: AttestationRegistry",
+  "0xb3e7048cef229ff5043cd2dbba296bf278d3f88d": "0G Sentinel: AttestationRegistry",
   "0xcc1cd4550ec98ddcb19f9200331f3e96cab97fac": "0G Sentinel: AgentRegistry",
   "0xca3338af9a1e0df0539c3c8967597a56044d9360": "0G Sentinel: AgentGate",
 };

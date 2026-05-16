@@ -24,6 +24,8 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
   const evidenceBuffer = Buffer.from(evidenceJson, "utf-8");
 
   let tmpPath: string | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let zgFile: any = null;
 
   try {
     const { ZgFile, Indexer } = await import("@0gfoundation/0g-ts-sdk");
@@ -39,7 +41,7 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     tmpPath = join(tmpdir(), `0g-evidence-${Date.now()}.json`);
     writeFileSync(tmpPath, evidenceBuffer);
 
-    const zgFile = await ZgFile.fromFilePath(tmpPath);
+    zgFile = await ZgFile.fromFilePath(tmpPath);
     const provider = new ethers.JsonRpcProvider(rpcEndpoint);
     const signer = new ethers.Wallet(privateKey, provider);
 
@@ -52,8 +54,6 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
         setTimeout(() => rej(new Error("0G Storage upload timeout (30s)")), 30_000)
       ),
     ]);
-
-    await zgFile.close();
 
     if (uploadErr) throw new Error(`Upload error: ${uploadErr}`);
 
@@ -70,6 +70,9 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     console.warn(`[StorageClient] Evidence hash (fallback SHA256): ${fallbackHash}`);
     return fallbackHash;
   } finally {
+    if (zgFile) {
+      try { await zgFile.close(); } catch { /* ignore close errors */ }
+    }
     if (tmpPath) {
       try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
     }

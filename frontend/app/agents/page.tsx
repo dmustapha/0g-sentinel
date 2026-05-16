@@ -209,8 +209,8 @@ export default async function AgentsPage() {
       <div className="sg-dash-footer">
         <span className="sg-dash-footer-text">
           {agents.length} agent{agents.length !== 1 ? "s" : ""} monitored ·{" "}
-          {agents.filter((a) => a.threat_level === 0 && a.code_risk === 0).length} verified safe ·{" "}
-          {agents.filter((a) => a.threat_level === 2 || a.code_risk === 2).length} threats detected
+          {agents.filter((a) => a.has_attestation && a.threat_level === 0 && a.code_risk === 0).length} verified safe ·{" "}
+          {agents.filter((a) => a.has_attestation && (a.threat_level === 2 || a.code_risk === 2)).length} threats detected
         </span>
         <Link href="/proof" style={{ color: "#00d4ff", fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.6875rem", textDecoration: "none" }}>
           Integration Proof →

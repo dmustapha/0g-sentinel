@@ -2,11 +2,11 @@
 // Server component with ISR — no loading spinner on initial render.
 // Rescan interactivity is isolated to the client RescanButton component.
 import Link from "next/link";
-import { getAttestationRegistry, getAgentRegistry } from "@/lib/contracts";
+import { getAttestationRegistry } from "@/lib/contracts";
 import { AgentWithAttestation } from "@/lib/types";
 import { RescanButton } from "@/components/RescanButton";
 import { ScanInput } from "@/components/ScanInput";
-import { agentDisplayName } from "@/lib/constants";
+import { agentDisplayName, KNOWN_0G_CONTRACTS } from "@/lib/constants";
 
 export const revalidate = 30;
 
@@ -42,11 +42,21 @@ function badgeLabel(agent: AgentWithAttestation): string {
 
 async function fetchAgents(): Promise<AgentWithAttestation[]> {
   const attestationRegistry = getAttestationRegistry();
-  const agentRegistry = getAgentRegistry();
-  const agentAddresses: string[] = await agentRegistry.getAllAgents();
+
+  // Primary source: every address ever attested via Sentinel — no registration required.
+  // The AttestationRegistry on 0G Aristotle IS the registry.
+  const attestedAddresses: string[] = await attestationRegistry.getAllAttestedAgents();
+
+  // Merge with known 0G contracts not yet attested — surface them as scan targets.
+  const attestedSet = new Set(attestedAddresses.map((a) => a.toLowerCase()));
+  const unseenKnown = KNOWN_0G_CONTRACTS.filter(
+    (a) => !attestedSet.has(a.toLowerCase())
+  );
+
+  const allAddresses = [...attestedAddresses, ...unseenKnown];
 
   return Promise.all(
-    agentAddresses.map(async (address) => {
+    allAddresses.map(async (address) => {
       const name = agentDisplayName(address);
       // Single RPC call: getAttestation returns zero-value struct if no attestation.
       // attestation_timestamp === 0 is the reliable "no attestation" sentinel.
@@ -90,9 +100,9 @@ export default async function AgentsPage() {
     <div className="sg-dash-section">
       <div className="sg-dash-header">
         <div>
-          <h1 className="sg-dash-title">Registered Agents</h1>
+          <h1 className="sg-dash-title">Agents on 0G Chain</h1>
           <div className="sg-dash-subtitle">
-            Behavioral audit · Code scan · On-chain attestation · 0G Aristotle
+            Source: AttestationRegistry · Behavioral audit · Code scan · 0G Aristotle
           </div>
         </div>
         <div style={{ flex: "1 1 320px", maxWidth: 480 }}>
@@ -121,7 +131,7 @@ export default async function AgentsPage() {
           color: "#334155",
           textAlign: "center",
         }}>
-          No agents registered
+          No agents found on chain
         </div>
       ) : (
         <table className="sg-agent-table">
@@ -208,7 +218,7 @@ export default async function AgentsPage() {
 
       <div className="sg-dash-footer">
         <span className="sg-dash-footer-text">
-          {agents.length} agent{agents.length !== 1 ? "s" : ""} monitored ·{" "}
+          {agents.length} agent{agents.length !== 1 ? "s" : ""} on chain ·{" "}
           {agents.filter((a) => a.has_attestation && a.threat_level === 0 && a.code_risk === 0).length} verified safe ·{" "}
           {agents.filter((a) => a.has_attestation && (a.threat_level === 2 || a.code_risk === 2)).length} threats detected
         </span>

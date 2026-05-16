@@ -411,11 +411,18 @@ async function fetchAgentActivity(agentAddress: string): Promise<BehavioralSigna
   const explorerTxs = await fetchExplorerTxs(agentAddress);
   if (explorerTxs !== null) {
     console.log(`[Scanner] Explorer returned ${explorerTxs.length} outgoing txs for ${agentAddress}`);
-    const balance = await getProvider().getBalance(agentAddress);
+    // getBalance is best-effort — a failed RPC call must not abort the scan.
+    // Fall back to 0n balance; the behavioral signals still have full tx history.
+    let balance = 0n;
+    try {
+      balance = BigInt(await getProvider().getBalance(agentAddress));
+    } catch (err) {
+      console.warn(`[Scanner] getBalance failed for ${agentAddress}, using 0n:`, String(err).slice(0, 80));
+    }
     const source = explorerTxs.length === 0 ? "no_history"
       : explorerTxs.length >= 10 ? "chain_history"
       : "limited_history";
-    return computeSignalsFromTxList(agentAddress, explorerTxs, BigInt(balance), source);
+    return computeSignalsFromTxList(agentAddress, explorerTxs, balance, source);
   }
 
   // Explorer unavailable — fall back to direct block scanning
@@ -462,7 +469,12 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
   const [signals, contractSource, bytecode] = await Promise.all([
     fetchAgentActivity(agentAddress),
     fetchContractSource(agentAddress),
-    getProvider().getCode(agentAddress),
+    // getCode is best-effort — treat RPC failures as EOA (no bytecode).
+    // Wrapping here prevents an unhandled ethers rejection from aborting the scan.
+    getProvider().getCode(agentAddress).catch((err: unknown) => {
+      console.warn(`[Scanner] getCode failed for ${agentAddress}, treating as EOA:`, String(err).slice(0, 80));
+      return "0x";
+    }),
   ]);
 
   // Pipeline 1 + 2 run in parallel — halves AI inference latency.

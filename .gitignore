@@ -64,3 +64,4 @@ frontend/design-variations/
 # Video assets (local only)
 video/
 .env*.local
+tasks/

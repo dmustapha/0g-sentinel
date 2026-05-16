@@ -28,6 +28,8 @@ export interface AttestationData {
 
 export const THREAT_LABELS = ["SAFE", "CAUTION", "FLAGGED"] as const;
 export const CODE_RISK_LABELS = ["CLEAN", "WARNING", "VULNERABLE"] as const;
+
+// Tailwind class arrays — indexed by threat_level / code_risk (0 | 1 | 2)
 export const THREAT_COLORS = ["text-green-500", "text-yellow-500", "text-red-500"] as const;
 export const CODE_RISK_COLORS = ["text-green-500", "text-yellow-500", "text-red-500"] as const;
 export const THREAT_BG = ["bg-green-100", "bg-yellow-100", "bg-red-100"] as const;

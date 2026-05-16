@@ -6,6 +6,7 @@ import { getAttestationRegistry, getAgentRegistry } from "@/lib/contracts";
 import { AgentWithAttestation } from "@/lib/types";
 import { RescanButton } from "@/components/RescanButton";
 import { ScanInput } from "@/components/ScanInput";
+import { agentDisplayName } from "@/lib/constants";
 
 export const revalidate = 30;
 
@@ -39,12 +40,6 @@ function badgeLabel(agent: AgentWithAttestation): string {
   return "SAFE";
 }
 
-const AGENT_NAMES: Record<string, string> = {
-  "0xaaaa000000000000000000000000000000000001": "Agent Alpha",
-  "0xbbbb000000000000000000000000000000000002": "Agent Beta",
-  "0xcccc000000000000000000000000000000000003": "Agent Gamma",
-};
-
 async function fetchAgents(): Promise<AgentWithAttestation[]> {
   const attestationRegistry = getAttestationRegistry();
   const agentRegistry = getAgentRegistry();
@@ -53,8 +48,7 @@ async function fetchAgents(): Promise<AgentWithAttestation[]> {
   return Promise.all(
     agentAddresses.map(async (address) => {
       const has = await attestationRegistry.hasAttestation(address);
-      const name = AGENT_NAMES[address.toLowerCase()] ||
-        `Agent ${address.slice(0, 6)}...${address.slice(-4)}`;
+      const name = agentDisplayName(address);
       if (!has) {
         return {
           address, name,
@@ -132,7 +126,11 @@ export default async function AgentsPage() {
           <thead>
             <tr>
               <th>AGENT</th>
-              <th className="sg-score-cell">TRUST SCORE</th>
+              <th className="sg-score-cell">
+                <span title="Behavioral risk score (0-100). STATUS badge reflects combined behavioral + code risk.">
+                  BEHAVIORAL SCORE
+                </span>
+              </th>
               <th>STATUS</th>
               <th>LAST ATTESTED</th>
               <th />
@@ -157,12 +155,27 @@ export default async function AgentsPage() {
                 </td>
                 <td className="sg-score-cell">
                   <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                    <span
-                      className="sg-tbl-score-val"
-                      style={{ color: scoreColor(agent) }}
-                    >
-                      {agent.has_attestation ? agent.behavioral_score : "—"}
-                    </span>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.125rem" }}>
+                      <span
+                        className="sg-tbl-score-val"
+                        style={{ color: scoreColor(agent) }}
+                      >
+                        {agent.has_attestation ? agent.behavioral_score : "—"}
+                      </span>
+                      {agent.has_attestation && agent.code_risk > 0 && (
+                        <span
+                          style={{
+                            fontFamily: "var(--font-jetbrains-mono, monospace)",
+                            fontSize: "0.5rem",
+                            color: agent.code_risk === 2 ? "#ef4444" : "#f59e0b",
+                            letterSpacing: "0.04em",
+                          }}
+                          title="Code scan result"
+                        >
+                          {agent.code_risk === 2 ? "CODE VULN" : "CODE WARN"}
+                        </span>
+                      )}
+                    </div>
                     <div className="sg-tbl-score-track">
                       <div
                         className="sg-tbl-score-fill"

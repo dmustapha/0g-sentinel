@@ -52,7 +52,16 @@ Classification:
 export async function runBehavioralAnalysis(
   signals: BehavioralSignals
 ): Promise<BehavioralResult> {
-  const userMessage = `Analyze these pre-computed behavioral signals for AI agent ${signals.address}:
+  const dataSourceNote =
+    signals.data_source === "chain_history"
+      ? `Data source: LIVE 0G chain history (${signals.tx_count_analyzed} real transactions analyzed)`
+      : signals.data_source === "limited_history"
+      ? `Data source: PARTIAL 0G chain history (${signals.tx_count_analyzed} txs found in recent blocks; some signals estimated)`
+      : `Data source: ARCHETYPE MODEL (demo scenario — not real on-chain history)`;
+
+  const userMessage = `Analyze these pre-computed behavioral signals for AI agent ${signals.address}.
+
+${dataSourceNote}
 
 Transaction volume (30-day window):
   Total transactions: ${signals.tx_count_30d}
@@ -75,7 +84,7 @@ Anomaly flags:
   Call frequency spike: ${signals.call_frequency_spike}
   Burst activity detected: ${signals.burst_detected}
 
-Return JSON with behavioral_score, threat_level, and reasoning.`;
+Return JSON with behavioral_score, threat_level, and reasoning. In the reasoning field, mention the data source (e.g. "Based on 47 real on-chain transactions...").`;
 
   const result = await callCompute(BEHAVIORAL_SYSTEM_PROMPT, userMessage);
 

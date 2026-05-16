@@ -83,7 +83,7 @@ export function QueueBanner() {
       <div style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.5625rem", color: "#64748b" }}>
         {done ? (
           <span style={{ color: "#10b981" }}>
-            ✓ Auto-scan complete — {status.completed} agents attested
+            ✓ Auto-scan complete. {status.completed} agents attested.
             {status.failed > 0 && <span style={{ color: "#f59e0b" }}> · {status.failed} failed</span>}
           </span>
         ) : (

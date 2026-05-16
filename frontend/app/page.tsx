@@ -48,7 +48,7 @@ export default async function Home() {
       <div className="sg-hero-left sg-reveal-up">
         <div className="sg-hero-kicker">Attestation infrastructure · 0G Aristotle</div>
         <h1 className="sg-hero-headline">
-          Every AI agent, <em>verified</em> — behavioral audit, code scan, on-chain proof.
+          Every AI agent, <em>verified</em>. Behavioral audit, code scan, on-chain proof.
         </h1>
         <p className="sg-hero-body">
           0G Sentinel monitors agent behavior, audits code via 0G Compute, and writes immutable
@@ -70,17 +70,17 @@ export default async function Home() {
           <div className="sg-feat-cell">
             <div className="sg-feat-num">[01]</div>
             <div className="sg-feat-name">Behavioral Analysis</div>
-            <div className="sg-feat-desc">LLM-powered risk scoring per agent — every action pattern scored and hashed on-chain.</div>
+            <div className="sg-feat-desc">LLM-powered risk scoring per agent. Every action pattern scored and hashed on-chain.</div>
           </div>
           <div className="sg-feat-cell">
             <div className="sg-feat-num">[02]</div>
             <div className="sg-feat-name">Code Audit</div>
-            <div className="sg-feat-desc">Vulnerability detection via 0G Compute — two independent inference pipelines, verifiable receipts.</div>
+            <div className="sg-feat-desc">Vulnerability detection via 0G Compute. Two independent inference pipelines, verifiable receipts.</div>
           </div>
           <div className="sg-feat-cell">
             <div className="sg-feat-num">[03]</div>
             <div className="sg-feat-name">On-Chain Attestation</div>
-            <div className="sg-feat-desc">ERC-7857 structs — all 9 fields immutable on 0G Chain, verifiable by any smart contract.</div>
+            <div className="sg-feat-desc">ERC-7857 structs. All 9 fields immutable on 0G Chain, verifiable by any smart contract.</div>
           </div>
           <div className="sg-feat-cell">
             <div className="sg-feat-num">[04]</div>
@@ -90,7 +90,7 @@ export default async function Home() {
               <code style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", color: "#00d4ff", fontSize: "0.75rem" }}>
                 isSafe()
               </code>{" "}
-              — no centralized oracle required.
+              . No centralized oracle required.
             </div>
           </div>
         </div>
@@ -141,7 +141,7 @@ export default async function Home() {
         <div className="sg-pq-line" />
         <div className="sg-pq-text">
           AI agents are operating without behavioral audits, code verification, or on-chain proof of safety.
-          0G Sentinel brings attestation infrastructure to every agent on 0G Aristotle mainnet —
+          0G Sentinel brings attestation infrastructure to every agent on 0G Aristotle mainnet,
           giving protocols a composable trust layer they can act on.
         </div>
       </div>

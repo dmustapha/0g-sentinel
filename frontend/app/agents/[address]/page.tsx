@@ -450,7 +450,7 @@ export default async function AgentDetailPage({ params }: Props) {
                   color: "#334155",
                   lineHeight: 1.6,
                 }}>
-                  Two independent inference calls — behavioral analysis and code audit. Each generates a
+                  Two independent inference calls: behavioral analysis and code audit. Each generates a
                   unique receipt hash stored immutably on 0G Aristotle.
                 </p>
               </div>

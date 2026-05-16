@@ -463,7 +463,11 @@ async function fetchContractSource(agentAddress: string): Promise<string> {
   return "";
 }
 
-export async function runFullScan(agentAddress: string): Promise<FullScanResult> {
+export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
+  // Normalize to EIP-55 checksum — ethers v6 throws INVALID_ARGUMENT: bad address checksum
+  // when encoding mixed-case addresses with wrong checksum as Solidity `address` parameters.
+  // All-lowercase addresses are accepted without throwing; getAddress computes correct checksum.
+  const agentAddress = ethers.getAddress(rawAddress.toLowerCase());
   console.log(`[Scanner] Starting full scan for ${agentAddress}`);
 
   const [signals, contractSource, bytecode] = await Promise.all([
@@ -599,7 +603,8 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
 }
 
 // Convenience: run only Pipeline 2 — used by the /api/scan/code route
-export async function runCodeScanOnly(agentAddress: string, contractSource: string) {
+export async function runCodeScanOnly(rawAddress: string, contractSource: string) {
+  const agentAddress = ethers.getAddress(rawAddress.toLowerCase());
   console.log(`[Scanner] Running code-only scan for ${agentAddress}`);
 
   // EOA check: skip AI code scan for plain wallets — no bytecode means no vulnerabilities.

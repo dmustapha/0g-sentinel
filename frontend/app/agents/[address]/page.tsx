@@ -79,10 +79,16 @@ function threatBadgeClass(level: number) {
 
 export default async function AgentDetailPage({ params }: Props) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.address)) notFound();
-  const [attestation, isERC7857] = await Promise.all([
+
+  // Fetch attestation and bytecode in parallel.
+  // Only check ERC-7857 if the address has bytecode — saves 2 RPC calls for EOAs.
+  const { ethers } = await import("ethers");
+  const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
+  const [attestation, bytecode] = await Promise.all([
     getAttestation(params.address),
-    checkIsERC7857(params.address),
+    new ethers.JsonRpcProvider(rpcUrl).getCode(params.address),
   ]);
+  const isERC7857 = bytecode !== "0x" ? await checkIsERC7857(params.address) : false;
   const explorerBase = "https://chainscan.0g.ai";
   const shortAddr = `${params.address.slice(0, 8)}…${params.address.slice(-6)}`;
 

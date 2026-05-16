@@ -136,6 +136,9 @@ async function fetchExplorerTxs(agentAddress: string): Promise<BlockscoutTx[] | 
       headers: { "Accept": "application/json" },
     });
     if (!res.ok) return null;
+    // chainscan.0g.ai is a React SPA — all paths return HTML if the API isn't implemented
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) return null;
     const json = await res.json() as { status: string; result: BlockscoutTx[] | string };
     if (json.status !== "1" || !Array.isArray(json.result)) return null;
     // Return only outgoing transactions from the agent
@@ -351,6 +354,8 @@ async function fetchVerifiedContractSource(agentAddress: string): Promise<string
       headers: { "Accept": "application/json" },
     });
     if (!res.ok) return "";
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) return "";
     const json = await res.json() as { status: string; result: Array<{ SourceCode?: string }> };
     if (json.status !== "1" || !Array.isArray(json.result)) return "";
     const source = json.result[0]?.SourceCode || "";
@@ -486,8 +491,8 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
   console.log(`[Scanner] Writing attestation to 0G Chain...`);
   let receipt: ethers.TransactionReceipt | null = null;
 
-  // 25-second hard timeout on the entire write + confirmation cycle
-  const WRITE_TIMEOUT_MS = 25_000;
+  // 60-second hard timeout on the entire write + confirmation cycle
+  const WRITE_TIMEOUT_MS = 60_000;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {

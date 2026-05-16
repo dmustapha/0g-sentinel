@@ -94,6 +94,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [latestBlock, setLatestBlock] = useState<number | null>(null);
+  const [filter, setFilter] = useState("");
 
   useEffect(() => {
     const attestedSet = new Set(attestedAddresses.map((a) => a.toLowerCase()));
@@ -114,8 +115,11 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
       });
   }, [attestedAddresses]);
 
-  const visible = contracts.slice(0, page * PAGE_SIZE);
-  const hasMore = visible.length < contracts.length;
+  const filtered = filter
+    ? contracts.filter((c) => c.address.toLowerCase().includes(filter.toLowerCase()))
+    : contracts;
+  const visible = filtered.slice(0, page * PAGE_SIZE);
+  const hasMore = visible.length < filtered.length;
 
   return (
     <div style={{ marginTop: "2.5rem" }}>
@@ -132,6 +136,35 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
       <div className="sg-dash-subtitle" style={{ marginBottom: "1.25rem" }}>
         Active contracts discovered from chain logs — not pre-registered. Scan any to attest.
       </div>
+
+      {/* Filter input */}
+      {!loading && !error && contracts.length > 0 && (
+        <div style={{ marginBottom: "1rem" }}>
+          <input
+            type="text"
+            value={filter}
+            onChange={(e) => { setFilter(e.target.value); setPage(1); }}
+            placeholder="Filter by address…"
+            style={{
+              fontFamily: "var(--font-jetbrains-mono, monospace)",
+              fontSize: "0.75rem",
+              color: "#c8d3e8",
+              background: "rgba(0,212,255,0.03)",
+              border: "1px solid rgba(0,212,255,0.12)",
+              borderRadius: 2,
+              padding: "0.375rem 0.75rem",
+              outline: "none",
+              width: "100%",
+              maxWidth: 340,
+            }}
+          />
+          {filter && (
+            <span style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem", color: "#475569", marginLeft: "0.75rem" }}>
+              {filtered.length} of {contracts.length}
+            </span>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.75rem", color: "#475569", padding: "2rem 0" }}>
@@ -208,13 +241,13 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
                 onClick={() => setPage((p) => p + 1)}
                 style={{ fontSize: "0.625rem", padding: "0.375rem 1rem" }}
               >
-                Show more ({contracts.length - visible.length} remaining)
+                Show more ({filtered.length - visible.length} remaining)
               </button>
             </div>
           )}
 
           <div style={{ marginTop: "0.75rem", fontFamily: "var(--font-jetbrains-mono,monospace)", fontSize: "0.5625rem", color: "#334155" }}>
-            {contracts.length} unscanned contracts discovered · source: eth_getLogs · refreshes every 5 min
+            {filter ? `${filtered.length} matching · ` : ""}{contracts.length} unscanned contracts discovered · source: eth_getLogs · auto-scanning in background
           </div>
         </>
       )}

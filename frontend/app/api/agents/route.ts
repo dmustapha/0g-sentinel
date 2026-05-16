@@ -38,6 +38,7 @@ export async function GET() {
           threat_level: Number(att.threat_level) as 0 | 1 | 2,
           code_risk: Number(att.code_risk) as 0 | 1 | 2,
           code_findings: att.code_findings,
+          reasoning: att.reasoning || "",
           behavioral_receipt_hash: att.behavioral_receipt_hash,
           code_receipt_hash: att.code_receipt_hash,
           evidence_hash: att.evidence_hash,

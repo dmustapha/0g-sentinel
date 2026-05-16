@@ -65,3 +65,9 @@ frontend/design-variations/
 video/
 .env*.local
 tasks/
+
+# Local planning docs
+ISSUE-REGISTRY.md
+TESTING-PLAN.md
+VERIFY-REPORT.md
+PULSE.md

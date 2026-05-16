@@ -11,6 +11,7 @@
 
 import { NextResponse } from "next/server";
 import { ethers } from "ethers";
+import { enqueueAddresses } from "@scanner/queue";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
 const SCAN_WINDOW = 10_000; // blocks — stays within RPC's 10k-log limit
@@ -35,6 +36,8 @@ export async function GET() {
     const now = Date.now();
 
     if (cache && now - cache.cachedAt < CACHE_TTL_MS) {
+      // Re-enqueue even on cache hit — queue resets on server restart but cache may still be valid
+      enqueueAddresses(cache.contracts.map((c) => c.address));
       return NextResponse.json({
         contracts: cache.contracts,
         latestBlock: cache.latestBlock,
@@ -62,6 +65,10 @@ export async function GET() {
       .map(([address, logCount]) => ({ address, logCount, discoveredAt: now }));
 
     cache = { contracts, latestBlock: latest, cachedAt: now };
+
+    // Kick off background auto-scan for all discovered contracts.
+    // The queue checks hasAttestation() before each scan — safe to enqueue all.
+    enqueueAddresses(contracts.map((c) => c.address));
 
     return NextResponse.json({
       contracts,

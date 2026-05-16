@@ -9,6 +9,7 @@ interface LiveStats {
   totalAgents: number;
   totalAttested: number;
   threatsDetected: number;
+  statsUnavailable?: boolean;
 }
 
 async function getLiveStats(): Promise<LiveStats> {
@@ -19,9 +20,9 @@ async function getLiveStats(): Promise<LiveStats> {
       agentRegistry.getAllAgents() as Promise<string[]>,
       attestationRegistry.getAttestedCount() as Promise<bigint>,
     ]);
-    // Fetch attestations to count threats — single call per agent (timestamp==0 → no attestation)
+    // Fetch all attestations to count threats — no slice cap so the count is always accurate
     const attestations = await Promise.all(
-      agentAddresses.slice(0, 20).map((addr) => attestationRegistry.getAttestation(addr))
+      agentAddresses.map((addr) => attestationRegistry.getAttestation(addr))
     );
     const threatsDetected = attestations.filter(
       (a) => BigInt(a.attestation_timestamp) > 0n &&
@@ -33,7 +34,8 @@ async function getLiveStats(): Promise<LiveStats> {
       threatsDetected,
     };
   } catch {
-    return { totalAgents: 3, totalAttested: 3, threatsDetected: 2 };
+    // Return zeros — never show fabricated stats on RPC failure
+    return { totalAgents: 0, totalAttested: 0, threatsDetected: 0, statsUnavailable: true };
   }
 }
 
@@ -105,9 +107,9 @@ export default async function Home() {
         marginBottom: "0.5rem",
       }}>
         {[
-          { label: "Agents Monitored", value: stats.totalAgents.toString() },
-          { label: "Attestations On-Chain", value: stats.totalAttested.toString() },
-          { label: "Threats Detected", value: stats.threatsDetected.toString() },
+          { label: "Agents Monitored", value: stats.statsUnavailable ? "—" : stats.totalAgents.toString() },
+          { label: "Attestations On-Chain", value: stats.statsUnavailable ? "—" : stats.totalAttested.toString() },
+          { label: "Threats Detected", value: stats.statsUnavailable ? "—" : stats.threatsDetected.toString() },
           { label: "Network", value: "0G Aristotle" },
         ].map(({ label, value }) => (
           <div key={label} style={{ flex: "1 1 120px", minWidth: 0 }}>
@@ -137,10 +139,11 @@ export default async function Home() {
       {/* Pull quote */}
       <div className="sg-pullquote-section sg-reveal-fade sg-delay-2">
         <div className="sg-pq-line" />
-        <blockquote className="sg-pq-text">
-          &ldquo;Every AI agent operating <em>blind</em> — no behavioral audit, no code verification, no on-chain proof.
-          0G Sentinel brings attestation infrastructure to every agent on 0G Aristotle mainnet.&rdquo;
-        </blockquote>
+        <div className="sg-pq-text">
+          AI agents are operating without behavioral audits, code verification, or on-chain proof of safety.
+          0G Sentinel brings attestation infrastructure to every agent on 0G Aristotle mainnet —
+          giving protocols a composable trust layer they can act on.
+        </div>
       </div>
 
       {/* CTA strip */}

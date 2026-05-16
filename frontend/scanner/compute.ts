@@ -62,7 +62,7 @@ export async function callCompute(
   // 4. SHA256 fallback
   const zgResKey = response.headers.get("zg-res-key");
   let receiptHash: string =
-    (zgResKey ? "0x" + zgResKey.replace(/-/g, "").padEnd(64, "0") : "") ||
+    (zgResKey ? "0x" + zgResKey.replace(/-/g, "").slice(0, 64).padEnd(64, "0") : "") ||
     data.usage?.receipt_hash ||
     response.headers.get("x-receipt-hash") ||
     response.headers.get("x-compute-receipt") ||

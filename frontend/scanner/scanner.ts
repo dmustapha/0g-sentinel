@@ -139,26 +139,28 @@ function computeSignalsFromTxList(
   agentAddress: string,
   txs: BlockscoutTx[],
   currentBalanceWei: bigint,
-  source: "chain_history" | "limited_history"
+  source: "chain_history" | "limited_history" | "no_history"
 ): BehavioralSignals {
   if (txs.length === 0) {
-    // No outgoing transactions: all signals are minimal-risk by definition
+    // No outgoing transactions found. Zero history is NOT proof of safety — it means the
+    // agent has no verifiable track record. Signal this as uncertainty (neutral/caution),
+    // not as a clean bill of health. The LLM will see no_history and should return CAUTION.
     return {
       address: agentAddress,
       tx_count_30d: 0,
       tx_count_7d: 0,
       fund_outflow_pct: 0,
       max_single_transfer_pct: 0,
-      method_concentration: 0,
-      timing_regularity_cv: 1.0,
-      hour_entropy: 3.58,
-      counterparty_herfindahl: 0,
-      nonce_gap_rate: 1.0,
-      value_entropy: 3.58,
+      method_concentration: 0.5,  // unknown — not diverse, not concentrated
+      timing_regularity_cv: 0.5,  // unknown — not machine, not human
+      hour_entropy: 0,            // unknown — no data to compute entropy
+      counterparty_herfindahl: 0.5, // unknown
+      nonce_gap_rate: 0.5,        // unknown
+      value_entropy: 0,           // unknown
       call_frequency_spike: false,
       large_outflow_detected: false,
       burst_detected: false,
-      data_source: source,
+      data_source: "no_history",
       tx_count_analyzed: 0,
     };
   }
@@ -320,7 +322,8 @@ async function blockScanFallback(agentAddress: string): Promise<BehavioralSignal
     }
   }
 
-  return computeSignalsFromTxList(agentAddress, txs, BigInt(balance), "limited_history");
+  const source = txs.length === 0 ? "no_history" : "limited_history";
+  return computeSignalsFromTxList(agentAddress, txs, BigInt(balance), source);
 }
 
 /**
@@ -366,7 +369,9 @@ async function fetchAgentActivity(agentAddress: string): Promise<BehavioralSigna
   if (explorerTxs !== null) {
     console.log(`[Scanner] Explorer returned ${explorerTxs.length} outgoing txs for ${agentAddress}`);
     const balance = await getProvider().getBalance(agentAddress);
-    const source = explorerTxs.length >= 10 ? "chain_history" : "limited_history";
+    const source = explorerTxs.length === 0 ? "no_history"
+      : explorerTxs.length >= 10 ? "chain_history"
+      : "limited_history";
     return computeSignalsFromTxList(agentAddress, explorerTxs, BigInt(balance), source);
   }
 
@@ -411,16 +416,23 @@ async function fetchContractSource(agentAddress: string): Promise<string> {
 export async function runFullScan(agentAddress: string): Promise<FullScanResult> {
   console.log(`[Scanner] Starting full scan for ${agentAddress}`);
 
-  const [signals, contractSource] = await Promise.all([
+  const [signals, contractSource, bytecode] = await Promise.all([
     fetchAgentActivity(agentAddress),
     fetchContractSource(agentAddress),
+    getProvider().getCode(agentAddress),
   ]);
 
-  // Pipeline 1 + 2 run in parallel — halves AI inference latency
+  // Pipeline 1 + 2 run in parallel — halves AI inference latency.
+  // If the address is an EOA (no bytecode), skip the AI code scan entirely:
+  // an EOA cannot have contract vulnerabilities → return CLEAN with zero receipt.
   console.log(`[Scanner] Running Pipeline 1 (behavioral) + Pipeline 2 (code) in parallel...`);
+  const isEOA = bytecode === "0x";
+  if (isEOA) console.log(`[Scanner] EOA detected — skipping code scan (CLEAN)`);
   const [behavioral, codeScan] = await Promise.all([
     runBehavioralAnalysis(signals),
-    runCodeScan(agentAddress, contractSource),
+    isEOA
+      ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64) })
+      : runCodeScan(agentAddress, contractSource),
   ]);
 
   console.log(
@@ -523,6 +535,20 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
 // Convenience: run only Pipeline 2 — used by the /api/scan/code route
 export async function runCodeScanOnly(agentAddress: string, contractSource: string) {
   console.log(`[Scanner] Running code-only scan for ${agentAddress}`);
+
+  // EOA check: skip AI code scan for plain wallets — no bytecode means no vulnerabilities.
+  const bytecode = await getProvider().getCode(agentAddress);
+  if (bytecode === "0x") {
+    console.log(`[Scanner] EOA detected in code-only scan — returning CLEAN`);
+    return {
+      agentAddress,
+      code_risk: 0 as const,
+      code_findings: "",
+      code_receipt_hash: "0x" + "0".repeat(64),
+      scanned_at: Math.floor(Date.now() / 1000),
+    };
+  }
+
   const codeScan = await runCodeScan(agentAddress, contractSource);
   return {
     agentAddress,

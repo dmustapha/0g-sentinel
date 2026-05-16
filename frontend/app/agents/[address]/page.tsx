@@ -10,10 +10,12 @@ import { FineTuneButton } from "@/components/FineTuneButton";
 
 export const revalidate = 30;
 
-function bytes32ToUUID(bytes32: string): string {
-  const hex = bytes32.replace(/^0x/, "").slice(0, 32);
-  if (hex.length < 32) return bytes32.slice(0, 14) + "...";
-  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20,32)}`;
+// Display a receipt hash (bytes32) as a short identifier without discarding any of the 32 bytes.
+// UUID formatting was previously used but silently truncated the second half of the hash.
+function formatReceiptHash(bytes32: string): string {
+  if (!bytes32 || bytes32 === "0x" + "0".repeat(64)) return "—";
+  // Show first 12 chars + ... + last 8 chars (retains uniqueness, no data loss)
+  return `${bytes32.slice(0, 14)}…${bytes32.slice(-8)}`;
 }
 
 async function checkIsERC7857(address: string): Promise<boolean> {
@@ -349,7 +351,7 @@ export default async function AgentDetailPage({ params }: Props) {
                     <div className="sg-data-field" style={{ marginBottom: "0.5rem" }}>
                       <span className="sg-data-label">Behavioral ChatID</span>
                       <span className="sg-data-value" style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem" }}>
-                        {bytes32ToUUID(attestation.behavioralReceiptHash)}
+                        {formatReceiptHash(attestation.behavioralReceiptHash)}
                       </span>
                     </div>
                   )}
@@ -357,7 +359,7 @@ export default async function AgentDetailPage({ params }: Props) {
                     <div className="sg-data-field" style={{ marginBottom: "0.75rem" }}>
                       <span className="sg-data-label">Code Audit ChatID</span>
                       <span className="sg-data-value" style={{ fontFamily: "var(--font-jetbrains-mono, monospace)", fontSize: "0.625rem" }}>
-                        {bytes32ToUUID(attestation.codeReceiptHash)}
+                        {formatReceiptHash(attestation.codeReceiptHash)}
                       </span>
                     </div>
                   )}

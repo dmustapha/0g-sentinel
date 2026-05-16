@@ -24,7 +24,7 @@ export interface BehavioralSignals {
   large_outflow_detected: boolean;
   burst_detected: boolean;
   // Data provenance — passed through to LLM prompt so reasoning is honest
-  data_source: "chain_history" | "archetype_model" | "limited_history";
+  data_source: "chain_history" | "archetype_model" | "limited_history" | "no_history";
   tx_count_analyzed: number; // actual number of transactions used to compute signals
 }
 

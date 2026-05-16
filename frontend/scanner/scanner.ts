@@ -423,14 +423,16 @@ export async function runFullScan(agentAddress: string): Promise<FullScanResult>
   ]);
 
   // Pipeline 1 + 2 run in parallel — halves AI inference latency.
-  // If the address is an EOA (no bytecode), skip the AI code scan entirely:
-  // an EOA cannot have contract vulnerabilities → return CLEAN with zero receipt.
+  // Skip code scan only when the address is an EOA AND no known source exists.
+  // If a built-in/injected source is available (seed/demo), run the audit regardless.
   console.log(`[Scanner] Running Pipeline 1 (behavioral) + Pipeline 2 (code) in parallel...`);
   const isEOA = bytecode === "0x";
-  if (isEOA) console.log(`[Scanner] EOA detected — skipping code scan (CLEAN)`);
+  const skipCodeScan = isEOA && contractSource.length === 0;
+  if (skipCodeScan) console.log(`[Scanner] EOA with no source — skipping code scan (CLEAN)`);
+  else if (isEOA) console.log(`[Scanner] EOA with known source — running code audit`);
   const [behavioral, codeScan] = await Promise.all([
     runBehavioralAnalysis(signals),
-    isEOA
+    skipCodeScan
       ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64) })
       : runCodeScan(agentAddress, contractSource),
   ]);

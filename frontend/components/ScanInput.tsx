@@ -2,56 +2,32 @@
 // File: frontend/components/ScanInput.tsx
 // Allows any user to scan an arbitrary agent address — not just pre-registered ones.
 // Triggers a full scan and navigates to the agent report on completion.
-import { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useRef, useCallback } from "react";
+import { StreamingScanPanel } from "./StreamingScanPanel";
 
 export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) {
-  const router = useRouter();
   const [address, setAddress] = useState(defaultAddress ?? "");
   const [scanning, setScanning] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+  const [scanAddress, setScanAddress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const isValid = /^0x[0-9a-fA-F]{40}$/.test(address.trim());
 
-  useEffect(() => {
-    if (scanning) {
-      setElapsed(0);
-      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [scanning]);
+  const handleStreamError = useCallback((msg: string) => {
+    setError(msg);
+    setScanning(false);
+    setScanAddress(null);
+  }, []);
 
-  async function handleScan(e: React.FormEvent) {
+  function handleScan(e: React.FormEvent) {
     e.preventDefault();
     const addr = address.trim();
-    if (!isValid) return;
+    if (!isValid || scanning) return;
     setError(null);
+    setScanAddress(addr);
     setScanning(true);
-
-    try {
-      const res = await fetch("/api/scan/behavioral", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentAddress: addr }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || `Scan failed (HTTP ${res.status})`);
-        return;
-      }
-
-      router.push(`/agents/${addr}`);
-    } catch {
-      setError("Scan failed. Check network connection.");
-    } finally {
-      setScanning(false);
-    }
+    // StreamingScanPanel drives the scan (SSE) and navigates to the report on completion.
   }
 
   return (
@@ -100,9 +76,12 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
             transition: "background 0.2s ease-out, border-color 0.2s ease-out",
           }}
         >
-          {scanning ? `Scanning… ${elapsed}s` : "Scan →"}
+          {scanning ? "Scanning…" : "Scan →"}
         </button>
       </div>
+      {scanning && scanAddress && (
+        <StreamingScanPanel address={scanAddress} onError={handleStreamError} />
+      )}
       {error && (
         <div style={{
           fontFamily: "var(--font-dm-mono, monospace)",

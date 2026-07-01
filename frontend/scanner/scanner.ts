@@ -467,13 +467,25 @@ async function fetchContractSource(agentAddress: string): Promise<string> {
   return "";
 }
 
-export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
+// Live progress events emitted through runFullScan's optional onProgress callback.
+// The streaming route (/api/scan/stream) forwards these to the client as SSE frames;
+// the blocking route (/api/scan/behavioral) passes no callback, so behavior is unchanged.
+export type ScanStage = "discover" | "behavioral" | "code" | "evidence" | "attest";
+export interface ScanProgress {
+  stage: ScanStage;
+  status: "start" | "done" | "skip";
+  data?: Record<string, unknown>;
+}
+export type OnProgress = (ev: ScanProgress) => void;
+
+export async function runFullScan(rawAddress: string, onProgress?: OnProgress): Promise<FullScanResult> {
   // Normalize to EIP-55 checksum — ethers v6 throws INVALID_ARGUMENT: bad address checksum
   // when encoding mixed-case addresses with wrong checksum as Solidity `address` parameters.
   // All-lowercase addresses are accepted without throwing; getAddress computes correct checksum.
   const agentAddress = ethers.getAddress(rawAddress.toLowerCase());
   console.log(`[Scanner] Starting full scan for ${agentAddress}`);
 
+  onProgress?.({ stage: "discover", status: "start" });
   const [signals, contractSource, bytecode] = await Promise.all([
     fetchAgentActivity(agentAddress),
     fetchContractSource(agentAddress),
@@ -493,12 +505,41 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
   const skipCodeScan = isEOA && contractSource.length === 0;
   if (skipCodeScan) console.log(`[Scanner] EOA with no source — skipping code scan (CLEAN)`);
   else if (isEOA) console.log(`[Scanner] EOA with known source — running code audit`);
-  const [behavioral, codeScan] = await Promise.all([
-    runBehavioralAnalysis(signals),
-    skipCodeScan
-      ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64), static_analysis: undefined, verified: undefined })
-      : runCodeScan(agentAddress, contractSource),
-  ]);
+
+  onProgress?.({
+    stage: "discover",
+    status: "done",
+    data: {
+      tx_count: signals.tx_count_analyzed,
+      data_source: signals.data_source,
+      is_eoa: isEOA,
+      has_source: contractSource.length > 0,
+    },
+  });
+
+  // Emit start for both inference pipelines; stream each done event independently
+  // (Promise.all resolves together, so .then on each promise reports true completion order).
+  onProgress?.({ stage: "behavioral", status: "start" });
+  onProgress?.({ stage: "code", status: skipCodeScan ? "skip" : "start" });
+
+  const behavioralP = runBehavioralAnalysis(signals).then((r) => {
+    onProgress?.({
+      stage: "behavioral",
+      status: "done",
+      data: { score: r.behavioral_score, threat_level: r.threat_level, verified: r.verified },
+    });
+    return r;
+  });
+  const codeP = (skipCodeScan
+    ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64), static_analysis: undefined, verified: undefined })
+    : runCodeScan(agentAddress, contractSource)
+  ).then((r) => {
+    if (!skipCodeScan) {
+      onProgress?.({ stage: "code", status: "done", data: { code_risk: r.code_risk, verified: r.verified } });
+    }
+    return r;
+  });
+  const [behavioral, codeScan] = await Promise.all([behavioralP, codeP]);
 
   console.log(
     `[Scanner] Behavioral: ${["SAFE", "CAUTION", "FLAGGED"][behavioral.threat_level]} (score: ${behavioral.behavioral_score})`
@@ -511,6 +552,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
 
   // Archive evidence to 0G Storage
   console.log(`[Scanner] Archiving evidence to 0G Storage...`);
+  onProgress?.({ stage: "evidence", status: "start" });
   const { hash: evidenceHash, isFallback: evidenceIsFallback } = await uploadEvidence({
     agent_address: agentAddress,
     scan_timestamp: Math.floor(Date.now() / 1000),
@@ -533,9 +575,12 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
     code_static_analysis: codeScan.static_analysis,
   });
 
+  onProgress?.({ stage: "evidence", status: "done", data: { on_0g_storage: !evidenceIsFallback } });
+
   // Write attestation to 0G Chain — serialised via writeInFlight lock to prevent
   // concurrent scans (queue + manual trigger) from colliding on the wallet nonce.
   console.log(`[Scanner] Writing attestation to 0G Chain...`);
+  onProgress?.({ stage: "attest", status: "start" });
   if (writeInFlight) {
     throw new Error("scanner_busy: another scan is writing to chain — retry in 15s");
   }
@@ -591,6 +636,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
   }
   if (!receipt) throw new Error("Transaction not mined — no receipt returned");
   console.log(`[Scanner] Attestation written: ${receipt.hash}`);
+  onProgress?.({ stage: "attest", status: "done", data: { tx_hash: receipt.hash } });
 
   return {
     agentAddress,

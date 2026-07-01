@@ -5,6 +5,7 @@
   "installCommand": "npm install --legacy-peer-deps",
   "functions": {
     "app/api/scan/behavioral/route.ts": { "maxDuration": 300 },
+    "app/api/scan/stream/route.ts": { "maxDuration": 300 },
     "app/api/scan/code/route.ts": { "maxDuration": 300 },
     "app/api/discover/route.ts": { "maxDuration": 300 }
   }

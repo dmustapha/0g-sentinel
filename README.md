@@ -1,6 +1,6 @@
 # 0G Sentinel: On-chain security attestations for AI agents
 
-Security infrastructure for the AI agent era. 0G Sentinel discovers every active contract on 0G Aristotle via chain logs, scans them through two independent AI inference pipelines, and writes immutable 9-field attestations to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single call and gate execution on the result — no agent registration required.
+Security infrastructure for the AI agent era. 0G Sentinel discovers every active contract on 0G Aristotle via chain logs, scans them through two independent AI inference pipelines, and writes immutable 9-field attestations to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single call and gate execution on the result, with no agent registration required.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity)](https://soliditylang.org/)
@@ -23,7 +23,7 @@ Browse the live agent database, scan any 0G Aristotle address, and inspect on-ch
 
 AI agents operate on-chain with real funds. There is currently no standard way to verify whether an agent is safe before granting it access to a protocol. 0G Sentinel fills that gap.
 
-It discovers active contracts directly from chain logs (no manual registration), runs two parallel AI audits — behavioral risk (tx history, fund flows, access patterns) and Solidity vulnerability scan — and writes a 9-field attestation struct to `AttestationRegistry` on 0G Chain. Both AI calls go through 0G Compute's inference network, each returning a unique cryptographic receipt hash stored on-chain as proof of independent verification.
+It discovers active contracts directly from chain logs (no manual registration), runs two parallel AI audits (behavioral risk from tx history, fund flows, and access patterns, plus a Solidity vulnerability scan), and writes a 9-field attestation struct to `AttestationRegistry` on 0G Chain. Both AI calls go through 0G Compute's inference network, each returning a unique cryptographic receipt hash stored on-chain as proof of independent verification.
 
 A background queue auto-scans every newly discovered contract. Results appear progressively as each attestation lands on-chain. Any protocol can gate agent execution on the result with a single `isSafe()` call.
 
@@ -59,12 +59,12 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
 
 ## Features
 
-- **Chain-native discovery**: Scans the last 10,000 blocks via `eth_getLogs` to find every active contract on 0G Aristotle — sorted by event activity, no manual setup required
+- **Chain-native discovery**: Scans the last 10,000 blocks via `eth_getLogs` to find every active contract on 0G Aristotle, sorted by event activity, no manual setup required
 - **Background auto-scan queue**: All discovered contracts are enqueued for scanning automatically; scans run serially to avoid nonce collisions; results appear progressively as each attestation lands on-chain (requires a persistent server process)
 - **Dual AI pipelines**: Two independent 0G Compute inference calls per scan, each with a unique `zg-res-key` receipt UUID stored on-chain as proof of independent verification
 - **Behavioral risk scoring**: 0-100 risk score from tx frequency, fund outflow patterns, and contract interaction breadth
 - **Smart contract vulnerability scan**: Reentrancy, broken access control, and unchecked-call detection via AI code analysis
-- **Immutable on-chain attestations**: 9-field struct written to `AttestationRegistry` — queryable by any dApp with a single call; includes full LLM reasoning string
+- **Immutable on-chain attestations**: 9-field struct written to `AttestationRegistry`, queryable by any dApp with a single call; includes full LLM reasoning string
 - **Live agent database**: Paginated, searchable table of all attested agents with inline AI reasoning and threat badges
 - **AgentGate composability**: Drop-in security gate for any protocol; `isSafe()` and `isSafeWithAge()` read `AttestationRegistry` directly, no intermediary
 - **Evidence archival**: Full scan evidence JSON content-addressed and hashed; `evidence_hash` stored immutably in attestation struct
@@ -114,7 +114,7 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
                   threat_level (SAFE/CAUTION/FLAGGED)
                   code_risk (CLEAN/WARNING/VULNERABLE)
                   code_findings (string)
-                  reasoning (string — LLM explanation)
+                  reasoning (string, LLM explanation)
                   behavioral_receipt_hash (bytes32)
                   code_receipt_hash (bytes32)
                   evidence_hash (bytes32)
@@ -126,7 +126,7 @@ See [`submission/proof.md`](submission/proof.md) for live attestation data and o
                   attestation verdict
 ```
 
-1. **Discover**: `/api/discover` scans last 10k blocks via `eth_getLogs` — every contract that emitted events is a candidate
+1. **Discover**: `/api/discover` scans last 10k blocks via `eth_getLogs`; every contract that emitted events is a candidate
 2. **Queue**: All discovered addresses enqueue for background auto-scanning (serial, nonce-safe)
 3. **Scan**: Two parallel AI pipelines run via 0G Compute for each address
 4. **Archive**: Evidence JSON uploaded to 0G Storage; SHA256 root hash stored
@@ -151,7 +151,7 @@ cp frontend/.env.example frontend/.env.local
 # 3. Compile contracts
 npx hardhat compile
 
-# 4. Deploy to 0G testnet (optional — mainnet contracts are already live)
+# 4. Deploy to 0G testnet (optional: mainnet contracts are already live)
 npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogTestnet
 npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogTestnet
 npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogTestnet

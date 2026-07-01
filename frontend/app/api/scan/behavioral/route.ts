@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
       behavioral_receipt_hash: result.behavioral_receipt_hash,
       code_receipt_hash: result.code_receipt_hash,
       evidence_hash: result.evidence_hash,
+      evidence_on_0g_storage: result.evidence_on_0g_storage,
       attestation_tx_hash: result.attestation_tx_hash,
     });
   } catch (error: unknown) {

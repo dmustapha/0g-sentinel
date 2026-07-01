@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
-import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
+import { readFileSync, unlinkSync, existsSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -35,7 +35,12 @@ export async function POST(req: NextRequest) {
     ]);
 
     if (err) {
-      return NextResponse.json({ verified: false, reason: (err as Error).message });
+      // Honest failure: a hash that cannot be downloaded is either a content-hash fallback
+      // (0G Storage upload failed at scan time) or a genuinely unretrievable root.
+      return NextResponse.json({
+        verified: false,
+        reason: `Not retrievable from 0G Storage (${(err as Error).message}). If 0G Storage was unavailable at scan time, evidence was anchored on-chain as a content hash rather than uploaded.`,
+      });
     }
 
     const content = readFileSync(tmpPath);

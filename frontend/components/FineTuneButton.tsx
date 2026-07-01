@@ -25,12 +25,12 @@ export function FineTuneButton({ agentAddress }: { agentAddress: string }) {
       <span style={{ color: "#10b981", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
         DATASET UPLOADED
       </span>
-      <span style={{ color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem" }}>
+      <span style={{ color: "var(--tx-lo)", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem" }}>
         {result.datasetHash.slice(0, 14)}…{result.datasetHash.slice(-8)}
       </span>
       {result.command && (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
-          <span style={{ color: "rgba(255,255,255,0.35)", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <span style={{ color: "var(--tx-lo)", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>
             CLI Command
           </span>
           <pre style={{

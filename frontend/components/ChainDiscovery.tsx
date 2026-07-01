@@ -114,7 +114,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
           Live on 0G Chain
         </h2>
         {latestBlock !== null && (
-          <span style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.25)" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "var(--tx-lo)" }}>
             block #{latestBlock.toLocaleString()} · last 10k blocks · sorted by activity
           </span>
         )}
@@ -135,7 +135,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
             style={{
               fontFamily: "var(--font-dm-mono, monospace)",
               fontSize: "1rem",
-              color: "rgba(255,255,255,0.6)",
+              color: "var(--tx-mid)",
               background: "rgba(6,182,212,0.03)",
               border: "1px solid rgba(6,182,212,0.12)",
               borderRadius: 8,
@@ -146,7 +146,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
             }}
           />
           {filter && (
-            <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "rgba(255,255,255,0.25)", marginLeft: "0.75rem" }}>
+            <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "var(--tx-lo)", marginLeft: "0.75rem" }}>
               {filtered.length} of {contracts.length}
             </span>
           )}
@@ -154,7 +154,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
       )}
 
       {loading ? (
-        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "rgba(255,255,255,0.25)", padding: "2rem 0" }}>
+        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "var(--tx-lo)", padding: "2rem 0" }}>
           Indexing chain logs…
         </div>
       ) : error ? (
@@ -162,7 +162,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
           {error}
         </div>
       ) : contracts.length === 0 ? (
-        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "rgba(255,255,255,0.15)", padding: "2rem 0" }}>
+        <div style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "var(--tx-dim)", padding: "2rem 0" }}>
           All active contracts in this window have already been attested.
         </div>
       ) : (
@@ -170,11 +170,11 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
           <table className="sg-agent-table">
             <thead>
               <tr>
-                <th>CONTRACT</th>
-                <th>ADDRESS</th>
-                <th className="sg-score-cell" title="Number of on-chain events emitted. Higher means more active.">ACTIVITY</th>
-                <th>STATUS</th>
-                <th />
+                <th style={{ width: "26%" }}>CONTRACT</th>
+                <th style={{ width: "30%" }}>ADDRESS</th>
+                <th className="sg-score-cell" style={{ width: "20%" }} title="Number of on-chain events emitted. Higher means more active.">ACTIVITY</th>
+                <th style={{ width: "16%" }}>STATUS</th>
+                <th style={{ width: "8%" }} />
               </tr>
             </thead>
             <tbody>
@@ -198,7 +198,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
                   </td>
                   <td className="sg-score-cell">
                     <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-                      <span style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "rgba(255,255,255,0.55)", minWidth: "2.5rem", textAlign: "right" }}>
+                      <span style={{ fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.75rem", color: "var(--tx-mid)", minWidth: "2.5rem", textAlign: "right" }}>
                         {c.logCount}
                       </span>
                       <div className="sg-tbl-score-track" style={{ width: 60 }}>
@@ -206,7 +206,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
                           className="sg-tbl-score-fill"
                           style={{
                             width: `${Math.min(100, (c.logCount / (contracts[0]?.logCount || 1)) * 100)}%`,
-                            background: "rgba(255,255,255,0.15)",
+                            background: "var(--tx-dim)",
                           }}
                         />
                       </div>
@@ -235,7 +235,7 @@ export function ChainDiscovery({ attestedAddresses }: { attestedAddresses: strin
             </div>
           )}
 
-          <div style={{ marginTop: "0.75rem", fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.15)" }}>
+          <div style={{ marginTop: "0.75rem", fontFamily: "var(--font-dm-mono,monospace)", fontSize: "0.5625rem", color: "var(--tx-dim)" }}>
             {filter ? `${filtered.length} matching · ` : ""}{contracts.length} unscanned contracts discovered · source: eth_getLogs · auto-scanning in background
           </div>
         </>

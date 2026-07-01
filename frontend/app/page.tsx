@@ -1,6 +1,7 @@
 // File: frontend/app/page.tsx
 import Link from "next/link";
 import { getAttestationRegistry } from "@/lib/contracts";
+import { RadarHero } from "@/components/RadarHero";
 
 // Revalidate every 60s so stats stay fresh without blocking initial load
 export const revalidate = 60;
@@ -44,21 +45,28 @@ export default async function Home() {
   return (
     <div className="sg-landing">
 
-      {/* Hero */}
-      <div className="sg-hero-left sg-reveal-up">
-        <div className="sg-hero-kicker">Attestation infrastructure · 0G Aristotle</div>
-        <h1 className="sg-hero-headline">
-          Every AI agent, <em>verified</em>. Behavioral audit, code scan, on-chain proof.
-        </h1>
-        <p className="sg-hero-body">
-          0G Sentinel monitors agent behavior, audits code via 0G Compute, and writes immutable
-          ERC-7857 attestations to chain. AgentGate lets any protocol act on the result.
-        </p>
-        <div className="sg-hero-ctas">
-          <Link href="/agents" className="sg-btn-fill">Open Dashboard →</Link>
-          <Link href="/proof" className="sg-btn-outline">Integration Proof →</Link>
+      {/* Hero — mission-control radar + identity */}
+      <section className="sg-hero">
+        <div className="sg-hero-inner">
+          <div className="sg-reveal-up">
+            <div className="sg-hero-kicker">Attestation infrastructure · 0G Aristotle</div>
+            <p className="sg-hero-identity">0G Agent Watch</p>
+            <p className="sg-hero-identity-sub">live threat intelligence for the agent economy</p>
+            <h1 className="sg-hero-headline">
+              Every AI agent, <em>verified</em>. Behavioral audit, code scan, on-chain proof.
+            </h1>
+            <p className="sg-hero-body">
+              0G Sentinel monitors agent behavior, audits code via 0G Compute, and writes immutable
+              ERC-7857 attestations to chain. AgentGate lets any protocol act on the result.
+            </p>
+            <div className="sg-hero-ctas">
+              <Link href="/agents" className="sg-btn-fill">Open Dashboard →</Link>
+              <Link href="/proof" className="sg-btn-outline">Integration Proof →</Link>
+            </div>
+          </div>
+          <RadarHero />
         </div>
-      </div>
+      </section>
 
       {/* Features grid */}
       <div className="sg-feat-section sg-reveal-up sg-delay-1">
@@ -101,10 +109,8 @@ export default async function Home() {
         display: "flex",
         gap: "2rem",
         flexWrap: "wrap",
-        padding: "1.25rem 0",
-        borderTop: "1px solid rgba(6,182,212,0.08)",
-        borderBottom: "1px solid rgba(6,182,212,0.08)",
-        marginBottom: "0.5rem",
+        padding: "1.5rem clamp(1.5rem, 4vw, 3rem)",
+        borderBottom: "1px solid var(--line-soft)",
       }}>
         {[
           { label: "Agents Monitored", value: stats.statsUnavailable ? "—" : stats.totalAgents.toString() },
@@ -114,18 +120,20 @@ export default async function Home() {
         ].map(({ label, value }) => (
           <div key={label} style={{ flex: "1 1 120px", minWidth: 0 }}>
             <div style={{
-              fontFamily: "var(--font-dm-mono, monospace)",
-              fontSize: "clamp(1.25rem, 3vw, 2rem)",
+              fontFamily: "var(--font-heading)",
+              fontSize: "clamp(1.5rem, 3vw, 2.1rem)",
               fontWeight: 700,
-              color: "#06b6d4",
+              color: "var(--cy)",
               lineHeight: 1,
+              letterSpacing: "-0.01em",
+              fontVariantNumeric: "tabular-nums",
             }}>
               {value}
             </div>
             <div style={{
-              fontFamily: "DM Mono, monospace",
+              fontFamily: "var(--font-mono)",
               fontSize: "0.6875rem",
-              color: "rgba(255,255,255,0.15)",
+              color: "var(--tx-dim)",
               marginTop: "0.25rem",
               textTransform: "uppercase",
               letterSpacing: "0.08em",

@@ -118,13 +118,13 @@ export default async function ProofPage() {
           </div>
           <div className="sg-display" style={{
             fontSize: "clamp(2rem, 5vw, 3.5rem)",
-            color: "rgba(255,255,255,0.9)",
+            color: "var(--tx-hi)",
             lineHeight: 0.92,
             marginBottom: "0.75rem",
           }}>
             Live on 0G Aristotle
           </div>
-          <div className="sg-mono" style={{ color: "rgba(255,255,255,0.15)", marginTop: 8, fontSize: "0.75rem" }}>
+          <div className="sg-mono" style={{ color: "var(--tx-dim)", marginTop: 8, fontSize: "0.75rem" }}>
             Chain ID: 16661 · 3 contracts deployed · 4 integrations active
           </div>
         </div>
@@ -149,23 +149,23 @@ export default async function ProofPage() {
               >
                 <div>
                   <div style={{
-                    fontFamily: "Syne, sans-serif",
+                    fontFamily: "var(--font-heading)",
                     fontSize: "0.875rem",
                     fontWeight: 600,
-                    color: "rgba(255,255,255,0.6)",
+                    color: "var(--tx-mid)",
                   }}>
                     {c.name}
                   </div>
                   <div style={{
-                    fontFamily: "DM Mono, monospace",
+                    fontFamily: "var(--font-mono)",
                     fontSize: "0.6875rem",
-                    color: "rgba(255,255,255,0.15)",
+                    color: "var(--tx-dim)",
                     marginTop: 2,
                   }}>
                     {c.description}
                   </div>
                 </div>
-                <div className="sg-mono" style={{ color: "rgba(255,255,255,0.35)", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div className="sg-mono" style={{ color: "var(--tx-lo)", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {c.address}
                 </div>
                 {c.address !== "Not deployed" ? (
@@ -179,7 +179,7 @@ export default async function ProofPage() {
                     Explorer ↗
                   </a>
                 ) : (
-                  <span className="sg-mono" style={{ color: "rgba(255,255,255,0.15)" }}>—</span>
+                  <span className="sg-mono" style={{ color: "var(--tx-dim)" }}>—</span>
                 )}
               </div>
             ))}
@@ -197,19 +197,19 @@ export default async function ProofPage() {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: "0.625rem", marginBottom: "0.375rem" }}>
                   <span style={{
-                    fontFamily: "Syne, sans-serif",
+                    fontFamily: "var(--font-heading)",
                     fontSize: "0.875rem",
                     fontWeight: 600,
-                    color: "rgba(255,255,255,0.9)",
+                    color: "var(--tx-hi)",
                   }}>
                     {intg.label}
                   </span>
                   {statusBadge(intg.status)}
                 </div>
                 <div style={{
-                  fontFamily: "DM Mono, monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.8125rem",
-                  color: "rgba(255,255,255,0.35)",
+                  color: "var(--tx-lo)",
                   lineHeight: 1.55,
                 }}>
                   {intg.detail}
@@ -227,8 +227,8 @@ export default async function ProofPage() {
       <div style={{
         flex: "1 1 260px",
         maxWidth: 300,
-        background: "rgba(8,1,14,0.92)",
-        borderTop: "1px solid #0f1c30",
+        background: "var(--ink-2)",
+        borderTop: "1px solid var(--line)",
         backdropFilter: "blur(8px)",
         padding: "2rem 1.25rem",
         display: "flex",
@@ -268,14 +268,14 @@ export default async function ProofPage() {
                 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{
-                    fontFamily: "Syne, sans-serif",
+                    fontFamily: "var(--font-heading)",
                     fontSize: "0.75rem",
                     fontWeight: 600,
-                    color: "rgba(255,255,255,0.6)",
+                    color: "var(--tx-mid)",
                   }}>
                     {label}
                   </div>
-                  <div className="sg-mono" style={{ fontSize: "0.6rem", color: "rgba(255,255,255,0.15)", marginTop: 1 }}>
+                  <div className="sg-mono" style={{ fontSize: "0.6rem", color: "var(--tx-dim)", marginTop: 1 }}>
                     {detail}
                   </div>
                 </div>
@@ -289,9 +289,9 @@ export default async function ProofPage() {
         <div>
           <div className="sg-label" style={{ marginBottom: "0.75rem" }}>Why On-Chain?</div>
           <p style={{
-            fontFamily: "DM Mono, monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: "0.75rem",
-            color: "rgba(255,255,255,0.35)",
+            color: "var(--tx-lo)",
             lineHeight: 1.6,
           }}>
             Off-chain attestations can be forged. On-chain records are immutable, verifiable by any smart contract,
@@ -304,13 +304,13 @@ export default async function ProofPage() {
         <div>
           <div className="sg-label" style={{ marginBottom: "0.5rem" }}>Receipt Hash Proof</div>
           <p style={{
-            fontFamily: "DM Mono, monospace",
+            fontFamily: "var(--font-mono)",
             fontSize: "0.75rem",
-            color: "rgba(255,255,255,0.35)",
+            color: "var(--tx-lo)",
             lineHeight: 1.6,
           }}>
             Each 0G Compute call returns a unique{" "}
-            <span className="sg-mono" style={{ color: "rgba(255,255,255,0.55)" }}>zg-res-key</span> UUID.
+            <span className="sg-mono" style={{ color: "var(--tx-mid)" }}>zg-res-key</span> UUID.
             Two independent hashes (behavioral and code) prove two separate AI inferences ran.
           </p>
         </div>

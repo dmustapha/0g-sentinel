@@ -26,6 +26,8 @@ export interface FullScanResult {
   behavioral_receipt_hash: string;
   code_receipt_hash: string;
   evidence_hash: string;
+  /** true when evidence_hash is a real 0G Storage root (retrievable); false when 0G Storage upload fell back to a local content hash. */
+  evidence_on_0g_storage: boolean;
   attestation_tx_hash: string;
   scanned_at: number;
 }
@@ -507,7 +509,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
 
   // Archive evidence to 0G Storage
   console.log(`[Scanner] Archiving evidence to 0G Storage...`);
-  const evidenceHash = await uploadEvidence({
+  const { hash: evidenceHash, isFallback: evidenceIsFallback } = await uploadEvidence({
     agent_address: agentAddress,
     scan_timestamp: Math.floor(Date.now() / 1000),
     behavioral_data: {
@@ -597,6 +599,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
     behavioral_receipt_hash: behavioral.receipt_hash,
     code_receipt_hash: codeScan.receipt_hash,
     evidence_hash: evidenceHash,
+    evidence_on_0g_storage: !evidenceIsFallback,
     attestation_tx_hash: receipt.hash,
     scanned_at: Math.floor(Date.now() / 1000),
   };

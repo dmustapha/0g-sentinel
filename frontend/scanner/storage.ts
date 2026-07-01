@@ -19,7 +19,14 @@ export interface EvidenceArchive {
   code_receipt: string;
 }
 
-export async function uploadEvidence(evidence: EvidenceArchive): Promise<string> {
+export interface EvidenceUploadResult {
+  /** bytes32 hash written on-chain: a real 0G Storage root when isFallback is false, else a SHA256 of the content. */
+  hash: string;
+  /** true when the 0G Storage upload failed and hash is a local SHA256 content hash (NOT retrievable from 0G Storage). */
+  isFallback: boolean;
+}
+
+export async function uploadEvidence(evidence: EvidenceArchive): Promise<EvidenceUploadResult> {
   const evidenceJson = JSON.stringify(evidence, null, 2);
   const evidenceBuffer = Buffer.from(evidenceJson, "utf-8");
 
@@ -62,14 +69,16 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
     const rootHash = "rootHash" in result ? result.rootHash : result.rootHashes[0];
     const txHash = "txHash" in result ? result.txHash : result.txHashes[0];
     console.log(`[StorageClient] Evidence uploaded. tx=${txHash} root=${rootHash}`);
-    return rootHash.startsWith("0x") ? rootHash : "0x" + rootHash;
+    const hash = rootHash.startsWith("0x") ? rootHash : "0x" + rootHash;
+    return { hash, isFallback: false };
   } catch (err) {
-    // FALLBACK: if SDK upload fails, return SHA256 of evidence as proof of content
+    // FALLBACK: if SDK upload fails, return SHA256 of evidence as proof of content.
+    // isFallback flags this so callers/UI never present a local content hash as a 0G Storage root.
     console.error("[StorageClient] 0G Storage upload failed, using content hash as fallback:", err);
     const fallbackHash =
       "0x" + createHash("sha256").update(evidenceBuffer).digest("hex");
     console.warn(`[StorageClient] Evidence hash (fallback SHA256): ${fallbackHash}`);
-    return fallbackHash;
+    return { hash: fallbackHash, isFallback: true };
   } finally {
     if (zgFile) {
       try { await zgFile.close(); } catch { /* ignore close errors */ }

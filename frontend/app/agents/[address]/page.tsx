@@ -132,7 +132,7 @@ export default async function AgentDetailPage({ params }: Props) {
       : attestation.threatLevel === 1
       ? "#fbbf24"
       : "#10b981"
-    : "rgba(255,255,255,0.15)";
+    : "var(--tx-dim)";
 
   return (
     <div style={{ minHeight: "calc(100vh - 44px)", display: "flex", flexDirection: "column" }}>
@@ -140,17 +140,17 @@ export default async function AgentDetailPage({ params }: Props) {
       {/* Back nav */}
       <div style={{
         padding: "1rem 2rem",
-        borderBottom: "1px solid #0f1c30",
+        borderBottom: "1px solid var(--line)",
         display: "flex",
         alignItems: "center",
         gap: "1rem",
-        background: "rgba(8,1,14,0.6)",
+        background: "rgba(10,17,32,0.6)",
         backdropFilter: "blur(8px)",
       }}>
         <Link href="/agents" style={{
-          fontFamily: "Syne, sans-serif",
+          fontFamily: "var(--font-heading)",
           fontSize: "0.8rem",
-          color: "rgba(255,255,255,0.15)",
+          color: "var(--tx-dim)",
           textDecoration: "none",
           display: "flex",
           alignItems: "center",
@@ -176,8 +176,8 @@ export default async function AgentDetailPage({ params }: Props) {
             iNFT ERC-7857
           </span>
         )}
-        <div style={{ width: 1, height: 14, background: "#0f1c30" }} />
-        <span className="sg-mono" style={{ color: "rgba(255,255,255,0.15)" }}>{shortAddr}</span>
+        <div style={{ width: 1, height: 14, background: "var(--line)" }} />
+        <span className="sg-mono" style={{ color: "var(--tx-dim)" }}>{shortAddr}</span>
         <a
           href={`${explorerBase}/address/${address}`}
           target="_blank"
@@ -207,17 +207,17 @@ export default async function AgentDetailPage({ params }: Props) {
             <div className="sg-glass-card sg-reveal-up" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
               <div>
                 <div style={{
-                  fontFamily: "DM Mono, monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.8125rem",
-                  color: "rgba(255,255,255,0.25)",
+                  color: "var(--tx-lo)",
                   marginBottom: "0.5rem",
                 }}>
                   No attestation found on-chain for this agent address.
                 </div>
                 <div style={{
-                  fontFamily: "DM Mono, monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.75rem",
-                  color: "rgba(255,255,255,0.15)",
+                  color: "var(--tx-dim)",
                   lineHeight: 1.6,
                 }}>
                   Run a full scan to generate a behavioral risk score, code vulnerability report, and immutable on-chain attestation via 0G Compute + 0G Chain.
@@ -256,7 +256,7 @@ export default async function AgentDetailPage({ params }: Props) {
                     marginBottom: 4,
                   }}>
                     {attestation.behavioralScore}
-                    <span style={{ fontSize: "1.25rem", color: "rgba(255,255,255,0.15)", fontWeight: 400 }}>/100</span>
+                    <span style={{ fontSize: "1.25rem", color: "var(--tx-dim)", fontWeight: 400 }}>/100</span>
                   </div>
                   <AnimatedScoreBar score={attestation.behavioralScore} />
                   <div style={{ marginTop: 12 }}>
@@ -298,9 +298,9 @@ export default async function AgentDetailPage({ params }: Props) {
                 }}>
                   <div className="sg-label" style={{ color: "#f43f5e", marginBottom: 10 }}>Code Findings</div>
                   <pre style={{
-                    fontFamily: "DM Mono, monospace",
+                    fontFamily: "var(--font-mono)",
                     fontSize: "0.8125rem",
-                    color: "rgba(255,255,255,0.55)",
+                    color: "var(--tx-mid)",
                     whiteSpace: "pre-wrap",
                     margin: 0,
                     lineHeight: 1.6,
@@ -384,7 +384,7 @@ export default async function AgentDetailPage({ params }: Props) {
                   <div className="sg-section-label" style={{ marginBottom: "1rem" }}>
                     0G Compute Inference Receipts
                   </div>
-                  <div style={{ fontSize: "0.625rem", color: "rgba(255,255,255,0.55)", marginBottom: "1rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
+                  <div style={{ fontSize: "0.625rem", color: "var(--tx-mid)", marginBottom: "1rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
                     Each receipt cryptographically hashes the exact inference response and anchors it on-chain, so this verdict stays tamper-evident and independently checkable. Inference runs on 0G Compute.
                   </div>
                   {attestation.behavioralReceiptHash && attestation.behavioralReceiptHash !== "0x" + "0".repeat(64) && (
@@ -431,7 +431,7 @@ export default async function AgentDetailPage({ params }: Props) {
                 <div className="sg-section-label" style={{ marginBottom: "0.75rem" }}>
                   0G Compute Fine-Tuning
                 </div>
-                <div style={{ fontSize: "0.625rem", color: "rgba(255,255,255,0.55)", marginBottom: "0.75rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
+                <div style={{ fontSize: "0.625rem", color: "var(--tx-mid)", marginBottom: "0.75rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
                   Upload attestation data as a training dataset to 0G Storage and get the CLI command to submit a fine-tuning task.
                 </div>
                 <FineTuneButton agentAddress={address} />
@@ -447,8 +447,8 @@ export default async function AgentDetailPage({ params }: Props) {
         <div style={{
           flex: "1 1 260px",
           maxWidth: 300,
-          background: "rgba(8,1,14,0.92)",
-          borderTop: "1px solid #0f1c30",
+          background: "var(--ink-2)",
+          borderTop: "1px solid var(--line)",
           backdropFilter: "blur(8px)",
           padding: "2rem 1.25rem",
           display: "flex",
@@ -460,9 +460,9 @@ export default async function AgentDetailPage({ params }: Props) {
               <div style={{ textAlign: "center" }}>
                 <div className="sg-label" style={{ marginBottom: "0.75rem" }}>AI Reasoning</div>
                 <p style={{
-                  fontFamily: "DM Mono, monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.75rem",
-                  color: "rgba(255,255,255,0.8)",
+                  color: "var(--tx-hi)",
                   lineHeight: 1.65,
                   fontStyle: "italic",
                   margin: 0,
@@ -477,9 +477,9 @@ export default async function AgentDetailPage({ params }: Props) {
               <div>
                 <div className="sg-label" style={{ marginBottom: "0.75rem" }}>0G Compute Receipts</div>
                 <p style={{
-                  fontFamily: "DM Mono, monospace",
+                  fontFamily: "var(--font-mono)",
                   fontSize: "0.75rem",
-                  color: "rgba(255,255,255,0.15)",
+                  color: "var(--tx-dim)",
                   lineHeight: 1.6,
                 }}>
                   Two independent inference calls: behavioral analysis and code audit. Each generates a
@@ -501,13 +501,13 @@ export default async function AgentDetailPage({ params }: Props) {
                   { label: "Network", value: "0G Aristotle (16661)" },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                    <span style={{ fontFamily: "DM Mono, monospace", fontSize: "0.6875rem", color: "rgba(255,255,255,0.15)" }}>{label}</span>
-                    <span className="sg-mono" style={{ fontSize: "0.6875rem", color: "rgba(255,255,255,0.35)" }}>{value}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--tx-dim)" }}>{label}</span>
+                    <span className="sg-mono" style={{ fontSize: "0.6875rem", color: "var(--tx-lo)" }}>{value}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p style={{ fontFamily: "DM Mono, monospace", fontSize: "0.75rem", color: "rgba(255,255,255,0.15)", lineHeight: 1.6 }}>
+              <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--tx-dim)", lineHeight: 1.6 }}>
                 No attestation on-chain for this address.
               </p>
             )}

@@ -221,15 +221,16 @@ export function StreamingScanPanel({
         display: "flex",
         flexDirection: "column",
         gap: "0.5rem",
-        padding: "0.875rem 1rem",
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(6,182,212,0.18)",
-        borderRadius: 10,
+        padding: "1rem 1.1rem",
+        background: "linear-gradient(180deg, var(--ink-2), var(--ink-1))",
+        border: "1px solid var(--line)",
+        borderRadius: "var(--r-3)",
+        boxShadow: "0 0 60px -30px var(--cy-55), inset 0 1px 0 rgba(255,255,255,0.04)",
       }}
     >
       {STEPS.map(({ key, label }) => {
         const s = steps[key];
-        const color = s.tone ? TONE_COLOR[s.tone] : "rgba(255,255,255,0.5)";
+        const color = s.tone ? TONE_COLOR[s.tone] : "var(--tx-mid)";
         return (
           <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "0.625rem" }}>
             <span
@@ -244,7 +245,7 @@ export function StreamingScanPanel({
                   s.status === "done"
                     ? TONE_COLOR[s.tone ?? "good"]
                     : s.status === "skip"
-                    ? "rgba(255,255,255,0.3)"
+                    ? "var(--tx-lo)"
                     : s.status === "active"
                     ? "#06b6d4"
                     : "rgba(255,255,255,0.18)",
@@ -260,10 +261,10 @@ export function StreamingScanPanel({
                 letterSpacing: "0.01em",
                 color:
                   s.status === "pending"
-                    ? "rgba(255,255,255,0.32)"
+                    ? "var(--tx-lo)"
                     : s.status === "active"
-                    ? "rgba(255,255,255,0.92)"
-                    : "rgba(255,255,255,0.66)",
+                    ? "var(--tx-hi)"
+                    : "var(--tx-mid)",
                 transition: "color 0.25s ease-out",
               }}
             >

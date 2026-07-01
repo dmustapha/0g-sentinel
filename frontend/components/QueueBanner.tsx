@@ -80,7 +80,7 @@ export function QueueBanner() {
       </div>
 
       {/* Status text */}
-      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.35)" }}>
+      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "var(--tx-lo)" }}>
         {done ? (
           <span style={{ color: "#10b981" }}>
             ✓ Auto-scan complete. {status.completed} agents attested.
@@ -92,7 +92,7 @@ export function QueueBanner() {
             {" · "}{status.completed}/{status.total} done
             {status.queued > 0 && <> · {status.queued} queued</>}
             {status.inFlight && (
-              <span style={{ color: "rgba(255,255,255,0.25)" }}>
+              <span style={{ color: "var(--tx-lo)" }}>
                 {" · scanning "}{status.inFlight.slice(0, 8)}…{status.inFlight.slice(-4)}
               </span>
             )}
@@ -100,7 +100,7 @@ export function QueueBanner() {
         )}
       </div>
 
-      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5rem", color: "rgba(255,255,255,0.15)" }}>
+      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5rem", color: "var(--tx-dim)" }}>
         {done ? "" : "New attestations appear on refresh"}
       </div>
     </div>

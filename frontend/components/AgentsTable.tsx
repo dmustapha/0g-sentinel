@@ -19,7 +19,7 @@ function relativeTime(ts: number): string {
 }
 
 function scoreColor(agent: AgentWithAttestation): string {
-  if (!agent.has_attestation) return "rgba(255,255,255,0.15)";
+  if (!agent.has_attestation) return "var(--tx-dim)";
   if (agent.behavioral_score >= 60) return "#f43f5e";
   if (agent.behavioral_score >= 30) return "#fbbf24";
   return "#10b981";
@@ -58,7 +58,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
         padding: "4rem 0",
         fontFamily: "var(--font-dm-mono, monospace)",
         fontSize: "0.75rem",
-        color: "rgba(255,255,255,0.15)",
+        color: "var(--tx-dim)",
         textAlign: "center",
       }}>
         No agents attested yet. Auto-scan is indexing the chain.
@@ -79,7 +79,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           style={{
             fontFamily: "var(--font-dm-mono, monospace)",
             fontSize: "1rem",
-            color: "rgba(255,255,255,0.6)",
+            color: "var(--tx-mid)",
             background: "rgba(6,182,212,0.03)",
             border: "1px solid rgba(6,182,212,0.12)",
             borderRadius: 8,
@@ -90,7 +90,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           }}
         />
         {query && (
-          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "rgba(255,255,255,0.25)" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "var(--tx-lo)" }}>
             {filtered.length} of {agents.length}
           </span>
         )}
@@ -99,15 +99,15 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
       <table className="sg-agent-table">
         <thead>
           <tr>
-            <th>AGENT</th>
-            <th className="sg-score-cell">
+            <th style={{ width: "34%" }}>AGENT</th>
+            <th className="sg-score-cell" style={{ width: "26%" }}>
               <span title="Behavioral risk score (0-100). STATUS reflects combined behavioral + code risk.">
                 BEHAVIORAL SCORE
               </span>
             </th>
-            <th>STATUS</th>
-            <th>LAST ATTESTED</th>
-            <th />
+            <th style={{ width: "22%" }}>STATUS</th>
+            <th style={{ width: "18%" }}>LAST ATTESTED</th>
+            <th style={{ width: "10%" }} />
           </tr>
         </thead>
         <tbody>
@@ -168,18 +168,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
                   {badgeLabel(agent)}
                 </span>
                 {agent.reasoning && (
-                  <div style={{
-                    fontFamily: "var(--font-dm-mono, monospace)",
-                    fontSize: "0.5rem",
-                    color: "rgba(255,255,255,0.25)",
-                    marginTop: "0.25rem",
-                    maxWidth: 160,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                    title={agent.reasoning}
-                  >
+                  <div className="sg-reason-preview" title={agent.reasoning}>
                     {agent.reasoning.slice(0, 55)}{agent.reasoning.length > 55 ? "…" : ""}
                   </div>
                 )}
@@ -208,7 +197,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           >
             ← Prev
           </button>
-          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "rgba(255,255,255,0.25)" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem", color: "var(--tx-lo)" }}>
             {page} / {totalPages}
           </span>
           <button
@@ -219,7 +208,7 @@ export function AgentsTable({ agents }: { agents: AgentWithAttestation[] }) {
           >
             Next →
           </button>
-          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "rgba(255,255,255,0.15)", marginLeft: "0.5rem" }}>
+          <span style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "var(--tx-dim)", marginLeft: "0.5rem" }}>
             {filtered.length} agents
           </span>
         </div>

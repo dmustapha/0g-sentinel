@@ -94,7 +94,7 @@ export function ShareCard({ address, verdict, score, reason }: Props) {
             fontSize: "0.75rem",
             fontWeight: 600,
             letterSpacing: "0.04em",
-            color: copied ? "#10b981" : "rgba(255,255,255,0.6)",
+            color: copied ? "#10b981" : "var(--tx-mid)",
             background: "rgba(255,255,255,0.04)",
             border: "1px solid rgba(255,255,255,0.14)",
             borderRadius: 8,

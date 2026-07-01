@@ -33,10 +33,10 @@ export default function Error({
         Error
       </div>
       <div style={{
-        fontFamily: "Syne, sans-serif",
+        fontFamily: "var(--font-heading)",
         fontSize: "1.25rem",
         fontWeight: 600,
-        color: "rgba(255,255,255,0.9)",
+        color: "var(--tx-hi)",
         textAlign: "center",
       }}>
         Something went wrong
@@ -44,7 +44,7 @@ export default function Error({
       <div style={{
         fontFamily: "var(--font-dm-mono, monospace)",
         fontSize: "0.75rem",
-        color: "rgba(255,255,255,0.15)",
+        color: "var(--tx-dim)",
         textAlign: "center",
         maxWidth: 400,
       }}>

@@ -10,6 +10,7 @@ import { AgentsTable } from "@/components/AgentsTable";
 import { QueueBanner } from "@/components/QueueBanner";
 import { agentDisplayName } from "@/lib/constants";
 import { rankByRisk } from "@/lib/ranking";
+import { RadarHero } from "@/components/RadarHero";
 
 export const revalidate = 30;
 
@@ -70,13 +71,18 @@ export default async function AgentsPage() {
   return (
     <div className="sg-dash-section">
       {/* Display hero */}
-      <div style={{ marginBottom: "2.5rem" }}>
-        <h1 className="sg-dash-title">
-          Verify every AI agent<br />
-          <span style={{ color: "#06b6d4" }}>on-chain.</span>
-        </h1>
-        <div className="sg-dash-subtitle" style={{ marginTop: "0.75rem" }}>
-          Behavioral audit · Code scan · 0G Aristotle · AttestationRegistry
+      <div className="sg-dash-hero">
+        <div>
+          <h1 className="sg-dash-title">
+            Verify every AI agent<br />
+            <span style={{ color: "var(--cy)" }}>on-chain.</span>
+          </h1>
+          <div className="sg-dash-subtitle" style={{ marginTop: "0.75rem" }}>
+            Behavioral audit · Code scan · 0G Aristotle · AttestationRegistry
+          </div>
+        </div>
+        <div className="sg-dash-hero-radar">
+          <RadarHero compact />
         </div>
       </div>
 
@@ -99,9 +105,9 @@ export default async function AgentsPage() {
           Scan any agent address
         </div>
         <div style={{
-          fontFamily: "DM Mono, monospace",
+          fontFamily: "var(--font-mono)",
           fontSize: "0.75rem",
-          color: "rgba(255,255,255,0.25)",
+          color: "var(--tx-lo)",
           marginBottom: "1rem",
           lineHeight: 1.5,
         }}>

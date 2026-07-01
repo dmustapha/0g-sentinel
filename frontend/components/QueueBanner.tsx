@@ -33,62 +33,52 @@ export function QueueBanner() {
 
     poll();
     const interval = setInterval(poll, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
-  // Don't show if queue hasn't started or nothing is happening
   if (!status || (!status.active && status.queued === 0 && status.completed === 0)) return null;
-  // Hide when fully done and no failures
   if (!status.active && status.queued === 0 && status.failed === 0 && status.completed > 0) return null;
 
   const pct = status.total > 0 ? Math.round((status.completed / status.total) * 100) : 0;
   const done = !status.active && status.queued === 0;
 
   return (
-    <div style={{
-      background: done
-        ? "rgba(16,185,129,0.06)"
-        : "rgba(6,182,212,0.04)",
-      border: `1px solid ${done ? "rgba(16,185,129,0.25)" : "rgba(6,182,212,0.15)"}`,
-      borderRadius: "4px",
-      padding: "0.75rem 1rem",
-      marginBottom: "1.25rem",
-      display: "flex",
-      alignItems: "center",
-      gap: "1rem",
-      flexWrap: "wrap",
-    }}>
-      {/* Progress bar */}
+    <div
+      style={{
+        background: done ? "var(--good-12)" : "var(--cy-06)",
+        border: `1px solid ${done ? "rgba(16,185,129,0.25)" : "var(--cy-12)"}`,
+        borderRadius: "var(--r-2)",
+        padding: "13px 16px",
+        marginBottom: 20,
+        display: "flex",
+        alignItems: "center",
+        gap: 16,
+        flexWrap: "wrap",
+      }}
+    >
       <div style={{ flex: "1 1 160px", minWidth: 120 }}>
-        <div style={{
-          height: 3,
-          background: "rgba(6,182,212,0.1)",
-          borderRadius: 2,
-          overflow: "hidden",
-        }}>
-          <div style={{
-            height: "100%",
-            width: `${pct}%`,
-            background: done ? "#10b981" : "#06b6d4",
-            borderRadius: 2,
-            transition: "width 0.6s ease",
-          }} />
+        <div style={{ height: 3, background: "var(--cy-12)", borderRadius: 2, overflow: "hidden" }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${pct}%`,
+              background: done ? "var(--good)" : "var(--cy)",
+              borderRadius: 2,
+              transition: "width 0.6s ease",
+            }}
+          />
         </div>
       </div>
 
-      {/* Status text */}
-      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", color: "var(--tx-lo)" }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--tx-lo)" }}>
         {done ? (
-          <span style={{ color: "#10b981" }}>
+          <span style={{ color: "var(--good)" }}>
             ✓ Auto-scan complete. {status.completed} agents attested.
-            {status.failed > 0 && <span style={{ color: "#fbbf24" }}> · {status.failed} failed</span>}
+            {status.failed > 0 && <span style={{ color: "var(--warn)" }}> · {status.failed} failed</span>}
           </span>
         ) : (
           <>
-            <span style={{ color: "#06b6d4" }}>Auto-scanning</span>
+            <span style={{ color: "var(--cy)" }}>Auto-scanning</span>
             {" · "}{status.completed}/{status.total} done
             {status.queued > 0 && <> · {status.queued} queued</>}
             {status.inFlight && (
@@ -100,7 +90,7 @@ export function QueueBanner() {
         )}
       </div>
 
-      <div style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5rem", color: "var(--tx-dim)" }}>
+      <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--tx-dim)" }}>
         {done ? "" : "New attestations appear on refresh"}
       </div>
     </div>

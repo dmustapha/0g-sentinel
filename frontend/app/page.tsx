@@ -1,171 +1,143 @@
 // File: frontend/app/page.tsx
 import Link from "next/link";
-import { getAttestationRegistry } from "@/lib/contracts";
 import { RadarHero } from "@/components/RadarHero";
+import { ScanInput } from "@/components/ScanInput";
+import { AgentsTable } from "@/components/AgentsTable";
+import { fetchRankedAgents } from "@/lib/agents";
+import { checkSystemPulse } from "@/lib/pulse";
+import { AgentWithAttestation } from "@/lib/types";
 
-// Revalidate every 60s so stats stay fresh without blocking initial load
+// Revalidate every 60s so the board + pulse stay fresh without blocking initial load.
 export const revalidate = 60;
 
-interface LiveStats {
-  totalAgents: number;
-  totalAttested: number;
-  threatsDetected: number;
-  statsUnavailable?: boolean;
-}
-
-async function getLiveStats(): Promise<LiveStats> {
-  try {
-    const attestationRegistry = getAttestationRegistry();
-    // All stats derived from AttestationRegistry — the chain IS the registry.
-    const [attestedAddresses, attestedCount] = await Promise.all([
-      attestationRegistry.getAllAttestedAgents() as Promise<string[]>,
-      attestationRegistry.getAttestedCount() as Promise<bigint>,
-    ]);
-    // Fetch all attestations to count threats
-    const attestations = await Promise.all(
-      attestedAddresses.map((addr) => attestationRegistry.getAttestation(addr))
-    );
-    const threatsDetected = attestations.filter(
-      (a) => BigInt(a.attestation_timestamp) > 0n &&
-             (Number(a.threat_level) === 2 || Number(a.code_risk) === 2)
-    ).length;
-    return {
-      totalAgents: Number(attestedCount),
-      totalAttested: Number(attestedCount),
-      threatsDetected,
-    };
-  } catch {
-    // Return zeros — never show fabricated stats on RPC failure
-    return { totalAgents: 0, totalAttested: 0, threatsDetected: 0, statsUnavailable: true };
-  }
-}
+// Demo agent — the known working attested agent on 0G Aristotle (CAUTION, score 62).
+const DEMO_AGENT = "0xbbbb000000000000000000000000000000000002";
 
 export default async function Home() {
-  const stats = await getLiveStats();
-  return (
-    <div className="sg-landing">
+  let topAgents: AgentWithAttestation[] = [];
+  try {
+    const { agents } = await fetchRankedAgents();
+    topAgents = agents.slice(0, 5);
+  } catch {
+    topAgents = [];
+  }
 
-      {/* Hero — mission-control radar + identity */}
-      <section className="sg-hero">
-        <div className="sg-hero-inner">
-          <div className="sg-reveal-up">
-            <div className="sg-hero-kicker">Attestation infrastructure · 0G Aristotle</div>
-            <p className="sg-hero-identity">0G Agent Watch</p>
-            <p className="sg-hero-identity-sub">live threat intelligence for the agent economy</p>
-            <h1 className="sg-hero-headline">
-              Every AI agent, <em>verified</em>. Behavioral audit, code scan, on-chain proof.
+  const pulse = await checkSystemPulse().catch(() => ({ chain: false, compute: false, storage: false, gate: false }));
+
+  const contracts = [
+    { name: "AttestationRegistry", address: process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS ?? "Not deployed" },
+    { name: "AgentRegistry", address: process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS ?? "Not deployed" },
+    { name: "AgentGate", address: process.env.NEXT_PUBLIC_AGENT_GATE_ADDRESS ?? "Not deployed" },
+  ];
+  const integrations = [
+    { name: "0G Compute", live: pulse.compute },
+    { name: "0G Storage", live: pulse.storage },
+    { name: "0G Chain", live: pulse.chain },
+    { name: "AgentGate", live: pulse.gate },
+  ];
+
+  return (
+    <>
+      {/* ============ HERO ============ */}
+      <section className="hero" id="hero">
+        <div className="hero-grid" aria-hidden="true" />
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <span className="eyebrow rise">Attestation infrastructure · 0G Aristotle</span>
+            <p className="identity-line rise">0G Agent Watch</p>
+            <p className="identity-sub rise">live threat intelligence for the agent economy</p>
+            <h1 className="rise">
+              Every AI agent, <span className="accent">verified.</span> Behavioral audit, code scan, on-chain proof.
             </h1>
-            <p className="sg-hero-body">
+            <p className="hero-body rise">
               0G Sentinel monitors agent behavior, audits code via 0G Compute, and writes immutable
               ERC-7857 attestations to chain. AgentGate lets any protocol act on the result.
             </p>
-            <div className="sg-hero-ctas">
-              <Link href="/agents" className="sg-btn-fill">Open Dashboard →</Link>
-              <Link href="/proof" className="sg-btn-outline">Integration Proof →</Link>
+            <div className="cta-row rise">
+              <Link href="/agents" className="btn btn-primary">Open Dashboard →</Link>
+              <Link href="/proof" className="btn btn-ghost">Integration Proof →</Link>
             </div>
           </div>
           <RadarHero />
         </div>
       </section>
 
-      {/* Features grid */}
-      <div className="sg-feat-section sg-reveal-up sg-delay-1">
-        <div className="sg-feat-header">
-          <div className="sg-feat-label">Core Capabilities</div>
-          <div className="sg-feat-title">Four layers of protection, one composable stack</div>
+      {/* ============ SCAN ============ */}
+      <section className="scan-shell" id="scan">
+        <div className="wrap pad">
+          <div className="sec-head rise">
+            <span className="eyebrow">Live audit stream</span>
+            <h2>Scan any agent address.</h2>
+            <p>
+              Five stages land in sequence. Behavioral inference and an independent code audit run on
+              0G Compute, evidence archives to 0G Storage, and the verdict settles on 0G Chain.
+            </p>
+          </div>
+          <ScanInput defaultAddress={DEMO_AGENT} />
         </div>
-        <div className="sg-feat-grid">
-          <div className="sg-feat-cell">
-            <div className="sg-feat-num">[01]</div>
-            <div className="sg-feat-name">Behavioral Analysis</div>
-            <div className="sg-feat-desc">LLM-powered risk scoring per agent. Every action pattern scored and hashed on-chain.</div>
-          </div>
-          <div className="sg-feat-cell">
-            <div className="sg-feat-num">[02]</div>
-            <div className="sg-feat-name">Code Audit</div>
-            <div className="sg-feat-desc">Vulnerability detection via 0G Compute. Two independent inference pipelines, verifiable receipts.</div>
-          </div>
-          <div className="sg-feat-cell">
-            <div className="sg-feat-num">[03]</div>
-            <div className="sg-feat-name">On-Chain Attestation</div>
-            <div className="sg-feat-desc">ERC-7857 structs. All 9 fields immutable on 0G Chain, verifiable by any smart contract.</div>
-          </div>
-          <div className="sg-feat-cell">
-            <div className="sg-feat-num">[04]</div>
-            <div className="sg-feat-name">AgentGate</div>
-            <div className="sg-feat-desc">
-              Any protocol can gate execution on{" "}
-              <code style={{ fontFamily: "var(--font-dm-mono, monospace)", color: "#06b6d4", fontSize: "0.75rem" }}>
-                isSafe()
-              </code>{" "}
-              . No centralized oracle required.
-            </div>
-          </div>
-        </div>
-      </div>
+      </section>
 
-      {/* Live stats strip */}
-      <div className="sg-reveal-up sg-delay-2" style={{
-        display: "flex",
-        gap: "2rem",
-        flexWrap: "wrap",
-        padding: "1.5rem clamp(1.5rem, 4vw, 3rem)",
-        borderBottom: "1px solid var(--line-soft)",
-      }}>
-        {[
-          { label: "Agents Monitored", value: stats.statsUnavailable ? "—" : stats.totalAgents.toString() },
-          { label: "Attestations On-Chain", value: stats.statsUnavailable ? "—" : stats.totalAttested.toString() },
-          { label: "Threats Detected", value: stats.statsUnavailable ? "—" : stats.threatsDetected.toString() },
-          { label: "Network", value: "0G Aristotle" },
-        ].map(({ label, value }) => (
-          <div key={label} style={{ flex: "1 1 120px", minWidth: 0 }}>
-            <div style={{
-              fontFamily: "var(--font-heading)",
-              fontSize: "clamp(1.5rem, 3vw, 2.1rem)",
-              fontWeight: 700,
-              color: "var(--cy)",
-              lineHeight: 1,
-              letterSpacing: "-0.01em",
-              fontVariantNumeric: "tabular-nums",
-            }}>
-              {value}
-            </div>
-            <div style={{
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.6875rem",
-              color: "var(--tx-dim)",
-              marginTop: "0.25rem",
-              textTransform: "uppercase",
-              letterSpacing: "0.08em",
-            }}>
-              {label}
-            </div>
+      {/* ============ RISK BOARD ============ */}
+      <section className="pad" id="board">
+        <div className="wrap">
+          <div className="sec-head rise">
+            <span className="eyebrow">Watchlist · riskiest first</span>
+            <h2>The risk board.</h2>
+            <p>
+              A live status wall ranked by behavioral risk. Riskiest agents surface to the top,
+              color-coded by verdict, every row a real attestation on 0G Aristotle.
+            </p>
           </div>
-        ))}
-      </div>
-
-      {/* Pull quote */}
-      <div className="sg-pullquote-section sg-reveal-fade sg-delay-2">
-        <div className="sg-pq-line" />
-        <div className="sg-pq-text">
-          AI agents are operating without behavioral audits, code verification, or on-chain proof of safety.
-          0G Sentinel brings attestation infrastructure to every agent on 0G Aristotle mainnet,
-          giving protocols a composable trust layer they can act on.
+          {topAgents.length > 0 ? (
+            <AgentsTable agents={topAgents} hideControls />
+          ) : (
+            <div className="board"><div className="board-empty">No agents attested yet. Auto-scan is indexing the chain.</div></div>
+          )}
+          <div style={{ marginTop: 18 }}>
+            <Link href="/agents" className="explorer-link" style={{ marginLeft: 0 }}>
+              View full dashboard →
+            </Link>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* CTA strip */}
-      <div className="sg-cta-strip sg-reveal-up sg-delay-3">
-        <div>
-          <div className="sg-cta-title">Ready to secure your agents?</div>
-          <div className="sg-cta-sub">Live on 0G Aristotle. Behavioral analysis + code audit + on-chain proof.</div>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <Link href="/agents" className="sg-btn-fill">Open Dashboard →</Link>
-          <Link href="/proof" className="sg-btn-outline">Integration Proof →</Link>
-        </div>
-      </div>
+      {/* ============ PROOF STRIP ============ */}
+      <section className="pad" id="proof" style={{ borderTop: "1px solid var(--line-soft)" }}>
+        <div className="wrap">
+          <div className="sec-head rise">
+            <span className="eyebrow">On-chain proof</span>
+            <h2>Every verdict is a real transaction.</h2>
+          </div>
+          <p className="proof-stat rise">
+            Live on <b>0G Aristotle</b> · Chain ID <b>16661</b> · <b>3 contracts</b> deployed · <b>4 integrations</b> active
+          </p>
 
-    </div>
+          <div className="contracts">
+            {contracts.map((c) => (
+              <div key={c.name} className="contract clip-in">
+                <span className="cname">{c.name}</span>
+                <span className="caddr">{c.address}</span>
+                {c.address !== "Not deployed" && (
+                  <a className="clink" href={`https://chainscan.0g.ai/address/${c.address}`} target="_blank" rel="noopener noreferrer">
+                    View ↗
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="integrations">
+            {integrations.map((i) => (
+              <div key={i.name} className="integ scale-in">
+                <div className="in-name">{i.name}</div>
+                <span className={`live-badge${i.live ? "" : " degraded"}`}>
+                  <span className="d" />{i.live ? "Live" : "Degraded"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+    </>
   );
 }

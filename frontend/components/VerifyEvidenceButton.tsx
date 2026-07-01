@@ -20,22 +20,19 @@ export function VerifyEvidenceButton({ evidenceHash }: { evidenceHash: string })
   }
 
   if (state === "verified") return (
-    <span style={{ color: "#10b981", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
+    <span style={{ color: "var(--good)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>
       MERKLE VERIFIED ({detail})
     </span>
   );
   if (state === "failed") return (
-    <span style={{ color: "#f43f5e", fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
+    <span style={{ color: "var(--bad)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)" }}>
       VERIFY FAILED: {detail}
     </span>
   );
 
   return (
-    <button onClick={verify} disabled={state === "loading"}
-      style={{ background: "transparent", border: "1px solid rgba(6,182,212,0.3)", color: "#06b6d4",
-        fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.5625rem", padding: "0.3rem 0.6rem",
-        borderRadius: "4px", cursor: "pointer", letterSpacing: "0.05em" }}>
-      {state === "loading" ? "VERIFYING..." : "VERIFY EVIDENCE"}
+    <button className="mini-action" onClick={verify} disabled={state === "loading"}>
+      {state === "loading" ? "VERIFYING…" : "VERIFY EVIDENCE"}
     </button>
   );
 }

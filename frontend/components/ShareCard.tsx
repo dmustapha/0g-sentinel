@@ -3,6 +3,7 @@
 // D2 — share affordances on the agent report. "Share on X" opens a prefilled tweet whose link
 // unfurls into the dynamic OG verdict card (opengraph-image.tsx); "Download card" saves that
 // same card as a PNG. The report link itself carries the card, so any share is the viral unit.
+// Rendered as the prototype `.share-btn` set (the page wraps these + explorer link in .share-row).
 import { useState } from "react";
 
 interface Props {
@@ -38,75 +39,25 @@ export function ShareCard({ address, verdict, score, reason }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "0.625rem" }}>
-      <div className="sg-label" style={{ marginBottom: "0.125rem" }}>Share this verdict</div>
-
-      <button
-        type="button"
-        onClick={shareOnX}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: "0.5rem",
-          fontFamily: "var(--font-syne, sans-serif)",
-          fontSize: "0.8125rem",
-          fontWeight: 700,
-          letterSpacing: "0.04em",
-          color: BG_TEXT,
-          background: "#06b6d4",
-          border: "none",
-          borderRadius: 8,
-          padding: "0.625rem 1rem",
-          cursor: "pointer",
-        }}
-      >
+    <>
+      <button type="button" className="share-btn" onClick={shareOnX}>
         Share verdict on 𝕏
       </button>
-
-      <div style={{ display: "flex", gap: "0.5rem" }}>
-        <a
-          href={`/agents/${address}/opengraph-image`}
-          download={`0g-agent-watch-${short}.png`}
-          style={{
-            flex: 1,
-            textAlign: "center",
-            fontFamily: "var(--font-syne, sans-serif)",
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            color: "#06b6d4",
-            background: "rgba(6,182,212,0.06)",
-            border: "1px solid rgba(6,182,212,0.3)",
-            borderRadius: 8,
-            padding: "0.5rem 0.5rem",
-            textDecoration: "none",
-          }}
-        >
-          Download card
-        </a>
-        <button
-          type="button"
-          onClick={copyLink}
-          style={{
-            flex: 1,
-            fontFamily: "var(--font-syne, sans-serif)",
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            color: copied ? "#10b981" : "var(--tx-mid)",
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.14)",
-            borderRadius: 8,
-            padding: "0.5rem 0.5rem",
-            cursor: "pointer",
-          }}
-        >
-          {copied ? "Copied ✓" : "Copy link"}
-        </button>
-      </div>
-    </div>
+      <a
+        className="share-btn"
+        href={`/agents/${address}/opengraph-image`}
+        download={`0g-agent-watch-${short}.png`}
+      >
+        Download card
+      </a>
+      <button
+        type="button"
+        className="share-btn"
+        onClick={copyLink}
+        style={copied ? { color: "var(--good)", borderColor: "rgba(16,185,129,0.4)" } : undefined}
+      >
+        {copied ? "Copied ✓" : "Copy link"}
+      </button>
+    </>
   );
 }
-
-const BG_TEXT = "#08010e";

@@ -5,8 +5,12 @@
 // archive (0G Storage) → settle (0G Chain). Kills the ~30s dead air and surfaces the
 // C1 "verified on 0G" stamp + C3 two-audit outputs live. On completion, navigates to
 // the full report. On transport failure, falls back to the blocking /api/scan/behavioral.
+//
+// Presentation is the approved prototype's `.stream` markup (stream-head lamps,
+// five `.stage` rows, `.verdict-footer`). The SSE/transport logic below is unchanged.
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { agentDisplayName } from "@/lib/constants";
 
 type StepKey = "discover" | "behavioral" | "code" | "evidence" | "attest";
 type StepStatus = "pending" | "active" | "done" | "skip";
@@ -43,6 +47,13 @@ const INITIAL: Record<StepKey, StepState> = {
   code: { status: "pending" },
   evidence: { status: "pending" },
   attest: { status: "pending" },
+};
+
+const GLYPH: Record<StepStatus, string> = {
+  pending: "○",
+  active: "◇",
+  done: "✓",
+  skip: "–",
 };
 
 interface CompleteResult {
@@ -215,134 +226,67 @@ export function StreamingScanPanel({
     return () => { mountedRef.current = false; };
   }, [address, applyProgress, onError, router]);
 
+  const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  const agentName = agentDisplayName(address);
+
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: "0.5rem",
-        padding: "1rem 1.1rem",
-        background: "linear-gradient(180deg, var(--ink-2), var(--ink-1))",
-        border: "1px solid var(--line)",
-        borderRadius: "var(--r-3)",
-        boxShadow: "0 0 60px -30px var(--cy-55), inset 0 1px 0 rgba(255,255,255,0.04)",
-      }}
-    >
+    <div className="stream scale-in" aria-live="polite">
+      <div className="stream-head">
+        <span className="lamps">
+          <span className="lamp" />
+          <span className="lamp" />
+          <span className="lamp" />
+        </span>
+        <span>
+          agent · <span className="mono">{short}</span> · {agentName}
+        </span>
+      </div>
+
       {STEPS.map(({ key, label }) => {
         const s = steps[key];
-        const color = s.tone ? TONE_COLOR[s.tone] : "var(--tx-mid)";
+        const toneColor = s.tone ? TONE_COLOR[s.tone] : undefined;
+        const stageStyle =
+          (s.status === "done" || s.status === "skip") && toneColor
+            ? ({ "--tone": toneColor } as React.CSSProperties)
+            : undefined;
         return (
-          <div key={key} style={{ display: "flex", alignItems: "baseline", gap: "0.625rem" }}>
-            <span
-              aria-hidden
-              style={{
-                width: 16,
-                flexShrink: 0,
-                textAlign: "center",
-                fontFamily: "var(--font-dm-mono, monospace)",
-                fontSize: "0.8rem",
-                color:
-                  s.status === "done"
-                    ? TONE_COLOR[s.tone ?? "good"]
-                    : s.status === "skip"
-                    ? "var(--tx-lo)"
-                    : s.status === "active"
-                    ? "#06b6d4"
-                    : "rgba(255,255,255,0.18)",
-              }}
-            >
-              {s.status === "done" ? "✓" : s.status === "skip" ? "–" : s.status === "active" ? "◇" : "○"}
+          <div key={key} className={`stage ${s.status}`} style={stageStyle}>
+            <span className="glyph">{GLYPH[s.status]}</span>
+            <span className="label">{label}</span>
+            <span className="detail">
+              {s.status === "active" ? (
+                <>
+                  auditing
+                  <span className="pulse-dots">
+                    <i />
+                    <i />
+                    <i />
+                  </span>
+                </>
+              ) : (
+                s.detail ?? ""
+              )}
             </span>
-            <span
-              style={{
-                fontFamily: "var(--font-syne, sans-serif)",
-                fontSize: "0.8125rem",
-                fontWeight: 500,
-                letterSpacing: "0.01em",
-                color:
-                  s.status === "pending"
-                    ? "var(--tx-lo)"
-                    : s.status === "active"
-                    ? "var(--tx-hi)"
-                    : "var(--tx-mid)",
-                transition: "color 0.25s ease-out",
-              }}
-            >
-              {label}
-              {s.status === "active" && <span className="sg-pulse-dots"> …</span>}
-            </span>
-            {s.detail && (
-              <span
-                style={{
-                  marginLeft: "auto",
-                  fontFamily: "var(--font-dm-mono, monospace)",
-                  fontSize: "0.6875rem",
-                  color,
-                  textAlign: "right",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {s.detail}
-              </span>
-            )}
           </div>
         );
       })}
 
-      {verdict && (
-        <div
-          style={{
-            marginTop: "0.375rem",
-            paddingTop: "0.625rem",
-            borderTop: "1px solid rgba(255,255,255,0.08)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "0.75rem",
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-syne, sans-serif)",
-              fontSize: "0.9375rem",
-              fontWeight: 700,
-              letterSpacing: "0.04em",
-              color: TONE_COLOR[TONE_BY_LEVEL[verdict.threat_level]],
-            }}
-          >
-            {THREAT[verdict.threat_level]}
-            {verdict.inference_verified && (
-              <span
-                style={{
-                  marginLeft: "0.5rem",
-                  fontFamily: "var(--font-dm-mono, monospace)",
-                  fontSize: "0.6875rem",
-                  fontWeight: 500,
-                  color: "#06b6d4",
-                  letterSpacing: "0.02em",
-                }}
-              >
-                verified on 0G ✓
-              </span>
-            )}
-          </span>
-          <a
-            href={`/agents/${address}`}
-            style={{
-              fontFamily: "var(--font-syne, sans-serif)",
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              letterSpacing: "0.06em",
-              textTransform: "uppercase",
-              color: "#06b6d4",
-              textDecoration: "none",
-              whiteSpace: "nowrap",
-            }}
-          >
-            View report →
-          </a>
-        </div>
-      )}
+      <div className={`verdict-footer${verdict ? " show" : ""}`}>
+        {verdict && (
+          <>
+            <span
+              className="verdict-word"
+              style={{ color: TONE_COLOR[TONE_BY_LEVEL[verdict.threat_level]] }}
+            >
+              {THREAT[verdict.threat_level]}
+            </span>
+            {verdict.inference_verified && <span className="verified-tag">verified on 0G ✓</span>}
+            <a href={`/agents/${address}`} className="view-link">
+              View report →
+            </a>
+          </>
+        )}
+      </div>
     </div>
   );
 }

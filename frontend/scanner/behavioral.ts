@@ -17,7 +17,7 @@ export type AgentActivityData = BehavioralSignals;
 
 const BEHAVIORAL_SYSTEM_PROMPT = `You are a blockchain agent security auditor specializing in behavioral analysis of AI agents on 0G mainnet.
 
-You are given pre-computed behavioral signals derived from the agent's full 30-day transaction history. Synthesize these signals into a risk verdict.
+You are given pre-computed behavioral signals derived from the agent's recent on-chain transaction history. The data source and its completeness are stated in the user message below; weight your confidence accordingly. Synthesize these signals into a risk verdict.
 
 Signal interpretation:
 - method_concentration (0–1): 1 = always the same contract method selector (machine precision); 0 = diverse calls (human/normal)

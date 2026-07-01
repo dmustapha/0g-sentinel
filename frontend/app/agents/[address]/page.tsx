@@ -1,14 +1,45 @@
 // File: frontend/app/agents/[address]/page.tsx
 import { getAttestationRegistry } from "@/lib/contracts";
 import { AttestationData, THREAT_LABELS, CODE_RISK_LABELS } from "@/lib/types";
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AnimatedScoreBar } from "@/components/AnimatedScoreBar";
 import { ScanInput } from "@/components/ScanInput";
 import { VerifyEvidenceButton } from "@/components/VerifyEvidenceButton";
 import { FineTuneButton } from "@/components/FineTuneButton";
+import { ShareCard } from "@/components/ShareCard";
 
 export const revalidate = 30;
+
+// First sentence of the AI reasoning — the "damning one-line reason" used in the share card + meta.
+function oneLineReason(reasoning: string, max = 150): string {
+  if (!reasoning) return "";
+  const first = reasoning.split(/(?<=[.!?])\s/)[0] || reasoning;
+  return first.length > max ? first.slice(0, max - 1).trimEnd() + "…" : first;
+}
+
+// Per-agent social metadata. Next auto-attaches the dynamic OG image (opengraph-image.tsx) as
+// og:image + twitter:image; this sets a large-image Twitter card and agent-specific title/desc.
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(params.address)) return { title: "0G Agent Watch" };
+  const { ethers } = await import("ethers");
+  const address = ethers.getAddress(params.address.toLowerCase());
+  const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
+  const att = await getAttestation(address);
+  const title = att
+    ? `${THREAT_LABELS[att.threatLevel] ?? "UNKNOWN"} · ${short} · 0G Agent Watch`
+    : `Scan ${short} · 0G Agent Watch`;
+  const description = att
+    ? `${THREAT_LABELS[att.threatLevel]} (score ${att.behavioralScore}/100), code ${CODE_RISK_LABELS[att.codeRisk]}. Verified on 0G with two independent audits.`
+    : "Live threat intelligence for the agent economy. Generate a verified on-chain security verdict for any 0G agent.";
+  return {
+    title,
+    description,
+    openGraph: { title, description, type: "website" },
+    twitter: { card: "summary_large_image", title, description },
+  };
+}
 
 // Display a receipt hash (bytes32) as a short identifier without discarding any of the 32 bytes.
 // UUID formatting was previously used but silently truncated the second half of the hash.
@@ -481,6 +512,18 @@ export default async function AgentDetailPage({ params }: Props) {
               </p>
             )}
           </div>
+
+          {attestation && (
+            <>
+              <div className="sg-rule" />
+              <ShareCard
+                address={address}
+                verdict={THREAT_LABELS[attestation.threatLevel] ?? "UNKNOWN"}
+                score={attestation.behavioralScore}
+                reason={oneLineReason(attestation.reasoning)}
+              />
+            </>
+          )}
 
           <div className="sg-rule" />
 

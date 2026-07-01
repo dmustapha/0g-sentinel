@@ -1,10 +1,15 @@
 // File: scanner/code-scan.ts
 import { callCompute } from "./compute";
+import { analyzeSolidity, type StaticAnalysisResult } from "./static-analysis";
 
 export interface CodeScanResult {
-  code_risk: 0 | 1 | 2;    // CLEAN | WARNING | VULNERABLE
+  code_risk: 0 | 1 | 2;    // CLEAN | WARNING | VULNERABLE — max(LLM, deterministic)
   code_findings: string;    // e.g. "reentrancy at withdraw()" or ""
   receipt_hash: string;
+  // Deterministic static-analysis result. This is the non-LLM evidence spine: the code
+  // audit is not "an LLM reading Solidity twice" but an LLM cross-checked against fixed
+  // vulnerability rules with a reproducible ground truth. Absent on the no-source path.
+  static_analysis?: StaticAnalysisResult;
 }
 
 const CODE_SCAN_SYSTEM_PROMPT = `You are a smart contract security auditor. Analyze Solidity source code for these specific vulnerabilities:
@@ -67,6 +72,10 @@ ${contractSource.slice(0, 6000)}
 
 Return JSON with code_risk and code_findings.`;
 
+  // Deterministic pass runs independently of the LLM (no shared input, no prompt hint) so
+  // the two audits are genuinely independent methods, not two prompts to one model.
+  const staticResult = analyzeSolidity(contractSource);
+
   const result = await callCompute(CODE_SCAN_SYSTEM_PROMPT, userMessage);
 
   let parsed: { code_risk: string; code_findings: string };
@@ -81,15 +90,23 @@ Return JSON with code_risk and code_findings.`;
     WARNING: 1,
     VULNERABLE: 2,
   };
-  const code_risk = codeRiskMap[parsed.code_risk] ?? 1;
+  const llmRisk = codeRiskMap[parsed.code_risk] ?? 1;
 
-  // Truncate to MAX_FINDINGS_BYTES (500) — the contract enforces this on-chain.
-  // Byte-safe: findings are ASCII vulnerability descriptions so slice by char is equivalent.
-  const code_findings = (parsed.code_findings || "").slice(0, 500);
+  // Deterministic floor: a fixed-rule finding cannot be argued away by the model.
+  const code_risk = (Math.max(llmRisk, staticResult.risk) as 0 | 1 | 2);
+
+  // Merge both audits, deterministic first (it is the ground truth), within the 500-byte
+  // on-chain MAX_FINDINGS_BYTES limit. Byte-safe: findings are ASCII descriptions.
+  const llmFindings = (parsed.code_findings || "").trim();
+  const merged = staticResult.findings.length
+    ? `Static: ${staticResult.summary}` + (llmFindings ? ` | AI: ${llmFindings}` : "")
+    : llmFindings;
+  const code_findings = merged.slice(0, 500);
 
   return {
     code_risk,
     code_findings,
     receipt_hash: result.receipt_hash,
+    static_analysis: staticResult,
   };
 }

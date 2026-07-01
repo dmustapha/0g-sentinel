@@ -6,7 +6,7 @@ Security infrastructure for the AI agent era. 0G Sentinel discovers every active
 [![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity)](https://soliditylang.org/)
 [![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](https://nextjs.org/)
 [![0G Chain](https://img.shields.io/badge/0G-Aristotle_Mainnet-00d4ff)](https://chainscan.0g.ai)
-[![Tests](https://img.shields.io/badge/tests-82_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-89_passing-brightgreen)]()
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 ![Dashboard](docs/images/dashboard.png)

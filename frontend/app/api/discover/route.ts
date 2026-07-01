@@ -15,8 +15,45 @@ import { waitUntil } from "@vercel/functions";
 import { enqueueAddresses } from "@scanner/queue";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
-const SCAN_WINDOW = 10_000; // blocks — stays within RPC's 10k-log limit
+// The RPC caps eth_getLogs at 10,000 *logs* (not blocks). 0G Aristotle emits ~65+ logs/block,
+// so a wide window overflows that cap. We scan a bounded recent window and split adaptively.
+const SCAN_WINDOW = 2_000; // blocks of recent activity to sample for active contracts
+const MAX_SPLIT_DEPTH = 14; // adaptive halving depth guard (2^14 blocks >> any window)
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * eth_getLogs with adaptive range splitting. Tries [fromBlock, toBlock]; if the RPC rejects
+ * the range for exceeding its 10k-log limit, halves the range and recurses on both halves,
+ * aggregating results. Self-adapts to any log density without a hardcoded chunk size.
+ */
+async function getLogsAdaptive(
+  provider: ethers.JsonRpcProvider,
+  fromBlock: number,
+  toBlock: number,
+  depth = 0
+): Promise<ethers.Log[]> {
+  try {
+    return await provider.getLogs({ fromBlock, toBlock });
+  } catch (err) {
+    const raw = (err as { error?: { message?: string }; message?: string }) ?? {};
+    const msg = String(raw.error?.message || raw.message || err).toLowerCase();
+    const tooManyLogs =
+      msg.includes("10000 logs") ||
+      msg.includes("exceeds the max") ||
+      msg.includes("narrow down") ||
+      msg.includes("more than 10000") ||
+      msg.includes("query returned more than");
+    if (tooManyLogs && toBlock > fromBlock && depth < MAX_SPLIT_DEPTH) {
+      const mid = Math.floor((fromBlock + toBlock) / 2);
+      const [a, b] = await Promise.all([
+        getLogsAdaptive(provider, fromBlock, mid, depth + 1),
+        getLogsAdaptive(provider, mid + 1, toBlock, depth + 1),
+      ]);
+      return [...a, ...b];
+    }
+    throw err; // non-splittable error, or a single block still over the limit — propagate
+  }
+}
 
 interface DiscoveredContract {
   address: string;
@@ -52,8 +89,9 @@ export async function GET() {
     const latest = await provider.getBlockNumber();
     const fromBlock = Math.max(0, latest - SCAN_WINDOW);
 
-    // Pull all events in the window — no topic filter, every active contract
-    const logs = await provider.getLogs({ fromBlock, toBlock: latest });
+    // Pull all events in the window — no topic filter, every active contract.
+    // Adaptive splitting keeps each sub-request under the RPC's 10k-log cap.
+    const logs = await getLogsAdaptive(provider, fromBlock, latest);
 
     // Count logs per address (activity proxy)
     const counts: Record<string, number> = {};

@@ -9,6 +9,7 @@ import { ChainDiscovery } from "@/components/ChainDiscovery";
 import { AgentsTable } from "@/components/AgentsTable";
 import { QueueBanner } from "@/components/QueueBanner";
 import { agentDisplayName } from "@/lib/constants";
+import { rankByRisk } from "@/lib/ranking";
 
 export const revalidate = 30;
 
@@ -49,7 +50,8 @@ async function fetchAgents(): Promise<{ agents: AgentWithAttestation[]; addresse
     })
   );
 
-  return { agents, addresses: attestedAddresses };
+  // Threat-board ordering: riskiest agents first (D3 ranking logic).
+  return { agents: rankByRisk(agents), addresses: attestedAddresses };
 }
 
 export default async function AgentsPage() {

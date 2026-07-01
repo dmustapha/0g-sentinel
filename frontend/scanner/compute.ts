@@ -69,6 +69,9 @@ async function callComputeHosted(
         ],
         response_format: { type: "json_object" },
         max_tokens: 1024,
+        // temperature 0 → reproducible verdicts: the same agent scanned twice returns the same
+        // score/threat_level, so an attestation is deterministic and judge-checkable (no drift).
+        temperature: 0,
         // Disable chain-of-thought thinking — we need clean JSON output, not reasoning traces
         chat_template_kwargs: { enable_thinking: false },
       }),

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (evidenceHash === "0x" + "0".repeat(64)) {
-    return NextResponse.json({ verified: false, reason: "Evidence hash is zero — no storage upload" });
+    return NextResponse.json({ verified: false, reason: "Evidence hash is zero (no storage upload)" });
   }
 
   const tmpPath = join(tmpdir(), `0g-verify-${Date.now()}.json`);

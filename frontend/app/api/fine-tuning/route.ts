@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
     const registry = getAttestationRegistry();
     const att = await registry.getAttestation(agentAddress);
     if (BigInt(att.attestation_timestamp) === 0n) {
-      return NextResponse.json({ error: "Agent has no attestation — scan first" }, { status: 404 });
+      return NextResponse.json({ error: "Agent has no attestation. Scan it first." }, { status: 404 });
     }
 
     const dataset = {

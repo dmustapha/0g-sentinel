@@ -94,6 +94,7 @@ export async function callComputeVerifiable(
       ],
       response_format: { type: "json_object" },
       max_tokens: 1024,
+      temperature: 0, // reproducible verdicts (see compute.ts) — deterministic on-chain attestations
       chat_template_kwargs: { enable_thinking: false },
     }),
   });

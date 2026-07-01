@@ -22,7 +22,8 @@ export const dynamic = "force-dynamic";
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
 // The RPC caps eth_getLogs at 10,000 *logs* (not blocks). 0G Aristotle emits ~65+ logs/block,
 // so a wide window overflows that cap. We scan a bounded recent window and split adaptively.
-const SCAN_WINDOW = 2_000; // blocks of recent activity to sample for active contracts
+const SCAN_WINDOW = 800; // blocks of recent activity to sample — bounded to keep cold latency low
+                         // (0G ~37 logs/block → ~30k logs → a few adaptive sub-requests, not dozens)
 const MAX_SPLIT_DEPTH = 14; // adaptive halving depth guard (2^14 blocks >> any window)
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 

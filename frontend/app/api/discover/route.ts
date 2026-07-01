@@ -14,6 +14,11 @@ import { ethers } from "ethers";
 import { waitUntil } from "@vercel/functions";
 import { enqueueAddresses } from "@scanner/queue";
 
+// Live chain-data route — must NOT be statically prerendered at build time. Without this,
+// Next executes the RPC-heavy discovery during `next build`, which blows the static-generation
+// timeout and fails the deploy. Runs on-demand (in-memory cached 5 min) instead.
+export const dynamic = "force-dynamic";
+
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
 // The RPC caps eth_getLogs at 10,000 *logs* (not blocks). 0G Aristotle emits ~65+ logs/block,
 // so a wide window overflows that cap. We scan a bounded recent window and split adaptively.

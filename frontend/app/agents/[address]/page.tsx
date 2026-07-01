@@ -9,6 +9,7 @@ import { ScanInput } from "@/components/ScanInput";
 import { VerifyEvidenceButton } from "@/components/VerifyEvidenceButton";
 import { FineTuneButton } from "@/components/FineTuneButton";
 import { ShareCard } from "@/components/ShareCard";
+import { agentDisplayName } from "@/lib/constants";
 
 export const revalidate = 30;
 
@@ -42,11 +43,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 // Display a receipt hash (bytes32) as a short identifier without discarding any of the 32 bytes.
-// UUID formatting was previously used but silently truncated the second half of the hash.
 function formatReceiptHash(bytes32: string): string {
-  if (!bytes32 || bytes32 === "0x" + "0".repeat(64)) return "—";
-  // Show first 12 chars + ... + last 8 chars (retains uniqueness, no data loss)
+  if (!bytes32 || bytes32 === "0x" + "0".repeat(64)) return "–";
   return `${bytes32.slice(0, 14)}…${bytes32.slice(-8)}`;
+}
+
+// Short hash form for the attestation panel key/value rows.
+function shortHash(h: string): string {
+  if (!h || h === "0x" + "0".repeat(64)) return "–";
+  return `${h.slice(0, 14)}…${h.slice(-8)}`;
 }
 
 async function checkIsERC7857(address: string): Promise<boolean> {
@@ -100,22 +105,23 @@ async function getAttestation(address: string): Promise<AttestationData | null> 
 }
 
 const RISK_LABELS = CODE_RISK_LABELS;
+const ZERO_HASH = "0x" + "0".repeat(64);
 
-function threatBadgeClass(level: number) {
-  if (level === 2) return "sg-badge sg-badge-danger";
-  if (level === 1) return "sg-badge sg-badge-caution";
-  return "sg-badge sg-badge-safe";
+function badgeClass(level: number): string {
+  if (level === 2) return "badge b-flag";
+  if (level === 1) return "badge b-caut";
+  return "badge b-safe";
 }
 
+function verdictColor(level: number): string {
+  return level === 2 ? "var(--bad)" : level === 1 ? "var(--warn)" : "var(--good)";
+}
 
 export default async function AgentDetailPage({ params }: Props) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(params.address)) notFound();
 
-  // Fetch attestation and bytecode in parallel.
-  // Only check ERC-7857 if the address has bytecode — saves 2 RPC calls for EOAs.
   const { ethers } = await import("ethers");
-  // Normalize to EIP-55 checksum — ethers v6 throws INVALID_ARGUMENT for mixed-case
-  // addresses with wrong checksum when encoding them as Solidity `address` parameters.
+  // Normalize to EIP-55 checksum — ethers v6 throws for mixed-case addresses with wrong checksum.
   const address = ethers.getAddress(params.address.toLowerCase());
   const rpcUrl = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
   const [attestation, bytecode] = await Promise.all([
@@ -124,423 +130,168 @@ export default async function AgentDetailPage({ params }: Props) {
   ]);
   const isERC7857 = bytecode !== "0x" ? await checkIsERC7857(address) : false;
   const explorerBase = "https://chainscan.0g.ai";
-  const shortAddr = `${address.slice(0, 8)}…${address.slice(-6)}`;
-
-  const threatColor = attestation
-    ? attestation.threatLevel === 2
-      ? "#f43f5e"
-      : attestation.threatLevel === 1
-      ? "#fbbf24"
-      : "#10b981"
-    : "var(--tx-dim)";
+  const name = agentDisplayName(address);
+  const hasBehavioralReceipt = !!attestation?.behavioralReceiptHash && attestation.behavioralReceiptHash !== ZERO_HASH;
+  const hasCodeReceipt = !!attestation?.codeReceiptHash && attestation.codeReceiptHash !== ZERO_HASH;
+  const hasEvidence = !!attestation?.evidenceHash && attestation.evidenceHash !== ZERO_HASH;
 
   return (
-    <div style={{ minHeight: "calc(100vh - 44px)", display: "flex", flexDirection: "column" }}>
-
-      {/* Back nav */}
-      <div style={{
-        padding: "1rem 2rem",
-        borderBottom: "1px solid var(--line)",
-        display: "flex",
-        alignItems: "center",
-        gap: "1rem",
-        background: "rgba(10,17,32,0.6)",
-        backdropFilter: "blur(8px)",
-      }}>
-        <Link href="/agents" style={{
-          fontFamily: "var(--font-heading)",
-          fontSize: "0.8rem",
-          color: "var(--tx-dim)",
-          textDecoration: "none",
-          display: "flex",
-          alignItems: "center",
-          gap: "0.375rem",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-          fontWeight: 600,
-          transition: "color 0.2s",
-        }}
-        >
-          ← Dashboard
-        </Link>
-        {isERC7857 && (
-          <span style={{
-            fontFamily: "var(--font-dm-mono, monospace)",
-            fontSize: "0.5625rem",
-            color: "#a78bfa",
-            border: "1px solid rgba(167,139,250,0.35)",
-            borderRadius: 8,
-            padding: "0.2rem 0.5rem",
-            letterSpacing: "0.08em",
-          }}>
-            iNFT ERC-7857
+    <section className="report-shell" id="report">
+      <div className="wrap pad">
+        <div className="sec-head rise">
+          <span className="eyebrow">
+            Verdict detail · {name}
           </span>
-        )}
-        <div style={{ width: 1, height: 14, background: "var(--line)" }} />
-        <span className="sg-mono" style={{ color: "var(--tx-dim)" }}>{shortAddr}</span>
-        <a
-          href={`${explorerBase}/address/${address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="sg-mono"
-          style={{ color: "#06b6d4", fontSize: "0.6875rem", marginLeft: "auto" }}
-        >
-          View on 0G Explorer ↗
-        </a>
-      </div>
+          {isERC7857 && (
+            <span className="inft-badge" style={{ marginLeft: 12 }}>iNFT ERC-7857</span>
+          )}
+          <h2>Two independent audits, one on-chain verdict.</h2>
+          <p>
+            A deterministic behavioral audit and a separate code audit, both settled to chain as an
+            immutable ERC-7857 attestation.
+          </p>
+        </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", flex: 1, overflow: "hidden" }}>
-
-        {/* ── LEFT: Report ── */}
-        <div style={{
-          flex: "1 1 480px",
-          padding: "2.5rem clamp(1.5rem, 4vw, 3rem)",
-          minWidth: 0,
-          overflowY: "auto",
-        }}>
-
-          <div className="sg-label sg-reveal-fade" style={{ marginBottom: "1.75rem" }}>
-            Agent Security Report
-          </div>
-
-          {!attestation ? (
-            <div className="sg-glass-card sg-reveal-up" style={{ padding: "2rem", display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              <div>
-                <div style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.8125rem",
-                  color: "var(--tx-lo)",
-                  marginBottom: "0.5rem",
-                }}>
-                  No attestation found on-chain for this agent address.
-                </div>
-                <div style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.75rem",
-                  color: "var(--tx-dim)",
-                  lineHeight: 1.6,
-                }}>
-                  Run a full scan to generate a behavioral risk score, code vulnerability report, and immutable on-chain attestation via 0G Compute + 0G Chain.
-                </div>
-              </div>
-              <div>
-                <div className="sg-label" style={{ marginBottom: "0.625rem", fontSize: "0.5625rem" }}>
-                  Scan this agent
-                </div>
-                <ScanInput defaultAddress={address} />
+        {!attestation ? (
+          /* ── No attestation on-chain — offer a scan ── */
+          <div className="attest-panel scale-in" style={{ background: "var(--ink-1)", padding: 0 }}>
+            <div className="ap-head">No attestation on-chain</div>
+            <div style={{ padding: "22px 20px", display: "flex", flexDirection: "column", gap: 18 }}>
+              <p className="mini-note">
+                No attestation found on-chain for {address.slice(0, 8)}…{address.slice(-6)}. Run a full scan to
+                generate a behavioral risk score, a code vulnerability report, and an immutable on-chain
+                attestation via 0G Compute + 0G Chain.
+              </p>
+              <ScanInput defaultAddress={address} />
+              <div className="share-row">
+                <Link href="/agents" className="share-btn">← Back to Dashboard</Link>
+                <a
+                  className="explorer-link"
+                  href={`${explorerBase}/address/${address}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  View on 0G Explorer ↗
+                </a>
               </div>
             </div>
-          ) : (
-            <>
-              {/* Score cards */}
-              <div className="sg-reveal-up sg-delay-1" style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: "1rem",
-                marginBottom: "1.5rem",
-              }}>
-                {/* Behavioral */}
-                <div
-                  className={
-                    attestation.threatLevel === 2 ? "sg-threat-danger" :
-                    attestation.threatLevel === 1 ? "sg-threat-caution" :
-                    "sg-threat-safe"
-                  }
-                  style={{ padding: "1.5rem" }}
-                >
-                  <div className="sg-label" style={{ marginBottom: 12 }}>Behavioral Risk</div>
-                  <div className="sg-display" style={{
-                    fontSize: "3.5rem",
-                    color: threatColor,
-                    lineHeight: 1,
-                    marginBottom: 4,
-                  }}>
-                    {attestation.behavioralScore}
-                    <span style={{ fontSize: "1.25rem", color: "var(--tx-dim)", fontWeight: 400 }}>/100</span>
-                  </div>
-                  <AnimatedScoreBar score={attestation.behavioralScore} />
-                  <div style={{ marginTop: 12 }}>
-                    <span className={threatBadgeClass(attestation.threatLevel)}>
-                      {THREAT_LABELS[attestation.threatLevel] ?? "UNKNOWN"}
-                    </span>
-                  </div>
+          </div>
+        ) : (
+          <>
+            {/* ── Two score cards ── */}
+            <div className="report-grid">
+              <div className={`score-card rise${attestation.threatLevel === 2 ? " bad-card" : ""}`}>
+                <div className="k">Behavioral Risk</div>
+                <div className="score-big" style={{ color: verdictColor(attestation.threatLevel) }}>
+                  {attestation.behavioralScore}
+                  <span className="max">/100</span>
                 </div>
+                <div className="score-tag">
+                  <span className={badgeClass(attestation.threatLevel)}>
+                    {THREAT_LABELS[attestation.threatLevel] ?? "UNKNOWN"}
+                  </span>
+                </div>
+                <AnimatedScoreBar score={attestation.behavioralScore} />
+              </div>
 
-                {/* Code vulnerability */}
-                <div
-                  className={
-                    attestation.codeRisk === 2 ? "sg-threat-danger" :
-                    attestation.codeRisk === 1 ? "sg-threat-caution" :
-                    "sg-threat-safe"
-                  }
-                  style={{ padding: "1.5rem" }}
-                >
-                  <div className="sg-label" style={{ marginBottom: 12 }}>Code Vulnerability</div>
-                  <div className="sg-display" style={{
-                    fontSize: "2.25rem",
-                    color: attestation.codeRisk === 2 ? "#f43f5e" : attestation.codeRisk === 1 ? "#fbbf24" : "#10b981",
-                    lineHeight: 1,
-                    marginBottom: 12,
-                  }}>
-                    {RISK_LABELS[attestation.codeRisk] ?? "UNKNOWN"}
-                  </div>
-                  <span className={threatBadgeClass(attestation.codeRisk)}>
-                    {attestation.codeRisk === 0 ? "No issues found" : "Issues detected"}
+              <div className={`score-card rise${attestation.codeRisk === 2 ? " bad-card" : ""}`}>
+                <div className="k">Code Vulnerability</div>
+                <div className="code-verdict" style={{ color: verdictColor(attestation.codeRisk) }}>
+                  {RISK_LABELS[attestation.codeRisk] ?? "UNKNOWN"}
+                </div>
+                <div className="code-sub">
+                  {attestation.codeFindings
+                    ? attestation.codeFindings
+                    : attestation.codeRisk === 0
+                    ? "No issues found."
+                    : "Issues detected."}
+                </div>
+                <div className="score-tag" style={{ marginTop: 22 }}>
+                  <span className={badgeClass(attestation.codeRisk)}>
+                    {attestation.codeRisk === 0 ? "CODE CLEAN" : `CODE RISK ${attestation.codeRisk}`}
                   </span>
                 </div>
               </div>
+            </div>
 
-              {/* Code findings */}
-              {attestation.codeFindings && (
-                <div className="sg-glass-card-danger sg-reveal-up sg-delay-2" style={{
-                  padding: "1.25rem",
-                  marginBottom: "1.5rem",
-                }}>
-                  <div className="sg-label" style={{ color: "#f43f5e", marginBottom: 10 }}>Code Findings</div>
-                  <pre style={{
-                    fontFamily: "var(--font-mono)",
-                    fontSize: "0.8125rem",
-                    color: "var(--tx-mid)",
-                    whiteSpace: "pre-wrap",
-                    margin: 0,
-                    lineHeight: 1.6,
-                  }}>
-                    {attestation.codeFindings}
-                  </pre>
-                </div>
-              )}
-
-              {/* On-chain data */}
-              <div className="sg-glass-card sg-reveal-up sg-delay-3" style={{ overflow: "hidden" }}>
-                <div style={{
-                  padding: "0.75rem 1.25rem",
-                  borderBottom: "1px solid rgba(6,182,212,0.08)",
-                  background: "rgba(6,182,212,0.02)",
-                }}>
-                  <span className="sg-label">On-Chain Attestation Data</span>
-                </div>
-                <div style={{ padding: "0.25rem 1.25rem" }}>
-                  <div className="sg-data-field">
-                    <span className="sg-data-label">Behavioral Hash</span>
-                    <span className="sg-data-value" title={attestation.behavioralReceiptHash}>
-                      {attestation.behavioralReceiptHash
-                        ? `${attestation.behavioralReceiptHash.slice(0, 14)}…${attestation.behavioralReceiptHash.slice(-8)}`
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="sg-data-field">
-                    <span className="sg-data-label">Code Hash</span>
-                    <span className="sg-data-value" title={attestation.codeReceiptHash}>
-                      {attestation.codeReceiptHash
-                        ? `${attestation.codeReceiptHash.slice(0, 14)}…${attestation.codeReceiptHash.slice(-8)}`
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="sg-data-field">
-                    <span className="sg-data-label">Evidence Hash</span>
-                    <span className="sg-data-value" title={attestation.evidenceHash}>
-                      {attestation.evidenceHash
-                        ? `${attestation.evidenceHash.slice(0, 14)}…${attestation.evidenceHash.slice(-8)}`
-                        : "—"}
-                    </span>
-                  </div>
-                  <div className="sg-data-field">
-                    <span className="sg-data-label">Attested</span>
-                    <span className="sg-data-value">
-                      {new Date(attestation.attestationTimestamp * 1000).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="sg-data-field">
-                    <span className="sg-data-label">Agent Address</span>
-                    <span className="sg-data-value" style={{ color: "#06b6d4" }}>
-                      {address}
-                    </span>
-                  </div>
-                  <div className="sg-data-field">
-                    <span className="sg-data-label">On-Chain Record</span>
-                    <a
-                      href={`${explorerBase}/address/${address}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="sg-data-value"
-                      style={{ color: "#06b6d4", fontSize: "0.625rem" }}
-                      title="View agent transactions on 0G Explorer"
-                    >
-                      View on Explorer ↗
-                    </a>
-                  </div>
-                  {attestation.evidenceHash && attestation.evidenceHash !== "0x" + "0".repeat(64) && (
-                    <div className="sg-data-field">
-                      <span className="sg-data-label">Evidence Integrity</span>
-                      <VerifyEvidenceButton evidenceHash={attestation.evidenceHash} />
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* 0G Compute inference receipts */}
-              {(attestation.behavioralReceiptHash || attestation.codeReceiptHash) && (
-                <div className="sg-glass-card sg-reveal-up" style={{ marginTop: "1.5rem", padding: "1.25rem" }}>
-                  <div className="sg-section-label" style={{ marginBottom: "1rem" }}>
-                    0G Compute Inference Receipts
-                  </div>
-                  <div style={{ fontSize: "0.625rem", color: "var(--tx-mid)", marginBottom: "1rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
-                    Each receipt cryptographically hashes the exact inference response and anchors it on-chain, so this verdict stays tamper-evident and independently checkable. Inference runs on 0G Compute.
-                  </div>
-                  {attestation.behavioralReceiptHash && attestation.behavioralReceiptHash !== "0x" + "0".repeat(64) && (
-                    <div className="sg-data-field" style={{ marginBottom: "0.5rem" }}>
-                      <span className="sg-data-label">Behavioral ChatID</span>
-                      <span className="sg-data-value" style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
-                        {formatReceiptHash(attestation.behavioralReceiptHash)}
-                      </span>
-                    </div>
-                  )}
-                  {attestation.codeReceiptHash && attestation.codeReceiptHash !== "0x" + "0".repeat(64) && (
-                    <div className="sg-data-field" style={{ marginBottom: "0.75rem" }}>
-                      <span className="sg-data-label">Code Audit ChatID</span>
-                      <span className="sg-data-value" style={{ fontFamily: "var(--font-dm-mono, monospace)", fontSize: "0.625rem" }}>
-                        {formatReceiptHash(attestation.codeReceiptHash)}
-                      </span>
-                    </div>
-                  )}
-                  <a
-                    href={`${explorerBase}/address/${address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: "inline-block",
-                      marginTop: "0.25rem",
-                      padding: "0.375rem 0.75rem",
-                      background: "rgba(6, 182, 212, 0.08)",
-                      border: "1px solid rgba(6, 182, 212, 0.25)",
-                      borderRadius: 8,
-                      color: "#06b6d4",
-                      fontFamily: "var(--font-dm-mono, monospace)",
-                      fontSize: "0.5625rem",
-                      textDecoration: "none",
-                      letterSpacing: "0.05em",
-                    }}
-                  >
-                    View Attestation on 0G Explorer ↗
+            {/* ── On-chain attestation data ── */}
+            <div className="attest-panel scale-in">
+              <div className="ap-head">On-Chain Attestation Data</div>
+              <div className="kv"><span className="kk">Behavioral Hash</span><span className="vv" title={attestation.behavioralReceiptHash}>{shortHash(attestation.behavioralReceiptHash)}</span></div>
+              <div className="kv"><span className="kk">Code Hash</span><span className="vv" title={attestation.codeReceiptHash}>{shortHash(attestation.codeReceiptHash)}</span></div>
+              <div className="kv"><span className="kk">Evidence Hash</span><span className="vv" title={attestation.evidenceHash}>{shortHash(attestation.evidenceHash)}</span></div>
+              <div className="kv"><span className="kk">Attested</span><span className="vv">{new Date(attestation.attestationTimestamp * 1000).toLocaleString()}</span></div>
+              <div className="kv"><span className="kk">Agent Address</span><span className="vv cy">{address}</span></div>
+              <div className="kv">
+                <span className="kk">On-Chain Record</span>
+                <span className="vv">
+                  <a href={`${explorerBase}/address/${address}`} target="_blank" rel="noopener noreferrer" style={{ color: "var(--cy)" }}>
+                    View on Explorer ↗
                   </a>
+                </span>
+              </div>
+              {hasEvidence && (
+                <div className="kv">
+                  <span className="kk">Evidence Integrity</span>
+                  <span className="vv" style={{ textAlign: "right" }}>
+                    <VerifyEvidenceButton evidenceHash={attestation.evidenceHash} />
+                  </span>
                 </div>
               )}
+            </div>
 
-              {/* Fine-tuning dataset */}
-              <div className="sg-glass-card sg-reveal-up" style={{ marginTop: "1.5rem", padding: "1.25rem" }}>
-                <div className="sg-section-label" style={{ marginBottom: "0.75rem" }}>
-                  0G Compute Fine-Tuning
-                </div>
-                <div style={{ fontSize: "0.625rem", color: "var(--tx-mid)", marginBottom: "0.75rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
-                  Upload attestation data as a training dataset to 0G Storage and get the CLI command to submit a fine-tuning task.
-                </div>
-                <FineTuneButton agentAddress={address} />
+            {/* ── AI reasoning ── */}
+            {attestation.reasoning && (
+              <div className="reasoning rise">
+                <span className="lab">AI Reasoning</span>
+                {attestation.reasoning}
               </div>
-            </>
-          )}
-        </div>
-
-        {/* ── DIVIDER ── */}
-        <div className="sg-divider" />
-
-        {/* ── RIGHT: Actions ── */}
-        <div style={{
-          flex: "1 1 260px",
-          maxWidth: 300,
-          background: "var(--ink-2)",
-          borderTop: "1px solid var(--line)",
-          backdropFilter: "blur(8px)",
-          padding: "2rem 1.25rem",
-          display: "flex",
-          flexDirection: "column",
-          gap: "1.5rem",
-        }}>
-          {attestation?.reasoning ? (
-            <>
-              <div style={{ textAlign: "center" }}>
-                <div className="sg-label" style={{ marginBottom: "0.75rem" }}>AI Reasoning</div>
-                <p style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.75rem",
-                  color: "var(--tx-hi)",
-                  lineHeight: 1.65,
-                  fontStyle: "italic",
-                  margin: 0,
-                }}>
-                  &ldquo;{attestation.reasoning}&rdquo;
-                </p>
-              </div>
-              <div className="sg-rule" />
-            </>
-          ) : (
-            <>
-              <div>
-                <div className="sg-label" style={{ marginBottom: "0.75rem" }}>0G Compute Receipts</div>
-                <p style={{
-                  fontFamily: "var(--font-mono)",
-                  fontSize: "0.75rem",
-                  color: "var(--tx-dim)",
-                  lineHeight: 1.6,
-                }}>
-                  Two independent inference calls: behavioral analysis and code audit. Each generates a
-                  unique receipt hash stored immutably on 0G Aristotle.
-                </p>
-              </div>
-              <div className="sg-rule" />
-            </>
-          )}
-
-          <div>
-            <div className="sg-label" style={{ marginBottom: "0.5rem" }}>Scan Metadata</div>
-            {attestation ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
-                {[
-                  { label: "Verdict", value: THREAT_LABELS[attestation.threatLevel] ?? "—" },
-                  { label: "Score", value: `${attestation.behavioralScore}/100` },
-                  { label: "Code", value: RISK_LABELS[attestation.codeRisk] ?? "—" },
-                  { label: "Network", value: "0G Aristotle (16661)" },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                    <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6875rem", color: "var(--tx-dim)" }}>{label}</span>
-                    <span className="sg-mono" style={{ fontSize: "0.6875rem", color: "var(--tx-lo)" }}>{value}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p style={{ fontFamily: "var(--font-mono)", fontSize: "0.75rem", color: "var(--tx-dim)", lineHeight: 1.6 }}>
-                No attestation on-chain for this address.
-              </p>
             )}
-          </div>
 
-          {attestation && (
-            <>
-              <div className="sg-rule" />
+            {/* ── 0G Compute inference receipts ── */}
+            {(hasBehavioralReceipt || hasCodeReceipt) && (
+              <div className="receipts rise">
+                <span className="r-lab">0G Compute Inference Receipts</span>
+                {hasBehavioralReceipt && (
+                  <span className="r-item"><b>Behavioral ChatID</b> <span className="mono">{formatReceiptHash(attestation.behavioralReceiptHash)}</span></span>
+                )}
+                {hasCodeReceipt && (
+                  <span className="r-item"><b>Code Audit ChatID</b> <span className="mono">{formatReceiptHash(attestation.codeReceiptHash)}</span></span>
+                )}
+              </div>
+            )}
+
+            {/* ── Share row ── */}
+            <div className="share-row rise" style={{ marginBottom: 26 }}>
               <ShareCard
                 address={address}
                 verdict={THREAT_LABELS[attestation.threatLevel] ?? "UNKNOWN"}
                 score={attestation.behavioralScore}
                 reason={oneLineReason(attestation.reasoning)}
               />
-            </>
-          )}
+              <a className="explorer-link" href={`${explorerBase}/address/${address}`} target="_blank" rel="noopener noreferrer">
+                View on 0G Explorer ↗
+              </a>
+            </div>
 
-          <div className="sg-rule" />
+            {/* ── 0G Compute fine-tuning ── */}
+            <div className="attest-panel scale-in">
+              <div className="ap-head">0G Compute Fine-Tuning</div>
+              <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+                <p className="mini-note">
+                  Upload this attestation as a training dataset to 0G Storage and get the CLI command to
+                  submit a fine-tuning task.
+                </p>
+                <FineTuneButton agentAddress={address} />
+              </div>
+            </div>
 
-          <a
-            href={`${explorerBase}/address/${address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="sg-btn-primary"
-            style={{ textDecoration: "none" }}
-          >
-            0G Explorer ↗
-          </a>
-          <Link href="/agents" className="sg-btn-ghost" style={{ textAlign: "center", textDecoration: "none" }}>
-            ← Back to Dashboard
-          </Link>
-        </div>
+            <div style={{ marginTop: 22 }}>
+              <Link href="/agents" className="share-btn">← Back to Dashboard</Link>
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </section>
   );
 }

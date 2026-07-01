@@ -14,53 +14,15 @@ export default function Error({
   }, [error]);
 
   return (
-    <div style={{
-      minHeight: "calc(100vh - 44px)",
-      display: "flex",
-      flexDirection: "column",
-      alignItems: "center",
-      justifyContent: "center",
-      padding: "2rem",
-      gap: "1.5rem",
-    }}>
-      <div style={{
-        fontFamily: "var(--font-dm-mono, monospace)",
-        fontSize: "0.6875rem",
-        color: "#f43f5e",
-        letterSpacing: "0.1em",
-        textTransform: "uppercase",
-      }}>
-        Error
-      </div>
-      <div style={{
-        fontFamily: "var(--font-heading)",
-        fontSize: "1.25rem",
-        fontWeight: 600,
-        color: "var(--tx-hi)",
-        textAlign: "center",
-      }}>
-        Something went wrong
-      </div>
-      <div style={{
-        fontFamily: "var(--font-dm-mono, monospace)",
-        fontSize: "0.75rem",
-        color: "var(--tx-dim)",
-        textAlign: "center",
-        maxWidth: 400,
-      }}>
+    <div className="centered-state">
+      <span className="eyebrow" style={{ color: "var(--bad)" }}>Error</span>
+      <h2 style={{ fontSize: "var(--fs-h3)" }}>Something went wrong</h2>
+      <p className="mini-note" style={{ maxWidth: 420 }}>
         {error.message || "An unexpected error occurred."}
-      </div>
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", justifyContent: "center" }}>
-        <button
-          onClick={reset}
-          className="sg-btn-fill"
-          style={{ cursor: "pointer", border: "none" }}
-        >
-          Try again
-        </button>
-        <Link href="/agents" className="sg-btn-outline" style={{ textDecoration: "none" }}>
-          Dashboard →
-        </Link>
+      </p>
+      <div className="cta-row" style={{ justifyContent: "center" }}>
+        <button onClick={reset} className="btn btn-primary">Try again</button>
+        <Link href="/agents" className="btn btn-ghost">Dashboard →</Link>
       </div>
     </div>
   );

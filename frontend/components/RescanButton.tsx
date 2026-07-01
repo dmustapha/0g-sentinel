@@ -1,7 +1,7 @@
 "use client";
 // File: frontend/components/RescanButton.tsx
-// Isolated client component for per-row rescan on the agents dashboard.
-// Kept separate so agents/page.tsx can be a server component with ISR.
+// Isolated client component for per-row rescan on the risk board.
+// Kept separate so the pages can stay server components with ISR.
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { THREAT_LABELS } from "@/lib/types";
@@ -54,37 +54,25 @@ export function RescanButton({ address }: Props) {
     }
   }
 
+  const resultColor =
+    result?.label === "FLAGGED" ? "var(--bad)" : result?.label === "CAUTION" ? "var(--warn)" : "var(--good)";
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "0.25rem" }}>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
       {error && (
-        <div style={{
-          fontFamily: "var(--font-dm-mono, monospace)",
-          fontSize: "0.5625rem",
-          color: "#f43f5e",
-          maxWidth: 120,
-          textAlign: "right",
-          lineHeight: 1.3,
-        }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--bad)", maxWidth: 130, textAlign: "right", lineHeight: 1.3 }}>
           {error}
-        </div>
+        </span>
       )}
       {result && !scanning && (
-        <div style={{
-          fontFamily: "var(--font-dm-mono, monospace)",
-          fontSize: "0.5625rem",
-          color: result.label === "FLAGGED" ? "#f43f5e" : result.label === "CAUTION" ? "#fbbf24" : "#10b981",
-          maxWidth: 120,
-          textAlign: "right",
-          lineHeight: 1.3,
-        }}>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: resultColor, textAlign: "right", lineHeight: 1.3 }}>
           ✓ {result.label} ({result.score})
-        </div>
+        </span>
       )}
       <button
-        className="sg-btn-refresh"
+        className="rescan"
         disabled={scanning}
         onClick={handleRescan}
-        style={{ fontSize: "0.625rem", padding: "0.25rem 0.625rem" }}
         aria-label={`Rescan ${address.slice(0, 6)}…${address.slice(-4)}`}
       >
         {scanning ? `Scanning… ${elapsed}s` : "Rescan"}

@@ -2,6 +2,7 @@
 // File: frontend/components/ScanInput.tsx
 // Allows any user to scan an arbitrary agent address — not just pre-registered ones.
 // Triggers a full scan and navigates to the agent report on completion.
+// Presentation is the prototype `.scan-input-row`; StreamingScanPanel drives the scan.
 import { useState, useRef, useCallback } from "react";
 import { StreamingScanPanel } from "./StreamingScanPanel";
 
@@ -30,76 +31,35 @@ export function ScanInput({ defaultAddress }: { defaultAddress?: string } = {}) 
     // StreamingScanPanel drives the scan (SSE) and navigates to the report on completion.
   }
 
+  const inputClass =
+    "scan-input" + (error ? " errored" : address && !isValid ? " invalid" : "");
+
   return (
-    <form onSubmit={handleScan} style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-      <div style={{ display: "flex", gap: "0.5rem", alignItems: "stretch" }}>
+    <form onSubmit={handleScan} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+      <div className="scan-input-row">
         <input
           ref={inputRef}
+          className={inputClass}
           type="text"
           value={address}
           onChange={(e) => { setAddress(e.target.value); setError(null); }}
           placeholder="0x… paste any agent address"
+          aria-label="Agent address to scan"
           disabled={scanning}
           spellCheck={false}
           autoComplete="off"
-          style={{
-            flex: 1,
-            minWidth: 0,
-            fontFamily: "var(--font-dm-mono, monospace)",
-            fontSize: "1rem",
-            color: "var(--tx-hi)",
-            background: "rgba(255,255,255,0.04)",
-            border: `1px solid ${error ? "rgba(244,63,94,0.4)" : address && !isValid ? "rgba(251,191,36,0.35)" : "rgba(255,255,255,0.12)"}`,
-            borderRadius: 8,
-            padding: "0.5rem 0.875rem",
-            outline: "none",
-            transition: "border-color 0.2s ease-out",
-          }}
         />
-        <button
-          type="submit"
-          disabled={scanning || !isValid}
-          style={{
-            fontFamily: "var(--font-syne, sans-serif)",
-            fontSize: "0.875rem",
-            fontWeight: 600,
-            letterSpacing: "0.08em",
-            textTransform: "uppercase",
-            color: scanning || !isValid ? "var(--tx-dim)" : "#06b6d4",
-            background: "transparent",
-            border: `1px solid ${scanning || !isValid ? "rgba(255,255,255,0.08)" : "rgba(6,182,212,0.35)"}`,
-            borderRadius: 8,
-            padding: "0.5rem 1.25rem",
-            minHeight: 44,
-            cursor: scanning || !isValid ? "not-allowed" : "pointer",
-            whiteSpace: "nowrap",
-            transition: "background 0.2s ease-out, border-color 0.2s ease-out",
-          }}
-        >
+        <button type="submit" className="btn btn-primary" disabled={scanning || !isValid}>
           {scanning ? "Scanning…" : "Scan →"}
         </button>
       </div>
+
       {scanning && scanAddress && (
         <StreamingScanPanel address={scanAddress} onError={handleStreamError} />
       )}
-      {error && (
-        <div style={{
-          fontFamily: "var(--font-dm-mono, monospace)",
-          fontSize: "0.75rem",
-          color: "#f43f5e",
-          lineHeight: 1.4,
-        }}>
-          {error}
-        </div>
-      )}
+      {error && <div className="err-msg">{error}</div>}
       {address && !isValid && !scanning && (
-        <div style={{
-          fontFamily: "var(--font-dm-mono, monospace)",
-          fontSize: "0.75rem",
-          color: "#fbbf24",
-        }}>
-          Must be a valid 0x address (42 chars)
-        </div>
+        <div className="warn-msg">Must be a valid 0x address (42 chars)</div>
       )}
     </form>
   );

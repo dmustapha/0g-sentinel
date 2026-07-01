@@ -1,10 +1,7 @@
 // File: frontend/components/GridOverlays.tsx
+// Superseded by the prototype `.texture` layer + per-section `.hero-grid`, both
+// rendered directly in layout.tsx / the hero. Kept as an inert export so any
+// stray import resolves without reintroducing the old overlay markup.
 export function GridOverlays() {
-  return (
-    <>
-      <div className="sg-grid-left" aria-hidden="true" />
-      <div className="sg-grid-right" aria-hidden="true" />
-      <div className="sg-sentinel-line" aria-hidden="true" />
-    </>
-  );
+  return null;
 }

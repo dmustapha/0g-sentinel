@@ -1,9 +1,7 @@
 // File: frontend/app/layout.tsx
 import type { Metadata } from "next";
 import { Chakra_Petch, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
-import Image from "next/image";
 import "./globals.css";
-import { GridOverlays } from "@/components/GridOverlays";
 import { NavLinks } from "@/components/NavLinks";
 
 const chakra = Chakra_Petch({
@@ -29,7 +27,7 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
-  icons: { icon: "/favicon.ico", apple: "/logo.png" },
+  icons: { icon: "/favicon.ico" },
   title: "0G Agent Watch · live threat intelligence for the agent economy",
   description: "On-chain security attestations for AI agents. Behavioral audit, code scan, and immutable verdicts on 0G Compute, 0G Storage, and 0G Chain.",
   openGraph: {
@@ -49,22 +47,33 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${chakra.variable} ${plexSans.variable} ${plexMono.variable}`}>
       <body>
-        <GridOverlays />
-        {/* Top bar */}
-        <header role="banner" className="sg-topbar">
-          <a href="/" className="sg-topbar-brand" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <Image src="/logo.png" alt="0G Sentinel" width={26} height={26} style={{ borderRadius: "5px" }} />
-            0G <span>Sentinel</span>
-          </a>
-          <NavLinks />
-          <div className="sg-topbar-status">
-            <span className="sg-topbar-dot" />
-            <span>Live · 0G Aristotle · 16661</span>
+        <div className="texture" aria-hidden="true" />
+
+        <header className="topbar">
+          <div className="topbar-inner">
+            <a href="/" className="wordmark">
+              <span className="mk" aria-hidden="true" />
+              0G Sentinel
+            </a>
+            <NavLinks />
+            <span className="status-pill">
+              <span className="dot" aria-hidden="true" />
+              LIVE · <span className="pill-mid">0G Aristotle · </span>16661
+            </span>
           </div>
         </header>
-        <main id="main-content">
-          {children}
-        </main>
+
+        <main id="main-content">{children}</main>
+
+        <footer>
+          <div className="wrap foot-inner">
+            <span className="fmk">0G Sentinel</span>
+            <span className="fnet">Live on 0G Aristotle · Chain ID 16661</span>
+            <a className="flink" href="https://chainscan.0g.ai" target="_blank" rel="noopener noreferrer">
+              0G Explorer ↗
+            </a>
+          </div>
+        </footer>
       </body>
     </html>
   );

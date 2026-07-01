@@ -1,9 +1,9 @@
-"use client";
 // File: frontend/components/RadarHero.tsx
-// The signature — a live mission-control radar scope. Decorative/representative:
-// concentric range rings, crosshairs + coordinate ticks, a continuously rotating
-// cyan sweep beam (conic-gradient + glowing line), agent blips (faint cyan neutral,
-// two pulsing red = FLAGGED). CSS-first; sweep disables under prefers-reduced-motion.
+// The signature — a live mission-control radar scope, ported verbatim from the
+// approved prototype: concentric range rings, crosshairs + coordinate ticks, a
+// continuously rotating cyan sweep beam (conic-gradient + glowing line), agent
+// blips (faint/neutral cyan, two pulsing red = FLAGGED). CSS-first; the sweep
+// disables under prefers-reduced-motion. `compact` shrinks it for /agents.
 
 interface RadarHeroProps {
   compact?: boolean;
@@ -28,46 +28,38 @@ const BLIPS: { top: string; left: string; kind: "" | "faint" | "hot" }[] = [
 export function RadarHero({ compact = false }: RadarHeroProps) {
   return (
     <div
-      className={`radar-stage${compact ? " compact" : ""} sg-reveal-left`}
+      className={`radar-stage scale-in${compact ? " compact" : ""}`}
       role="img"
       aria-label="Live radar sweeping the agent field on 0G Aristotle. Most agents read neutral cyan, two read hot red for FLAGGED."
     >
       <div className="radar">
-        <div className="radar-ring r1" />
-        <div className="radar-ring r2" />
-        <div className="radar-ring r3" />
-        <div className="radar-ring r4" />
-        <div className="radar-cross-h" />
-        <div className="radar-cross-v" />
+        <div className="ring r1" />
+        <div className="ring r2" />
+        <div className="ring r3" />
+        <div className="ring r4" />
+        <div className="cross-h" />
+        <div className="cross-v" />
         {TICKS.map((deg) => (
-          <div
-            key={deg}
-            className="radar-tick"
-            style={{ transform: `translate(0,-50%) rotate(${deg}deg)` }}
-          />
+          <div key={deg} className="tick" style={{ transform: `translate(0,-50%) rotate(${deg}deg)` }} />
         ))}
-        <div className="radar-sweep" aria-hidden />
-        <div className="radar-sweep-line" aria-hidden />
+        <div className="sweep" aria-hidden />
+        <div className="sweep-line" aria-hidden />
         {BLIPS.map((b, i) => (
-          <div
-            key={i}
-            className={`radar-blip${b.kind ? " " + b.kind : ""}`}
-            style={{ top: b.top, left: b.left }}
-          />
+          <div key={i} className={`blip${b.kind ? " " + b.kind : ""}`} style={{ top: b.top, left: b.left }} />
         ))}
         <div className="radar-center" />
-        <span className="radar-readout tl">
+        <span className="radar-readout tl mono">
           SCAN 0G-ARISTOTLE
           <br />
           RNG 16661
         </span>
-        <span className="radar-readout br">
+        <span className="radar-readout br mono">
           SWEEP 04.6s
           <br />
           BLIPS 09
         </span>
       </div>
-      <span className="radar-badge">
+      <span className="radar-badge mono">
         tracking agent field · <b>2 FLAGGED</b>
       </span>
     </div>

@@ -6,23 +6,14 @@ import Link from "next/link";
 export function NavLinks() {
   const pathname = usePathname();
   return (
-    <nav className="sg-topbar-nav">
-      <Link
-        href="/"
-        className={`sg-topbar-link${pathname === "/" ? " active" : ""}`}
-      >
+    <nav className="nav" aria-label="Primary">
+      <Link href="/" className={pathname === "/" ? "active" : ""}>
         Home
       </Link>
-      <Link
-        href="/agents"
-        className={`sg-topbar-link${pathname.startsWith("/agents") ? " active" : ""}`}
-      >
+      <Link href="/agents" className={pathname.startsWith("/agents") ? "active" : ""}>
         Dashboard
       </Link>
-      <Link
-        href="/proof"
-        className={`sg-topbar-link${pathname === "/proof" ? " active" : ""}`}
-      >
+      <Link href="/proof" className={pathname === "/proof" ? "active" : ""}>
         Proof
       </Link>
     </nav>

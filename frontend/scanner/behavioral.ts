@@ -9,6 +9,7 @@ export interface BehavioralResult {
   threat_level: 0 | 1 | 2;    // SAFE | CAUTION | FLAGGED
   reasoning: string;
   receipt_hash: string;
+  verified?: boolean;          // provider TEE signature verified via the 0G Compute broker
 }
 
 // Legacy alias — kept so scanner.ts can still import AgentActivityData by name
@@ -125,5 +126,6 @@ Return JSON with behavioral_score, threat_level, and reasoning. Write the reason
     threat_level,
     reasoning,
     receipt_hash: result.receipt_hash,
+    verified: result.verified,
   };
 }

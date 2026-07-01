@@ -347,14 +347,14 @@ export default async function AgentDetailPage({ params }: Props) {
                 </div>
               </div>
 
-              {/* TEE Verification */}
+              {/* 0G Compute inference receipts */}
               {(attestation.behavioralReceiptHash || attestation.codeReceiptHash) && (
                 <div className="sg-glass-card sg-reveal-up" style={{ marginTop: "1.5rem", padding: "1.25rem" }}>
                   <div className="sg-section-label" style={{ marginBottom: "1rem" }}>
-                    0G Sealed Inference Receipts
+                    0G Compute Inference Receipts
                   </div>
                   <div style={{ fontSize: "0.625rem", color: "rgba(255,255,255,0.55)", marginBottom: "1rem", fontFamily: "var(--font-dm-mono, monospace)" }}>
-                    Hardware-attested via Intel TDX + H100/H200. Each receipt is a chatID linking this inference to a specific TEE execution.
+                    Each receipt cryptographically hashes the exact inference response and anchors it on-chain, so this verdict stays tamper-evident and independently checkable. Inference runs on 0G Compute.
                   </div>
                   {attestation.behavioralReceiptHash && attestation.behavioralReceiptHash !== "0x" + "0".repeat(64) && (
                     <div className="sg-data-field" style={{ marginBottom: "0.5rem" }}>

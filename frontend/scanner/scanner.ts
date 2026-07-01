@@ -494,7 +494,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
   const [behavioral, codeScan] = await Promise.all([
     runBehavioralAnalysis(signals),
     skipCodeScan
-      ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64) })
+      ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64), static_analysis: undefined })
       : runCodeScan(agentAddress, contractSource),
   ]);
 
@@ -528,6 +528,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
     behavioral_receipt: behavioral.receipt_hash,
     code_findings: codeScan.code_findings,
     code_receipt: codeScan.receipt_hash,
+    code_static_analysis: codeScan.static_analysis,
   });
 
   // Write attestation to 0G Chain — serialised via writeInFlight lock to prevent

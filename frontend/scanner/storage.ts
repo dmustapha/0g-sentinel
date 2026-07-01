@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "crypto";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import type { StaticAnalysisResult } from "./static-analysis";
 
 export interface EvidenceArchive {
   agent_address: string;
@@ -17,6 +18,9 @@ export interface EvidenceArchive {
   behavioral_receipt: string;
   code_findings: string;
   code_receipt: string;
+  // Deterministic static-analysis result, archived alongside the AI verdict so the
+  // evidence hash anchors the reproducible ground truth, not just the model opinion.
+  code_static_analysis?: StaticAnalysisResult;
 }
 
 export interface EvidenceUploadResult {

@@ -140,21 +140,35 @@ const EXPLORER_BASE = process.env.ZERO_G_EXPLORER_URL || "https://chainscan.0g.a
  */
 async function fetchExplorerTxs(agentAddress: string): Promise<BlockscoutTx[] | null> {
   try {
-    const url = `${EXPLORER_BASE}/api?module=account&action=txlist&address=${agentAddress}&startblock=0&endblock=latest&sort=desc&offset=100&page=1`;
+    // 0G's Etherscan-compatible explorer API lives at /open/api. The bare /api path serves
+    // the chainscan React SPA (returns HTML for every route), which is why history lookups
+    // silently returned null and every real address read as "no_history". endblock uses a
+    // large sentinel instead of "latest" for Blockscout-fork compatibility.
+    const url = `${EXPLORER_BASE}/open/api?module=account&action=txlist&address=${agentAddress}&startblock=0&endblock=99999999&sort=desc&offset=100&page=1`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(8000),
       headers: { "Accept": "application/json" },
     });
     if (!res.ok) return null;
-    // chainscan.0g.ai is a React SPA — all paths return HTML if the API isn't implemented
+    // Defensive: if the endpoint ever serves the SPA again, bail rather than mis-parse HTML.
     const contentType = res.headers.get("content-type") || "";
     if (contentType.includes("text/html")) return null;
-    const json = await res.json() as { status: string; result: BlockscoutTx[] | string };
+    const json = await res.json() as { status: string; result: unknown };
     if (json.status !== "1" || !Array.isArray(json.result)) return null;
-    // Return only outgoing transactions from the agent
-    return (json.result as BlockscoutTx[]).filter(
-      (tx) => tx.from?.toLowerCase() === agentAddress.toLowerCase()
-    );
+    // Normalize: the API returns `timestamp` (lowercase); the signal math reads `timeStamp`
+    // (Etherscan casing). Map it so 30d/7d volume, timing regularity, and entropy compute
+    // from real values instead of NaN. Keep only outgoing txs (from === agent).
+    return (json.result as Array<Record<string, unknown>>)
+      .filter((tx) => String(tx.from || "").toLowerCase() === agentAddress.toLowerCase())
+      .map((tx) => ({
+        hash: String(tx.hash || ""),
+        from: String(tx.from || ""),
+        to: (tx.to as string) || null,
+        value: String(tx.value ?? "0"),
+        timeStamp: String((tx.timeStamp ?? tx.timestamp) ?? "0"),
+        input: String(tx.input || "0x"),
+        isError: tx.isError !== undefined ? String(tx.isError) : undefined,
+      })) as BlockscoutTx[];
   } catch {
     return null;
   }
@@ -377,9 +391,10 @@ async function blockScanFallback(agentAddress: string): Promise<BehavioralSignal
  */
 async function fetchVerifiedContractSource(agentAddress: string): Promise<string> {
   try {
-    const url = `${EXPLORER_BASE}/api?module=contract&action=getsourcecode&address=${agentAddress}`;
+    // Same fix as history: verified source lives at /open/api, not /api (which is the SPA).
+    const url = `${EXPLORER_BASE}/open/api?module=contract&action=getsourcecode&address=${agentAddress}`;
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(6000),
       headers: { "Accept": "application/json" },
     });
     if (!res.ok) return "";
@@ -387,9 +402,24 @@ async function fetchVerifiedContractSource(agentAddress: string): Promise<string
     if (contentType.includes("text/html")) return "";
     const json = await res.json() as { status: string; result: Array<{ SourceCode?: string }> };
     if (json.status !== "1" || !Array.isArray(json.result)) return "";
-    const source = json.result[0]?.SourceCode || "";
-    // Blockscout wraps multi-file sources in {{ }}; strip outer wrapper for single-file
-    return source.startsWith("{{") ? "" : source;
+    const rawSource = json.result[0]?.SourceCode || "";
+    if (!rawSource) return ""; // unverified contract: no published source (honest CLEAN/WARNING downstream)
+    // Blockscout wraps multi-file verified sources as {{ "sources": { path: { content } } }}.
+    // Unwrap and concatenate so multi-file verified contracts are auditable, not discarded.
+    if (rawSource.startsWith("{{")) {
+      try {
+        const parsed = JSON.parse(rawSource.slice(1, -1)) as { sources?: Record<string, { content?: string }> };
+        const files = parsed.sources || {};
+        const joined = Object.values(files)
+          .map((f) => (f && typeof f.content === "string" ? f.content : ""))
+          .join("\n\n")
+          .trim();
+        return joined.slice(0, 12000);
+      } catch {
+        return "";
+      }
+    }
+    return rawSource;
   } catch {
     return "";
   }

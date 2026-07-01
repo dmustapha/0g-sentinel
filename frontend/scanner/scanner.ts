@@ -28,6 +28,8 @@ export interface FullScanResult {
   evidence_hash: string;
   /** true when evidence_hash is a real 0G Storage root (retrievable); false when 0G Storage upload fell back to a local content hash. */
   evidence_on_0g_storage: boolean;
+  /** true when every inference this scan ran was TEE-verified + on-chain-settled via the 0G Compute broker. */
+  inference_verified: boolean;
   attestation_tx_hash: string;
   scanned_at: number;
 }
@@ -494,7 +496,7 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
   const [behavioral, codeScan] = await Promise.all([
     runBehavioralAnalysis(signals),
     skipCodeScan
-      ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64), static_analysis: undefined })
+      ? Promise.resolve({ code_risk: 0 as const, code_findings: "", receipt_hash: "0x" + "0".repeat(64), static_analysis: undefined, verified: undefined })
       : runCodeScan(agentAddress, contractSource),
   ]);
 
@@ -601,6 +603,8 @@ export async function runFullScan(rawAddress: string): Promise<FullScanResult> {
     code_receipt_hash: codeScan.receipt_hash,
     evidence_hash: evidenceHash,
     evidence_on_0g_storage: !evidenceIsFallback,
+    inference_verified:
+      behavioral.verified === true && (codeScan.verified === undefined || codeScan.verified === true),
     attestation_tx_hash: receipt.hash,
     scanned_at: Math.floor(Date.now() / 1000),
   };

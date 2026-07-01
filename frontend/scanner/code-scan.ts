@@ -10,6 +10,7 @@ export interface CodeScanResult {
   // audit is not "an LLM reading Solidity twice" but an LLM cross-checked against fixed
   // vulnerability rules with a reproducible ground truth. Absent on the no-source path.
   static_analysis?: StaticAnalysisResult;
+  verified?: boolean; // provider TEE signature verified via the 0G Compute broker
 }
 
 const CODE_SCAN_SYSTEM_PROMPT = `You are a smart contract security auditor. Analyze Solidity source code for these specific vulnerabilities:
@@ -108,5 +109,6 @@ Return JSON with code_risk and code_findings.`;
     code_findings,
     receipt_hash: result.receipt_hash,
     static_analysis: staticResult,
+    verified: result.verified,
   };
 }

@@ -61,6 +61,7 @@ export async function POST(req: NextRequest) {
       code_receipt_hash: result.code_receipt_hash,
       evidence_hash: result.evidence_hash,
       evidence_on_0g_storage: result.evidence_on_0g_storage,
+      inference_verified: result.inference_verified,
       attestation_tx_hash: result.attestation_tx_hash,
     });
   } catch (error: unknown) {

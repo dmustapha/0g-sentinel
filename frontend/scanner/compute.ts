@@ -1,4 +1,6 @@
 // File: scanner/compute.ts
+import { callComputeVerifiable } from "./broker";
+
 export interface ComputeResult {
   content: string;
   receipt_hash: string; // From 0G Compute response
@@ -7,14 +9,41 @@ export interface ComputeResult {
     prompt_tokens: number;
     completion_tokens: number;
   };
+  verified?: boolean; // provider TEE signature verified via the broker path
+  provider?: string;  // 0G inference provider address (broker path only)
+  settled?: boolean;  // inference settled on-chain via a signed billing voucher
 }
 
 /**
- * Send a chat completion request to 0G Compute and return the response with a cryptographic
- * receipt hash. The receipt (zg-res-key header) proves a specific inference ran on 0G network —
- * this hash is stored on-chain as tamper-evident proof of the AI verdict.
+ * Primary inference entrypoint. Routes through the 0G Compute broker for verifiable,
+ * TEE-signature-checked, on-chain-settled inference (the non-substitutable 0G path). Falls
+ * back to the hosted 0G router — still 0G Compute, no centralized provider — if the broker is
+ * unavailable, so a scan never fails just because the ledger is empty or a provider is briefly
+ * down. Set ZERO_G_USE_BROKER=false to force the hosted path.
  */
 export async function callCompute(
+  systemPrompt: string,
+  userMessage: string,
+  model: string = "0GM-1.0-35B-A3B"
+): Promise<ComputeResult> {
+  if (process.env.ZERO_G_USE_BROKER !== "false") {
+    try {
+      return await callComputeVerifiable(systemPrompt, userMessage, model);
+    } catch (err) {
+      console.warn(
+        "[Compute] broker path unavailable, falling back to hosted 0G router:",
+        (err as Error).message
+      );
+    }
+  }
+  return callComputeHosted(systemPrompt, userMessage, model);
+}
+
+/**
+ * Hosted-router fallback: bearer-token call to 0G's hosted inference (zg-res-key receipt).
+ * Still 0G Compute, but without the broker's on-chain settlement / TEE verification.
+ */
+async function callComputeHosted(
   systemPrompt: string,
   userMessage: string,
   model: string = "0GM-1.0-35B-A3B"

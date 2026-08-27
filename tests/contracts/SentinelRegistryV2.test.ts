@@ -90,6 +90,22 @@ describe("SentinelRegistryV2", () => {
       .to.be.revertedWithCustomError(registry, "IncompleteCoverage");
   });
 
+  it("accepts behavioral score 100 and rejects 101", async () => {
+    const { registry, scanner, subject } = await deployRegistry();
+    await registry.connect(scanner).seal(HASH_A, subject.address, lockInput({ behavioralScore: 100 }));
+    expect((await registry.getProofLock(HASH_A)).behavioralScore).to.equal(100);
+    await expect(registry.connect(scanner).seal(HASH_B, subject.address, lockInput({ behavioralScore: 101 })))
+      .to.be.revertedWithCustomError(registry, "InvalidBehavioralScore");
+  });
+
+  it("accepts code risk 2 and rejects 3", async () => {
+    const { registry, scanner, subject } = await deployRegistry();
+    await registry.connect(scanner).seal(HASH_A, subject.address, lockInput({ codeRisk: 2 }));
+    expect((await registry.getProofLock(HASH_A)).codeRisk).to.equal(2);
+    await expect(registry.connect(scanner).seal(HASH_B, subject.address, lockInput({ codeRisk: 3 })))
+      .to.be.revertedWithCustomError(registry, "InvalidCodeRisk");
+  });
+
   it("seals version one and indexes the identity once", async () => {
     const { registry, scanner, subject } = await deployRegistry();
     await expect(registry.connect(scanner).seal(HASH_A, subject.address, lockInput()))

@@ -12,6 +12,7 @@ contract SentinelRegistryV2 is AccessControl {
     uint8 public constant STATE_ACTIVE = 1;
     uint8 public constant STATE_REVOKED = 2;
     uint8 public constant STATE_DRIFTED = 3;
+    uint256 public constant MAX_PAGE_SIZE = 100;
 
     struct ProofLock {
         bytes32 identityKey;
@@ -56,14 +57,25 @@ contract SentinelRegistryV2 is AccessControl {
     error ProofAlreadyExists();
     error ProofNotFound();
     error StaleVersion(uint64 expected, uint64 actual);
+    error InvalidState(uint8 currentState);
+    error InvalidReason();
+    error PageLimitExceeded();
 
     event ProofLocked(
         bytes32 indexed identityKey,
         address indexed subject,
         uint64 indexed version,
+        uint48 issuedAt,
         uint48 validUntil,
         bytes32 envelopeDigest,
-        bytes32 storageRoot
+        bytes32 storageRoot,
+        bytes32 computeRoot,
+        bytes32 artifactHash,
+        bytes32 runtimeCodeHash,
+        uint32 policyVersion,
+        uint8 behavioralScore,
+        uint8 codeRisk,
+        uint8 coverage
     );
     event ProofRevoked(bytes32 indexed identityKey, uint64 indexed version, uint8 reason);
     event DriftMarked(bytes32 indexed identityKey, uint64 indexed version, uint8 reason);
@@ -95,6 +107,7 @@ contract SentinelRegistryV2 is AccessControl {
     {
         uint64 oldVersion = proofLocks[identityKey].version;
         if (oldVersion == 0) revert ProofNotFound();
+        _requireResealable(proofLocks[identityKey].state);
         _validate(identityKey, subject, input);
         uint64 newVersion = oldVersion + 1;
         proofLocks[identityKey] = _createProof(identityKey, subject, input, newVersion);
@@ -107,6 +120,8 @@ contract SentinelRegistryV2 is AccessControl {
         onlyRole(GUARDIAN_ROLE)
     {
         ProofLock storage proof = _current(identityKey, expectedVersion);
+        _validateReason(reason);
+        if (proof.state != STATE_ACTIVE && proof.state != STATE_DRIFTED) revert InvalidState(proof.state);
         proof.state = STATE_REVOKED;
         proof.stateReason = reason;
         emit ProofRevoked(identityKey, proof.version, reason);
@@ -117,6 +132,8 @@ contract SentinelRegistryV2 is AccessControl {
         onlyRole(GUARDIAN_ROLE)
     {
         ProofLock storage proof = _current(identityKey, expectedVersion);
+        _validateReason(reason);
+        if (proof.state != STATE_ACTIVE) revert InvalidState(proof.state);
         proof.state = STATE_DRIFTED;
         proof.stateReason = reason;
         emit DriftMarked(identityKey, proof.version, reason);
@@ -131,6 +148,7 @@ contract SentinelRegistryV2 is AccessControl {
         view
         returns (bytes32[] memory page)
     {
+        if (limit > MAX_PAGE_SIZE) revert PageLimitExceeded();
         uint256 total = identityKeys.length;
         if (offset >= total || limit == 0) return new bytes32[](0);
         uint256 size = limit > total - offset ? total - offset : limit;
@@ -179,8 +197,18 @@ contract SentinelRegistryV2 is AccessControl {
         return subject.code.length == 0 ? bytes32(0) : subject.codehash;
     }
 
+    function _validateReason(uint8 reason) private pure {
+        if (reason == 0 || reason > 16) revert InvalidReason();
+    }
+
+    function _requireResealable(uint8 state) private pure {
+        if (state != STATE_ACTIVE && state != STATE_DRIFTED) revert InvalidState(state);
+    }
+
     function _emitLocked(ProofLock storage proof) private {
-        emit ProofLocked(proof.identityKey, proof.subject, proof.version, proof.validUntil,
-            proof.envelopeDigest, proof.storageRoot);
+        emit ProofLocked(proof.identityKey, proof.subject, proof.version, proof.issuedAt,
+            proof.validUntil, proof.envelopeDigest, proof.storageRoot, proof.computeRoot,
+            proof.artifactHash, proof.runtimeCodeHash, proof.policyVersion,
+            proof.behavioralScore, proof.codeRisk, proof.coverage);
     }
 }

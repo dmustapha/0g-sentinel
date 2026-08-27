@@ -11,6 +11,8 @@ contract ProofLockConsumerDemo {
     address public lastAcceptedAgent;
     uint64 public lastAcceptedVersion;
 
+    error CallerNotAgent(address caller, address subject);
+
     event AgentAccepted(uint256 indexed agentId, address indexed subject, uint64 indexed version);
 
     constructor(address gateAddress) {
@@ -20,6 +22,7 @@ contract ProofLockConsumerDemo {
 
     function acceptAgent(uint256 agentId) external {
         (address subject, uint64 version) = gate.requireAgent(agentId);
+        if (msg.sender != subject) revert CallerNotAgent(msg.sender, subject);
         acceptedCount += 1;
         lastAcceptedAgent = subject;
         lastAcceptedVersion = version;

@@ -28,6 +28,8 @@ interface ISentinelRegistryV2 {
 
 contract AgentGateV2 {
     uint256 public constant IDENTITY_CHAIN_ID = 16661;
+    uint8 public constant FIXED_COVERAGE = 0x7f;
+    uint48 public constant MAXIMUM_CONFIGURED_AGE = 30 days;
     uint8 public constant ALLOWED = 0;
     uint8 public constant NO_PROOF = 1;
     uint8 public constant REVOKED = 2;
@@ -72,9 +74,8 @@ contract AgentGateV2 {
         uint32 policyFloor,
         uint48 ageLimit
     ) {
-        if (registryAddress == address(0) || identityRegistryAddress == address(0)) {
-            revert InvalidConfiguration();
-        }
+        _validateConfiguration(registryAddress, identityRegistryAddress, behavioralLimit,
+            codeRiskLimit, coverageMask, policyFloor, ageLimit);
         registry = ISentinelRegistryV2(registryAddress);
         identityRegistry = IERC8004IdentityRegistry(identityRegistryAddress);
         maxBehavioralScore = behavioralLimit;
@@ -82,6 +83,24 @@ contract AgentGateV2 {
         requiredCoverage = coverageMask;
         minimumPolicyVersion = policyFloor;
         maximumAge = ageLimit;
+    }
+
+    function _validateConfiguration(
+        address registryAddress,
+        address identityRegistryAddress,
+        uint8 behavioralLimit,
+        uint8 codeRiskLimit,
+        uint8 coverageMask,
+        uint32 policyFloor,
+        uint48 ageLimit
+    ) private view {
+        if (registryAddress == address(0) || registryAddress.code.length == 0) revert InvalidConfiguration();
+        if (identityRegistryAddress == address(0) || identityRegistryAddress.code.length == 0) {
+            revert InvalidConfiguration();
+        }
+        if (behavioralLimit > 100 || codeRiskLimit > 2) revert InvalidConfiguration();
+        if (coverageMask != FIXED_COVERAGE || policyFloor == 0) revert InvalidConfiguration();
+        if (ageLimit == 0 || ageLimit > MAXIMUM_CONFIGURED_AGE) revert InvalidConfiguration();
     }
 
     function checkAgent(uint256 agentId)
@@ -166,6 +185,8 @@ contract AgentGateV2 {
         return maximumAge != 0 && block.timestamp - proof.issuedAt > maximumAge;
     }
 
+    /// @dev Detects direct runtime bytecode drift only. Proxy implementation or configuration
+    ///      drift requires guardian monitoring and an explicit lifecycle transition.
     function _runtimeCodeHash(address subject) private view returns (bytes32) {
         return subject.code.length == 0 ? bytes32(0) : subject.codehash;
     }

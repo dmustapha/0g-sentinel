@@ -44,6 +44,51 @@ async function sealValid(fixture: Awaited<ReturnType<typeof deployGateFixture>>,
 }
 
 describe("AgentGateV2", () => {
+  it("rejects zero or non-contract dependency addresses", async () => {
+    const fixture = await deployGateFixture();
+    const factory = await ethers.getContractFactory("AgentGateV2");
+    const registryAddress = await fixture.registry.getAddress();
+    const identityAddress = await fixture.identity.getAddress();
+    await expect(factory.deploy(ethers.ZeroAddress, identityAddress, 50, 1, COVERAGE, 1, DAY))
+      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
+    await expect(factory.deploy(registryAddress, ethers.ZeroAddress, 50, 1, COVERAGE, 1, DAY))
+      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
+    await expect(factory.deploy(fixture.other.address, identityAddress, 50, 1, COVERAGE, 1, DAY))
+      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
+    await expect(factory.deploy(registryAddress, fixture.other.address, 50, 1, COVERAGE, 1, DAY))
+      .to.be.revertedWithCustomError(factory, "InvalidConfiguration");
+  });
+
+  it("rejects out-of-policy immutable limits", async () => {
+    const fixture = await deployGateFixture();
+    const factory = await ethers.getContractFactory("AgentGateV2");
+    const args = [await fixture.registry.getAddress(), await fixture.identity.getAddress()] as const;
+    await expect(factory.deploy(...args, 101, 1, COVERAGE, 1, DAY)).to.be.reverted;
+    await expect(factory.deploy(...args, 50, 3, COVERAGE, 1, DAY)).to.be.reverted;
+    await expect(factory.deploy(...args, 50, 1, 0x7e, 1, DAY)).to.be.reverted;
+    await expect(factory.deploy(...args, 50, 1, 0xff, 1, DAY)).to.be.reverted;
+    await expect(factory.deploy(...args, 50, 1, COVERAGE, 0, DAY)).to.be.reverted;
+    await expect(factory.deploy(...args, 50, 1, COVERAGE, 1, 0)).to.be.reverted;
+    await expect(factory.deploy(...args, 50, 1, COVERAGE, 1, 30 * DAY + 1)).to.be.reverted;
+  });
+
+  it("accepts the minimum and maximum valid gate limits", async () => {
+    const fixture = await deployGateFixture();
+    const factory = await ethers.getContractFactory("AgentGateV2");
+    const minimum = await factory.deploy(
+      await fixture.registry.getAddress(), await fixture.identity.getAddress(),
+      0, 0, COVERAGE, 1, 1,
+    );
+    const maximum = await factory.deploy(
+      await fixture.registry.getAddress(), await fixture.identity.getAddress(),
+      100, 2, COVERAGE, 1, 30 * DAY,
+    );
+    expect(await minimum.maximumAge()).to.equal(1);
+    expect(await maximum.maxBehavioralScore()).to.equal(100);
+    expect(await maximum.maxCodeRisk()).to.equal(2);
+    expect(await maximum.maximumAge()).to.equal(30 * DAY);
+  });
+
   it("allows a current identity-bound ProofLock", async () => {
     const fixture = await deployGateFixture();
     await sealValid(fixture);
@@ -52,8 +97,9 @@ describe("AgentGateV2", () => {
 
   it("returns IDENTITY_UNAVAILABLE when the configured registry cannot answer", async () => {
     const fixture = await deployGateFixture();
+    const wrongAbi = await (await ethers.getContractFactory("MutableSubjectV1")).deploy();
     const broken = await (await ethers.getContractFactory("AgentGateV2")).deploy(
-      await fixture.registry.getAddress(), fixture.other.address, 50, 1, COVERAGE, 2, 7 * DAY,
+      await fixture.registry.getAddress(), await wrongAbi.getAddress(), 50, 1, COVERAGE, 2, 7 * DAY,
     );
     expect((await broken.checkAgent(1))[1]).to.equal(13);
   });

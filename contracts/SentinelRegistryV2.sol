@@ -51,6 +51,7 @@ contract SentinelRegistryV2 is AccessControl {
     error ZeroCommitment();
     error InvalidTTL();
     error InvalidBehavioralScore();
+    error InvalidCodeRisk();
     error IncompleteCoverage();
     error ProofAlreadyExists();
     error ProofNotFound();
@@ -148,6 +149,7 @@ contract SentinelRegistryV2 is AccessControl {
         if (input.artifactHash == bytes32(0)) revert ZeroCommitment();
         if (input.validForSeconds == 0 || input.validForSeconds > MAX_TTL) revert InvalidTTL();
         if (input.behavioralScore > 100) revert InvalidBehavioralScore();
+        if (input.codeRisk > 2) revert InvalidCodeRisk();
         if ((input.coverage & REQUIRED_COVERAGE) != REQUIRED_COVERAGE) revert IncompleteCoverage();
     }
 

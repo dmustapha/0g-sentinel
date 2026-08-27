@@ -114,17 +114,29 @@ contract AgentGateV2 {
             abi.encodeCall(IERC8004IdentityRegistry.ownerOf, (agentId))
         );
         if (!success) return data.length == 0 ? IDENTITY_UNAVAILABLE : AGENT_NOT_FOUND;
-        if (data.length != 32) return IDENTITY_UNAVAILABLE;
-        return abi.decode(data, (address)) == address(0) ? AGENT_NOT_FOUND : ALLOWED;
+        (bool valid, address owner) = _decodeAddress(data);
+        if (!valid) return IDENTITY_UNAVAILABLE;
+        return owner == address(0) ? AGENT_NOT_FOUND : ALLOWED;
     }
 
     function _readWallet(uint256 agentId) private view returns (uint8, address) {
         (bool success, bytes memory data) = address(identityRegistry).staticcall(
             abi.encodeCall(IERC8004IdentityRegistry.getAgentWallet, (agentId))
         );
-        if (!success || data.length != 32) return (IDENTITY_UNAVAILABLE, address(0));
-        address wallet = abi.decode(data, (address));
+        if (!success) return (IDENTITY_UNAVAILABLE, address(0));
+        (bool valid, address wallet) = _decodeAddress(data);
+        if (!valid) return (IDENTITY_UNAVAILABLE, address(0));
         return wallet == address(0) ? (AGENT_WALLET_UNSET, address(0)) : (ALLOWED, wallet);
+    }
+
+    function _decodeAddress(bytes memory data) private pure returns (bool valid, address decoded) {
+        if (data.length != 32) return (false, address(0));
+        uint256 word;
+        assembly {
+            word := mload(add(data, 32))
+        }
+        if (word > type(uint160).max) return (false, address(0));
+        return (true, address(uint160(word)));
     }
 
     function _evaluate(
@@ -150,7 +162,7 @@ contract AgentGateV2 {
     }
 
     function _isExpired(ISentinelRegistryV2.ProofLock memory proof) private view returns (bool) {
-        if (proof.issuedAt > block.timestamp || proof.validUntil < block.timestamp) return true;
+        if (proof.issuedAt > block.timestamp || proof.validUntil <= block.timestamp) return true;
         return maximumAge != 0 && block.timestamp - proof.issuedAt > maximumAge;
     }
 

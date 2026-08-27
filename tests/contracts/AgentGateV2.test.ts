@@ -69,6 +69,18 @@ describe("AgentGateV2", () => {
     expect((await fixture.gate.checkAgent(42))[1]).to.equal(15);
   });
 
+  it("returns IDENTITY_UNAVAILABLE for a malformed owner address word", async () => {
+    const fixture = await deployGateFixture();
+    await fixture.identity.setMalformedResponses(true, false);
+    expect((await fixture.gate.checkAgent(fixture.agentId))[1]).to.equal(13);
+  });
+
+  it("returns IDENTITY_UNAVAILABLE for a malformed wallet address word", async () => {
+    const fixture = await deployGateFixture();
+    await fixture.identity.setMalformedResponses(false, true);
+    expect((await fixture.gate.checkAgent(fixture.agentId))[1]).to.equal(13);
+  });
+
   it("returns NO_PROOF after identity resolution succeeds", async () => {
     const fixture = await deployGateFixture();
     expect((await fixture.gate.checkAgent(fixture.agentId))[1]).to.equal(1);
@@ -103,6 +115,14 @@ describe("AgentGateV2", () => {
     await sealValid(aged, { validForSeconds: 10 * DAY });
     await time.increase(7 * DAY + 1);
     expect((await aged.gate.checkAgent(aged.agentId))[1]).to.equal(4);
+  });
+
+  it("expires a lock exactly at validUntil", async () => {
+    const fixture = await deployGateFixture();
+    await sealValid(fixture, { validForSeconds: 60 });
+    const proof = await fixture.registry.getProofLock(fixture.identityKey);
+    await time.increaseTo(proof.validUntil);
+    expect((await fixture.gate.checkAgent(fixture.agentId))[1]).to.equal(4);
   });
 
   it("blocks an old policy and risk above either threshold", async () => {

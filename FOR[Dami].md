@@ -18,4 +18,10 @@ One authorized wallet still issues and can revoke leases in this hackathon relea
 
 ## Build Notes
 
-This document will be expanded after each completed implementation phase with the exact contracts, APIs, UI flow, and proof commands.
+### The three-contract core
+
+- `SentinelRegistryV2` stores the latest compact lease. Scanner and guardian permissions are separate, every lease has complete proof commitments, and old versions are reconstructible from events.
+- `AgentGateV2` resolves the current ERC-8004 agent wallet and returns a stable reason code. A wallet change, expired lease, stale policy, missing coverage, risk failure, revocation, drift, or direct runtime-code change fails closed.
+- `ProofLockConsumerDemo` proves enforcement. The admitted agent must be the caller; knowing a safe agent ID is not enough to borrow its permission.
+
+The tests cover the full demo lifecycle: admitted action, drift block, expiry block, and resealed admission. They also exercise malformed registry data, hostile constructor settings, caller spoofing, state-transition conflicts, and exact timestamp boundaries.

@@ -3,6 +3,7 @@ import { ethers } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type {
   MockERC8004IdentityRegistry,
+  ProofLockConsumerDemo,
   SentinelRegistryV2,
 } from "../../typechain-types";
 
@@ -16,7 +17,7 @@ function input(validForSeconds = 7 * DAY) {
 }
 
 async function deployFixture(validForSeconds = 7 * DAY) {
-  const [admin, scanner, guardian, owner, agent] = await ethers.getSigners();
+  const [admin, scanner, guardian, owner, agent, outsider] = await ethers.getSigners();
   const identity = (await (await ethers.getContractFactory("MockERC8004IdentityRegistry")).deploy()) as unknown as MockERC8004IdentityRegistry;
   const registry = (await (await ethers.getContractFactory("SentinelRegistryV2")).deploy(admin.address, scanner.address, guardian.address)) as unknown as SentinelRegistryV2;
   await identity.setAgent(7, owner.address, agent.address);
@@ -27,39 +28,47 @@ async function deployFixture(validForSeconds = 7 * DAY) {
   const gate = await (await ethers.getContractFactory("AgentGateV2")).deploy(
     await registry.getAddress(), await identity.getAddress(), 50, 1, COVERAGE, 1, 7 * DAY,
   );
-  const consumer = await (await ethers.getContractFactory("ProofLockConsumerDemo")).deploy(await gate.getAddress());
-  return { registry, consumer, scanner, guardian, agent, identityKey };
+  const consumer = (await (await ethers.getContractFactory("ProofLockConsumerDemo")).deploy(await gate.getAddress())) as unknown as ProofLockConsumerDemo;
+  return { registry, consumer, scanner, guardian, agent, outsider, identityKey };
 }
 
 describe("ProofLockConsumerDemo", () => {
   it("changes visible state only for an allowed agent", async () => {
     const { consumer, agent } = await deployFixture();
-    await consumer.acceptAgent(7);
+    await consumer.connect(agent).acceptAgent(7);
     expect(await consumer.acceptedCount()).to.equal(1n);
     expect(await consumer.lastAcceptedAgent()).to.equal(agent.address);
     expect(await consumer.lastAcceptedVersion()).to.equal(1n);
   });
 
+  it("rejects an outsider spoofing an admitted agent ID", async () => {
+    const { consumer, agent, outsider } = await deployFixture();
+    await expect(consumer.connect(outsider).acceptAgent(7))
+      .to.be.revertedWithCustomError(consumer, "CallerNotAgent")
+      .withArgs(outsider.address, agent.address);
+    expect(await consumer.acceptedCount()).to.equal(0n);
+  });
+
   it("blocks the action after drift is marked", async () => {
-    const { registry, consumer, guardian, identityKey } = await deployFixture();
+    const { registry, consumer, guardian, agent, identityKey } = await deployFixture();
     await registry.connect(guardian).markDrift(identityKey, 3, 1);
-    await expect(consumer.acceptAgent(7)).to.be.reverted;
+    await expect(consumer.connect(agent).acceptAgent(7)).to.be.reverted;
     expect(await consumer.acceptedCount()).to.equal(0n);
   });
 
   it("blocks the action after the lease expires", async () => {
-    const { consumer } = await deployFixture(2);
+    const { consumer, agent } = await deployFixture(2);
     await time.increase(3);
-    await expect(consumer.acceptAgent(7)).to.be.reverted;
+    await expect(consumer.connect(agent).acceptAgent(7)).to.be.reverted;
     expect(await consumer.acceptedCount()).to.equal(0n);
   });
 
   it("allows the action again after resealing a drifted proof", async () => {
     const { registry, consumer, scanner, guardian, agent, identityKey } = await deployFixture();
     await registry.connect(guardian).markDrift(identityKey, 3, 1);
-    await expect(consumer.acceptAgent(7)).to.be.reverted;
+    await expect(consumer.connect(agent).acceptAgent(7)).to.be.reverted;
     await registry.connect(scanner).reseal(identityKey, agent.address, input());
-    await consumer.acceptAgent(7);
+    await consumer.connect(agent).acceptAgent(7);
     expect(await consumer.acceptedCount()).to.equal(1n);
     expect(await consumer.lastAcceptedVersion()).to.equal(2n);
   });

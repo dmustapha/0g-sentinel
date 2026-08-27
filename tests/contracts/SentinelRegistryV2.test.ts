@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type { SentinelRegistryV2 } from "../../typechain-types";
 
 const DAY = 24 * 60 * 60;
@@ -108,8 +109,13 @@ describe("SentinelRegistryV2", () => {
 
   it("seals version one and indexes the identity once", async () => {
     const { registry, scanner, subject } = await deployRegistry();
-    await expect(registry.connect(scanner).seal(HASH_A, subject.address, lockInput()))
-      .to.emit(registry, "ProofLocked");
+    const tx = await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
+    const receipt = await tx.wait();
+    const block = await ethers.provider.getBlock(receipt!.blockNumber);
+    await expect(tx).to.emit(registry, "ProofLocked").withArgs(
+      HASH_A, subject.address, 1n, block!.timestamp, block!.timestamp + 7 * DAY,
+      HASH_A, HASH_B, HASH_C, HASH_D, ZERO, 1, 10, 0, REQUIRED_COVERAGE,
+    );
     const proof = await registry.getProofLock(HASH_A);
     expect(proof.identityKey).to.equal(HASH_A);
     expect(proof.subject).to.equal(subject.address);
@@ -134,10 +140,17 @@ describe("SentinelRegistryV2", () => {
   it("reseals with the next version and emits supersession", async () => {
     const { registry, scanner, subject } = await deployRegistry();
     await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
-    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, lockInput({ envelopeDigest: HASH_B })))
+    const tx = await registry.connect(scanner).reseal(HASH_A, subject.address, lockInput({ envelopeDigest: HASH_B }));
+    const receipt = await tx.wait();
+    const block = await ethers.provider.getBlock(receipt!.blockNumber);
+    await expect(tx)
       .to.emit(registry, "ProofSuperseded")
       .withArgs(HASH_A, 1n, 2n)
-      .and.to.emit(registry, "ProofLocked");
+      .and.to.emit(registry, "ProofLocked")
+      .withArgs(
+        HASH_A, subject.address, 2n, block!.timestamp, block!.timestamp + 7 * DAY,
+        HASH_B, HASH_B, HASH_C, HASH_D, ZERO, 1, 10, 0, REQUIRED_COVERAGE,
+      );
     expect((await registry.getProofLock(HASH_A)).version).to.equal(2n);
     expect(await registry.getIdentityCount()).to.equal(1n);
   });
@@ -164,6 +177,57 @@ describe("SentinelRegistryV2", () => {
     await expect(registry.connect(guardian).markDrift(HASH_B, 6, 1))
       .to.emit(registry, "DriftMarked").withArgs(HASH_B, 1n, 6);
     expect((await registry.getProofLock(HASH_B)).stateReason).to.equal(6);
+  });
+
+  it("enforces one-way competing lifecycle transitions", async () => {
+    const { registry, scanner, guardian, subject } = await deployRegistry();
+    await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
+    await registry.connect(guardian).markDrift(HASH_A, 3, 1);
+    await expect(registry.connect(guardian).markDrift(HASH_A, 3, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidState");
+    await registry.connect(guardian).revoke(HASH_A, 2, 1);
+    await expect(registry.connect(guardian).revoke(HASH_A, 2, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidState");
+    await expect(registry.connect(guardian).markDrift(HASH_A, 3, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidState");
+    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, lockInput()))
+      .to.be.revertedWithCustomError(registry, "InvalidState");
+  });
+
+  it("allows resealing ACTIVE or DRIFTED records", async () => {
+    const { registry, scanner, guardian, subject } = await deployRegistry();
+    await registry.connect(scanner).seal(HASH_A, subject.address, lockInput({ validForSeconds: 1 }));
+    await time.increase(2);
+    await registry.connect(scanner).reseal(HASH_A, subject.address, lockInput());
+    expect((await registry.getProofLock(HASH_A)).version).to.equal(2n);
+    await registry.connect(scanner).seal(HASH_B, subject.address, lockInput());
+    await registry.connect(guardian).markDrift(HASH_B, 3, 1);
+    await registry.connect(scanner).reseal(HASH_B, subject.address, lockInput());
+    expect((await registry.getProofLock(HASH_B)).state).to.equal(1);
+  });
+
+  it("requires lifecycle reason codes from 1 through 16", async () => {
+    const { registry, scanner, guardian, subject } = await deployRegistry();
+    await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
+    await expect(registry.connect(guardian).markDrift(HASH_A, 0, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidReason");
+    await expect(registry.connect(guardian).markDrift(HASH_A, 17, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidReason");
+    await registry.connect(guardian).markDrift(HASH_A, 16, 1);
+
+    await registry.connect(scanner).seal(HASH_B, subject.address, lockInput());
+    await expect(registry.connect(guardian).revoke(HASH_B, 0, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidReason");
+    await expect(registry.connect(guardian).revoke(HASH_B, 17, 1))
+      .to.be.revertedWithCustomError(registry, "InvalidReason");
+    await registry.connect(guardian).revoke(HASH_B, 1, 1);
+  });
+
+  it("caps identity pagination at 100", async () => {
+    const { registry } = await deployRegistry();
+    expect(await registry.getIdentityKeysPaged(0, 100)).to.deep.equal([]);
+    await expect(registry.getIdentityKeysPaged(0, 101))
+      .to.be.revertedWithCustomError(registry, "PageLimitExceeded");
   });
 
   it("stores the contract runtime code hash computed by the registry", async () => {

@@ -4,11 +4,7 @@ import { z } from "zod";
 
 import { EvidenceValidationError } from "./errors";
 import { ERC8004_IDENTITY_REGISTRY } from "./types";
-import type {
-  Bytes32,
-  EvidenceEnvelopeV1,
-  StorageCommitment,
-} from "./types";
+import type { Bytes32, EvidenceEnvelopeV1, StorageCommitment } from "./types";
 
 const UINT64_MAX = (1n << 64n) - 1n;
 const UINT256_MAX = (1n << 256n) - 1n;
@@ -22,33 +18,25 @@ const safeInteger = z
   .nonnegative()
   .refine(Number.isSafeInteger)
   .refine((value) => !Object.is(value, -0), "negative zero is not canonical");
-const policyVersion = safeInteger.refine(
-  (value) => value >= 1 && value <= UINT32_MAX,
-  "policyVersion must fit uint32",
-);
+const policyVersion = safeInteger.refine((value) => value >= 1 && value <= UINT32_MAX, "policyVersion must fit uint32");
 // Hex values are normalized to lowercase before JCS so casing cannot alter proof bytes.
 const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/)
-  .refine(
-    (value) => !/^0x0{40}$/i.test(value),
-    "zero address is not allowed",
-  )
+  .refine((value) => !/^0x0{40}$/i.test(value), "zero address is not allowed")
   .transform((value) => value.toLowerCase() as `0x${string}`);
 const bytes32 = z
   .string()
   .regex(/^0x[0-9a-fA-F]{64}$/)
   .transform((value) => value.toLowerCase() as Bytes32);
-const nonZeroBytes32 = bytes32.refine(
-  (value) => value !== ZERO_BYTES32,
-  "zero bytes32 is not allowed",
-);
+const nonZeroBytes32 = bytes32.refine((value) => value !== ZERO_BYTES32, "zero bytes32 is not allowed");
+const eip191Signature = z
+  .string()
+  .regex(/^0x[0-9a-fA-F]{130}$/)
+  .transform((value) => value.toLowerCase());
 const uint64String = boundedDecimal(UINT64_MAX, "uint64 block number");
 const uint256String = boundedDecimal(UINT256_MAX, "uint256 agent ID");
-const identityRegistry = address.refine(
-  (value) => value === ERC8004_IDENTITY_REGISTRY,
-  "identity registry mismatch",
-);
+const identityRegistry = address.refine((value) => value === ERC8004_IDENTITY_REGISTRY, "identity registry mismatch");
 
 const deterministicCheckSchema = z
   .object({
@@ -76,6 +64,7 @@ const usageSchema = z
 
 const computeProofSchema = z
   .object({
+    proofClass: z.literal("DECENTRALIZED_MODEL_TEE"),
     purpose: z.enum(["behavioral-risk", "contract-risk"]),
     provider: address,
     model: boundedString(256),
@@ -83,6 +72,14 @@ const computeProofSchema = z
     receiptDigest: nonZeroBytes32,
     requestDigest: nonZeroBytes32,
     responseDigest: nonZeroBytes32,
+    signatureScheme: z.literal("EIP191"),
+    expectedSigner: address,
+    signature: eip191Signature,
+    signedTextSha256: nonZeroBytes32,
+    requestSha256: nonZeroBytes32,
+    rawResponseSha256: nonZeroBytes32,
+    receiptSource: z.enum(["ZG-Res-Key", "body-id-fallback"]),
+    responseHeadersSha256: nonZeroBytes32,
     usage: usageSchema,
     processResponseVerified: z.literal(true),
   })
@@ -132,9 +129,7 @@ const evidenceEnvelopeSchema = z
         registrationDigest: nonZeroBytes32,
       })
       .strict(),
-    source: z
-      .object({ blockNumber: uint64String, blockHash: nonZeroBytes32 })
-      .strict(),
+    source: z.object({ blockNumber: uint64String, blockHash: nonZeroBytes32 }).strict(),
     subject: z
       .object({
         address,
@@ -160,9 +155,21 @@ const evidenceEnvelopeSchema = z
   })
   .strict()
   .superRefine((value, context) => {
-    addDuplicateIssue(value.deterministicChecks.map((check) => check.id), "check", context);
-    addDuplicateIssue(value.computeProofs.map((proof) => proof.receiptDigest), "receipt", context);
-    addDuplicateIssue(value.computeProofs.map((proof) => proof.purpose), "purpose", context);
+    addDuplicateIssue(
+      value.deterministicChecks.map((check) => check.id),
+      "check",
+      context,
+    );
+    addDuplicateIssue(
+      value.computeProofs.map((proof) => proof.receiptDigest),
+      "receipt",
+      context,
+    );
+    addDuplicateIssue(
+      value.computeProofs.map((proof) => proof.purpose),
+      "purpose",
+      context,
+    );
     addComputeIssues(value, context);
     addSubjectIssues(value.subject, context);
     if (value.identity.agentWallet !== value.subject.address) {
@@ -247,10 +254,7 @@ function addComputeIssues(value: ComputeInvariantInput, context: z.RefinementCtx
   const contract = countPurpose(value, "contract-risk");
   if (behavioral !== 1) addIssue(context, "exactly one behavioral-risk proof required");
   if (value.coverage.codeCompute.status === "VERIFIED" && contract !== 1) {
-    addIssue(
-      context,
-      "exactly one contract-risk proof required when code Compute is verified",
-    );
+    addIssue(context, "exactly one contract-risk proof required when code Compute is verified");
   }
   if (value.coverage.codeCompute.status === "NOT_APPLICABLE") {
     if (value.subject.kind !== "EOA") {
@@ -317,10 +321,7 @@ function boundedDecimal(maximum: bigint, label: string) {
   return z
     .string()
     .regex(decimalPattern)
-    .refine(
-      (value) => decimalPattern.test(value) && BigInt(value) <= maximum,
-      `${label} overflow`,
-    );
+    .refine((value) => decimalPattern.test(value) && BigInt(value) <= maximum, `${label} overflow`);
 }
 
 type TraversalState = {
@@ -343,10 +344,7 @@ function visitCanonicalValue(value: unknown, depth: number, state: TraversalStat
   if (state.nodes > MAX_NODES) throw new EvidenceValidationError("evidence node limit exceeded");
   if (value === undefined) throw new EvidenceValidationError("undefined evidence value");
   if (typeof value === "string") return visitString(value, state);
-  if (
-    typeof value === "bigint" ||
-    (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))
-  ) {
+  if (typeof value === "bigint" || (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))) {
     throw new EvidenceValidationError("non-canonical numeric value");
   }
   if (!value || typeof value !== "object") return;

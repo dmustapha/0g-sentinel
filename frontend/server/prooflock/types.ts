@@ -39,19 +39,9 @@ export type ProofStage =
   | "COMPUTE_VERIFIED"
   | "STORAGE_VERIFIED"
   | "SEALED";
-export type ProofClass =
-  | "DETERMINISTIC"
-  | "COMPUTE_VERIFIED"
-  | "STORAGE_VERIFIED"
-  | "SEALED";
+export type ProofClass = "DETERMINISTIC" | "COMPUTE_VERIFIED" | "STORAGE_VERIFIED" | "SEALED";
 export type CheckStatus = "PASS" | "WARN" | "FAIL" | "NOT_APPLICABLE";
-export type ProofLifecycle =
-  | "NONE"
-  | "ACTIVE"
-  | "REVOKED"
-  | "DRIFTED"
-  | "SUPERSEDED"
-  | "EXPIRED";
+export type ProofLifecycle = "NONE" | "ACTIVE" | "REVOKED" | "DRIFTED" | "SUPERSEDED" | "EXPIRED";
 
 export const GATE_REASON = {
   ALLOWED: 0,
@@ -97,6 +87,7 @@ export type DeterministicCheck = Readonly<{
 }>;
 
 export type ComputeProof = Readonly<{
+  proofClass: "DECENTRALIZED_MODEL_TEE";
   purpose: "behavioral-risk" | "contract-risk";
   provider: HexAddress;
   model: string;
@@ -104,6 +95,14 @@ export type ComputeProof = Readonly<{
   receiptDigest: Bytes32;
   requestDigest: Bytes32;
   responseDigest: Bytes32;
+  signatureScheme: "EIP191";
+  expectedSigner: HexAddress;
+  signature: string;
+  signedTextSha256: Bytes32;
+  requestSha256: Bytes32;
+  rawResponseSha256: Bytes32;
+  receiptSource: "ZG-Res-Key" | "body-id-fallback";
+  responseHeadersSha256: Bytes32;
   usage: Readonly<{
     promptTokens: number;
     completionTokens: number;

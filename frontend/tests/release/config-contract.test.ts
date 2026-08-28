@@ -25,6 +25,13 @@ const DEPLOY_V2 = [
 ];
 
 describe("release configuration and legacy boundary", () => {
+  it("packages browser assets into the standalone runtime after every build", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    expect(packageJson.scripts?.postbuild).toBe("node scripts/prepare-standalone.mjs");
+  });
+
   it.each([".env.example", "../.env.example"])("documents every active public V2 variable in %s", (path) => {
     const text = readFileSync(resolve(process.cwd(), path), "utf8");
     for (const name of PUBLIC_V2) expect(text).toMatch(new RegExp(`^${name}=`, "m"));

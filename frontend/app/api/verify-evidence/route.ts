@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
 
   const tmpPath = join(tmpdir(), `0g-verify-${Date.now()}.json`);
   try {
-    const { Indexer } = await import("@0gfoundation/0g-ts-sdk");
+    const { Indexer } = await import("@0gfoundation/0g-storage-ts-sdk");
     const indexerRpc = process.env.ZERO_G_STORAGE_INDEXER || "https://indexer-storage-turbo.0g.ai";
     const indexer = new Indexer(indexerRpc);
 

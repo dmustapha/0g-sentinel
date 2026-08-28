@@ -28,7 +28,7 @@ export async function uploadEvidence(evidence: EvidenceArchive): Promise<string>
   let zgFile: any = null;
 
   try {
-    const { ZgFile, Indexer } = await import("@0gfoundation/0g-ts-sdk");
+    const { ZgFile, Indexer } = await import("@0gfoundation/0g-storage-ts-sdk");
     const { ethers } = await import("ethers");
 
     const rpcEndpoint = process.env.ZERO_G_RPC || "https://evmrpc.0g.ai";

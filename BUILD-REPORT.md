@@ -19,7 +19,9 @@ In progress on `feature/sentinel-prooflock`.
 | V2 contracts | Complete | 45 focused and 134 full Hardhat tests; spec and security reviews approved |
 | Canonical evidence | Complete | 106 tests; spec and code-quality reviews approved |
 | ERC-8004 identity | Complete | 116 focused and 222 full ProofLock tests; spec and code-quality reviews approved |
-| Compute and Storage | Pending | Pending |
+| Subject analysis | Complete | 67 focused tests; spec and code-quality reviews approved |
+| Strict Storage | Complete | 42 focused tests; corrective security review approved |
+| Strict Compute | In review | Signed-transcript and durable-replay hardening in progress |
 | Runner and APIs | Pending | Pending |
 | Frontend | Pending | Pending |
 | Mainnet and package | Pending | Pending |
@@ -48,3 +50,20 @@ In progress on `feature/sentinel-prooflock`.
 - Verifies the registration-v1 type and exact agent-ID backlink, hashes the retrieved bytes, and returns a normalized immutable card rather than mutable source bytes.
 - Final GREEN: 116 identity tests, 222 full ProofLock tests, frontend typecheck, and diff check.
 - Reviews: specification compliant; no open Critical or Important code-quality findings.
+
+## Subject Analysis Phase
+
+- Commits: `2a076cf`, `7b87bef`, `422e60e`, `03ba0e7`.
+- Classifies plain EOAs, exact EIP-7702 delegated EOAs, and contracts at one block number and hash; the source block is rechecked after analysis.
+- Uses subject-appropriate checks: bounded EOA history snapshots, live delegation targets, exact EIP-1167 clones, candidate-only EIP-1967 slots, and resolver-bound proxy/source metadata.
+- Converts analysis into the exact canonical evidence shape through one tested adapter; dead targets, malformed RPC values, unbound sources, and reorg splits fail closed.
+- Final GREEN: 67 focused tests; independent review found no open Critical or Important issues.
+
+## Strict Storage Phase
+
+- Commits: `66985de`, `0b872bb`.
+- Uses exact `@0gfoundation/0g-storage-ts-sdk@1.2.11` canonical bytes and independently recomputes the SDK's 0G root before upload and after retrieval.
+- Binds chain ID 16661, expected Flow contract, submit calldata, receipt, and exactly one matching `Submit` event to the locally computed submission.
+- Persists upload state before broadcast and reconciles submitted transactions after interruption; no SHA/content-hash fallback exists.
+- The SDK's `proof=true` path does not yet validate network Merkle proofs, so evidence records `networkProofVerified: false` and never claims otherwise. `retrievalVerified` means exact bytes, digest, and independently recomputed 0G root all match.
+- Final GREEN: 42 focused tests; independent review found no open Critical or Important issues.

@@ -37,3 +37,11 @@ The pre-upload envelope explicitly says Storage is still pending. Only a separat
 ProofLock does not trust a wallet address typed into a form. It resolves the agent owner, metadata URI, and active agent wallet from the canonical 0G ERC-8004 registry at one finalized block. After downloading and validating the registration card, it reads that block again; if the block hash changed, the scan is rejected and retried instead of joining facts from two chain histories.
 
 Registration-card retrieval is intentionally hostile-input code. It rejects private-network destinations and mixed DNS answers, pins the validated public IP to the HTTPS request, disables connection reuse, follows only bounded safe redirects, enforces one absolute deadline and byte limit, and preserves very large agent IDs without JavaScript rounding. The returned card is normalized and immutable, and its digest commits to the exact bytes fetched.
+
+### Why subject type changes the audit
+
+A contract, a plain EOA, and an EIP-7702 delegated EOA do not have the same security behavior. ProofLock classifies the live bytecode first, then runs only checks that make sense for that subject. Contract analysis follows confirmed proxy implementations; a conventional EIP-1967 storage slot alone is only a candidate, because any contract can write a benign address there. Delegated EOAs must point to live code and include the delegation target's code hash in drift monitoring. Plain EOAs use nonce, balance, and bounded transaction history; no history becomes caution, never evidence of safety.
+
+### What Storage verification really proves
+
+The current 0G Storage TypeScript SDK accepts `proof=true` on download but does not yet validate the network Merkle proof internally. ProofLock states that limitation explicitly. It still verifies a strong chain of facts: the exact canonical bytes produce a locally computed 0G root; the mainnet Flow transaction and `Submit` event bind that submission; the retrieved bytes are identical; and recomputing the 0G root after retrieval yields the same value. The evidence records network-proof validation as unavailable instead of upgrading an SDK capability that does not exist.

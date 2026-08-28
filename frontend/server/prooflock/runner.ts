@@ -82,6 +82,7 @@ async function run(
   const deterministic = await execute("RUNNING_DETERMINISTIC_CHECKS", () => dependencies.runDeterministicChecks(identity, subject));
   assertDeterministic(subject, deterministic);
   const compute = await execute("RUNNING_COMPUTE", () => dependencies.runCompute(identity, subject, deterministic));
+  assertCompute(compute);
   const computeRoot = computeProofRoot(compute.proofs);
   const context = Object.freeze({ input, identity, subject, deterministic, compute, computeRoot });
   const canonical = await execute("CANONICALIZING_EVIDENCE", async () => {
@@ -150,16 +151,23 @@ function safeReport(report: ((stage: RunnerStage) => void) | undefined, stage: R
 
 function validateRunnerInput(input: RunnerInput): RunnerInput {
   try {
-    if (!input || !Number.isSafeInteger(input.policyVersion) || input.policyVersion < 1 || input.policyVersion > 4_294_967_295) throw new Error();
-    if (input.validForSeconds !== 7 * 86400) throw new Error();
-    if (!/^0x[0-9a-fA-F]{40}$/.test(input.registryAddress) || /^0x0{40}$/i.test(input.registryAddress)) throw new Error();
-    if (!/^0x[0-9a-fA-F]{40}$/.test(input.scanner) || /^0x0{40}$/i.test(input.scanner)) throw new Error();
-    if (!input.scannerSoftwareVersion.trim() || input.scannerSoftwareVersion.length > 128) throw new Error();
-    if (input.mode === "RESEAL" && (!input.expectedPriorVersion || input.expectedPriorVersion < 1n)) throw new Error();
-    if (input.mode === "RESEAL" && (!input.previousProofId || !/^0x[0-9a-fA-F]{64}$/.test(input.previousProofId) || /^0x0{64}$/i.test(input.previousProofId))) throw new Error();
-    if (input.mode === "SEAL" && (input.expectedPriorVersion !== undefined || input.previousProofId !== undefined)) throw new Error();
-    if (input.mode !== "SEAL" && input.mode !== "RESEAL") throw new Error();
-    return Object.freeze(input);
+    if (!input) throw new Error();
+    const snapshot = { ...input, identity: Object.freeze({ ...input.identity }) };
+    if (!Number.isSafeInteger(snapshot.policyVersion) || snapshot.policyVersion < 1 || snapshot.policyVersion > 4_294_967_295) throw new Error();
+    if (snapshot.validForSeconds !== 7 * 86400) throw new Error();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(snapshot.registryAddress) || /^0x0{40}$/i.test(snapshot.registryAddress)) throw new Error();
+    if (!/^0x[0-9a-fA-F]{40}$/.test(snapshot.scanner) || /^0x0{40}$/i.test(snapshot.scanner)) throw new Error();
+    if (!snapshot.scannerSoftwareVersion.trim() || snapshot.scannerSoftwareVersion.length > 128) throw new Error();
+    if (snapshot.mode === "RESEAL" && (typeof snapshot.expectedPriorVersion !== "bigint"
+      || snapshot.expectedPriorVersion < 1n || snapshot.expectedPriorVersion >= 1n << 64n)) throw new Error();
+    if (snapshot.mode === "RESEAL" && (!snapshot.previousProofId || !/^0x[0-9a-fA-F]{64}$/.test(snapshot.previousProofId) || /^0x0{64}$/i.test(snapshot.previousProofId))) throw new Error();
+    if (snapshot.mode === "SEAL" && (snapshot.expectedPriorVersion !== undefined || snapshot.previousProofId !== undefined)) throw new Error();
+    if (snapshot.mode !== "SEAL" && snapshot.mode !== "RESEAL") throw new Error();
+    return Object.freeze({ ...snapshot,
+      registryAddress: snapshot.registryAddress.toLowerCase() as HexAddress,
+      scanner: snapshot.scanner.toLowerCase() as HexAddress,
+      ...(snapshot.previousProofId ? { previousProofId: snapshot.previousProofId.toLowerCase() as Bytes32 } : {}),
+    });
   } catch (error) {
     throw new ProofLockStageError("VALIDATING_IDENTITY", "Invalid operator runner input", error);
   }
@@ -188,6 +196,15 @@ function assertDeterministic(subject: ClassifiedSubject, result: DeterministicSt
   if (result.evidenceSubject.address.toLowerCase() !== subject.address.toLowerCase()
     || result.evidenceSubject.kind !== subject.kind || result.evidenceSubject.runtimeCodeHash !== subject.runtimeCodeHash) {
     throw new ProofLockStageError("RUNNING_DETERMINISTIC_CHECKS", "Deterministic evidence subject mismatch");
+  }
+}
+
+function assertCompute(result: ComputeStageResult): void {
+  const score = result.behavioralScore;
+  const expectedLabel = score < 30 ? "SAFE" : score < 60 ? "CAUTION" : "FLAGGED";
+  if (!Number.isSafeInteger(score) || score < 0 || score > 100
+    || result.verdict.riskScore !== score || result.verdict.label !== expectedLabel) {
+    throw new ProofLockStageError("RUNNING_COMPUTE", "Compute verdict violates the fixed risk policy");
   }
 }
 
@@ -236,7 +253,7 @@ function createChainInput(
   const artifactHash = keccak256(toUtf8Bytes(canonicalizeStorageCommitment(storage))) as Bytes32;
   return Object.freeze({
     registryAddress: context.input.registryAddress.toLowerCase() as HexAddress, mode: context.input.mode,
-    expectedPriorVersion: context.input.expectedPriorVersion,
+    expectedPriorVersion: context.input.expectedPriorVersion, previousProofId: context.input.previousProofId,
     identityKey: computeIdentityKey(context.identity.identity), subject: context.subject.address,
     envelopeDigest: canonical.envelopeDigest, storageRoot: storage.storageRoot,
     computeRoot: context.computeRoot, artifactHash, runtimeCodeHash: context.subject.runtimeCodeHash,

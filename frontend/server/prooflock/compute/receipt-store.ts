@@ -98,6 +98,8 @@ type FileReceiptClaimStoreOptions = Readonly<{
   maximumRecords?: number;
   maximumBytes?: number;
   clock?: () => number;
+  /** Deterministic fencing test seam; never configured by production. */
+  testBeforeRecordWrite?: () => Promise<void>;
 }>;
 
 export class FileReceiptClaimStore implements ReceiptClaimStore {
@@ -115,46 +117,49 @@ export class FileReceiptClaimStore implements ReceiptClaimStore {
 
   async claim(key: string, metadata: ReceiptClaimMetadata, leaseMs: number) {
     validateLeaseDuration(leaseMs);
-    return this.withGlobalLock(async () => {
+    return this.withGlobalLock(async (fence) => {
       const now = this.clock();
-      await this.collectExpired(now);
+      await this.collectResidue(fence);
+      await this.collectExpired(now, fence);
       const keyHash = stableHash(key);
-      const current = await this.read(keyHash);
+      const current = await this.read(keyHash, fence);
       if (current) return null;
       const record = this.newRecord(keyHash, metadata, now + leaseMs);
-      await this.assertCapacity(Buffer.byteLength(JSON.stringify(record)));
-      await this.write(record);
+      await this.write(record, fence);
       return record.token;
     });
   }
 
   async renew(key: string, token: string, leaseMs: number) {
     validateLeaseDuration(leaseMs);
-    await this.withGlobalLock(async () => {
+    await this.withGlobalLock(async (fence) => {
       const now = this.clock();
-      const record = await this.pending(stableHash(key), token, now);
-      await this.write({ ...record, expiresAt: now + leaseMs });
+      await this.collectResidue(fence);
+      const record = await this.pending(stableHash(key), token, now, fence);
+      await this.write({ ...record, expiresAt: now + leaseMs }, fence);
     });
   }
 
   async commit(key: string, token: string, retentionMs: number) {
     validateRetention(retentionMs);
-    await this.withGlobalLock(async () => {
+    await this.withGlobalLock(async (fence) => {
       const now = this.clock();
-      const record = await this.pending(stableHash(key), token, now);
-      await this.write({ ...record, state: "COMMITTED", retentionUntil: now + retentionMs });
+      await this.collectResidue(fence);
+      const record = await this.pending(stableHash(key), token, now, fence);
+      await this.write({ ...record, state: "COMMITTED", retentionUntil: now + retentionMs }, fence);
     });
   }
 
   async release(key: string, token: string) {
-    await this.withGlobalLock(async () => {
-      const record = await this.read(stableHash(key));
-      if (record?.state === "CLAIMED" && record.token === token) await this.removeRecord(record.keyHash);
+    await this.withGlobalLock(async (fence) => {
+      await this.collectResidue(fence);
+      const record = await this.read(stableHash(key), fence);
+      if (record?.state === "CLAIMED" && record.token === token) await this.removeRecord(record.keyHash, fence);
     });
   }
 
-  private async pending(keyHash: string, token: string, now: number) {
-    const record = await this.read(keyHash);
+  private async pending(keyHash: string, token: string, now: number, fence: LockFence) {
+    const record = await this.read(keyHash, fence);
     if (!record || record.state !== "CLAIMED" || record.token !== token || record.expiresAt <= now) storeConflict();
     return record;
   }
@@ -163,11 +168,11 @@ export class FileReceiptClaimStore implements ReceiptClaimStore {
     return recordSchema.parse({ version: 1, keyHash, token: hexlify(randomBytes(32)), state: "CLAIMED", metadata, expiresAt });
   }
 
-  private async withGlobalLock<T>(operation: () => Promise<T>): Promise<T> {
+  private async withGlobalLock<T>(operation: (fence: LockFence) => Promise<T>): Promise<T> {
     await this.ensureDirectory();
     const lock = await acquireGlobalLock(this.options.stateDirectory);
     try {
-      return await operation();
+      return await operation(lock);
     } finally {
       await lock.release();
     }
@@ -182,9 +187,10 @@ export class FileReceiptClaimStore implements ReceiptClaimStore {
 
   private path(keyHash: string) { return join(this.options.stateDirectory, `${keyHash}.json`); }
 
-  private async read(keyHash: string): Promise<ReceiptRecord | null> {
+  private async read(keyHash: string, fence: LockFence): Promise<ReceiptRecord | null> {
     let handle;
     try {
+      await fence.assertOwner();
       handle = await open(this.path(keyHash), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
       const info = await handle.stat();
       if (!info.isFile() || info.size > 8_192) throw new TypeError("unsafe receipt record");
@@ -197,48 +203,82 @@ export class FileReceiptClaimStore implements ReceiptClaimStore {
     } finally { await handle?.close(); }
   }
 
-  private async write(record: ReceiptRecord) {
+  private async write(record: ReceiptRecord, fence: LockFence) {
     const target = this.path(record.keyHash);
     const temporary = `${target}.${record.token.slice(2)}.tmp`;
+    const serialized = JSON.stringify(record);
     let handle;
+    let renamed = false;
     try {
+      await this.assertReplacementCapacity(record.keyHash, Buffer.byteLength(serialized), fence);
+      await this.options.testBeforeRecordWrite?.();
+      await fence.assertOwner();
       handle = await open(temporary, writeFlags(), 0o600);
-      await handle.writeFile(JSON.stringify(record), { encoding: "utf8" });
+      await handle.writeFile(serialized, { encoding: "utf8" });
       await handle.sync();
       await handle.close();
       handle = undefined;
+      await fence.assertOwner();
       await rename(temporary, target);
+      renamed = true;
       await syncDirectory(this.options.stateDirectory);
     } finally {
       await handle?.close();
-      await unlink(temporary).catch((error) => { if (errorCode(error) !== "ENOENT") throw error; });
+      if (!renamed) {
+        await fence.assertOwner();
+        await unlink(temporary)
+          .then(() => syncDirectory(this.options.stateDirectory))
+          .catch((error) => {
+            if (errorCode(error) !== "ENOENT") throw error;
+          });
+      }
     }
   }
 
-  private async removeRecord(keyHash: string) {
+  private async removeRecord(keyHash: string, fence: LockFence) {
+    await fence.assertOwner();
     await unlink(this.path(keyHash));
     await syncDirectory(this.options.stateDirectory);
   }
 
-  private async collectExpired(now: number) {
+  private async collectExpired(now: number, fence: LockFence) {
+    await fence.assertOwner();
     const entries = await readdir(this.options.stateDirectory, { withFileTypes: true });
     for (const entry of entries) {
       if (!/^[0-9a-f]{64}\.json$/.test(entry.name)) continue;
       if (!entry.isFile() || entry.isSymbolicLink()) throw new TypeError("unsafe state entry");
-      const record = await this.read(entry.name.slice(0, 64));
-      if (record && expired(record, now)) await this.removeRecord(record.keyHash);
+      const record = await this.read(entry.name.slice(0, 64), fence);
+      if (record && expired(record, now)) await this.removeRecord(record.keyHash, fence);
     }
   }
 
-  private async assertCapacity(incomingBytes: number) {
+  private async assertReplacementCapacity(keyHash: string, incomingBytes: number, fence: LockFence) {
+    await fence.assertOwner();
     const entries = await readdir(this.options.stateDirectory, { withFileTypes: true });
     const records = entries.filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry.name));
     let bytes = 0;
+    let replacedBytes = 0;
     for (const entry of records) {
       if (!entry.isFile() || entry.isSymbolicLink()) throw new TypeError("unsafe state entry");
-      bytes += (await lstat(join(this.options.stateDirectory, entry.name))).size;
+      await fence.assertOwner();
+      const size = (await lstat(join(this.options.stateDirectory, entry.name))).size;
+      bytes += size;
+      if (entry.name === `${keyHash}.json`) replacedBytes = size;
     }
-    if (records.length >= this.maximumRecords || bytes + incomingBytes > this.maximumBytes) storeFull("durable receipt store is full");
+    const recordDelta = replacedBytes === 0 ? 1 : 0;
+    if (records.length + recordDelta > this.maximumRecords || bytes - replacedBytes + incomingBytes > this.maximumBytes) storeFull("durable receipt store is full");
+  }
+
+  private async collectResidue(fence: LockFence) {
+    await fence.assertOwner();
+    const entries = await readdir(this.options.stateDirectory, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.name.endsWith(".tmp")) continue;
+      if (!entry.isFile() || entry.isSymbolicLink()) throw new TypeError("unsafe temp residue");
+      await fence.assertOwner();
+      await unlink(join(this.options.stateDirectory, entry.name));
+      await syncDirectory(this.options.stateDirectory);
+    }
   }
 }
 
@@ -254,9 +294,7 @@ async function acquireGlobalLock(directory: string) {
       await handle.sync();
       await handle.close();
       await syncDirectory(lock);
-      const heartbeat = setInterval(() => void touch(owner, lock), LOCK_STALE_MS / 3);
-      heartbeat.unref();
-      return { release: () => releaseGlobalLock(directory, lock, owner, token, heartbeat) };
+      return new LockFence(directory, lock, owner, token);
     } catch (error) {
       if (errorCode(error) !== "EEXIST") throw error;
       await recoverStaleLock(directory, lock);
@@ -266,10 +304,57 @@ async function acquireGlobalLock(directory: string) {
   throw computeFailure("COMPUTE_BROKER_ERROR", "receipt store lock is unavailable");
 }
 
-async function touch(owner: string, lock: string) {
-  const now = new Date();
-  await utimes(owner, now, now).catch(() => undefined);
-  await utimes(lock, now, now).catch(() => undefined);
+class LockFence {
+  private valid = true;
+  private readonly heartbeat: NodeJS.Timeout;
+
+  constructor(
+    private readonly directory: string,
+    private readonly lock: string,
+    private readonly owner: string,
+    private readonly token: string,
+  ) {
+    this.heartbeat = setInterval(() => void this.touch(), LOCK_STALE_MS / 3);
+    this.heartbeat.unref();
+  }
+
+  async assertOwner(): Promise<void> {
+    if (!this.valid) return fenceFailure();
+    let handle;
+    try {
+      const lockInfo = await lstat(this.lock);
+      if (!lockInfo.isDirectory() || lockInfo.isSymbolicLink()) return fenceFailure();
+      handle = await open(this.owner, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+      if ((await handle.readFile({ encoding: "utf8" })) !== this.token) return fenceFailure();
+    } catch (error) {
+      this.valid = false;
+      throw computeFailure("COMPUTE_BROKER_ERROR", "receipt store lock ownership was lost", error);
+    } finally {
+      await handle?.close();
+    }
+  }
+
+  async release(): Promise<void> {
+    clearInterval(this.heartbeat);
+    if (!this.valid) return;
+    try {
+      await this.assertOwner();
+      await releaseGlobalLock(this.directory, this.lock, this.owner, this.token);
+    } finally {
+      this.valid = false;
+    }
+  }
+
+  private async touch() {
+    try {
+      await this.assertOwner();
+      const now = new Date();
+      await utimes(this.owner, now, now);
+      await utimes(this.lock, now, now);
+    } catch {
+      this.valid = false;
+    }
+  }
 }
 
 async function recoverStaleLock(directory: string, lock: string) {
@@ -285,14 +370,7 @@ async function recoverStaleLock(directory: string, lock: string) {
   } catch (error) { if (errorCode(error) !== "ENOENT") throw error; }
 }
 
-async function releaseGlobalLock(directory: string, lock: string, owner: string, token: string, heartbeat: NodeJS.Timeout) {
-  clearInterval(heartbeat);
-  let handle;
-  try {
-    handle = await open(owner, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-    if ((await handle.readFile({ encoding: "utf8" })) !== token) return;
-  } catch (error) { if (errorCode(error) === "ENOENT") return; throw error; }
-  finally { await handle?.close(); }
+async function releaseGlobalLock(directory: string, lock: string, _owner: string, token: string) {
   const released = join(directory, `.store.release-${token}`);
   try {
     await rename(lock, released);
@@ -300,6 +378,10 @@ async function releaseGlobalLock(directory: string, lock: string, owner: string,
     await rm(released, { recursive: true, force: true });
     await syncDirectory(directory);
   } catch (error) { if (errorCode(error) !== "ENOENT") throw error; }
+}
+
+function fenceFailure(): never {
+  throw computeFailure("COMPUTE_BROKER_ERROR", "receipt store lock ownership was lost");
 }
 
 async function syncDirectory(path: string) {

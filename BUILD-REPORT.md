@@ -17,7 +17,8 @@ In progress on `feature/sentinel-prooflock`.
 |---|---|---|
 | Scope and isolation | Complete | Approved scope, global worktree, green baseline |
 | V2 contracts | Complete | 45 focused and 134 full Hardhat tests; spec and security reviews approved |
-| Evidence and identity | Pending | Pending |
+| Canonical evidence | Complete | 106 tests; spec and code-quality reviews approved |
+| ERC-8004 identity | Pending | Pending |
 | Compute and Storage | Pending | Pending |
 | Runner and APIs | Pending | Pending |
 | Frontend | Pending | Pending |
@@ -30,3 +31,11 @@ In progress on `feature/sentinel-prooflock`.
 - Final GREEN: 45 focused tests, 134 full tests, root typecheck, and diff check.
 - Reviews: specification compliant; no open Critical or Important code-quality findings.
 - Deferred minors: shared registry interface extraction and nuanced ERC-8004 `ownerOf` revert classification.
+
+## Canonical Evidence Phase
+
+- Commits: `230c7f6`, `f4216ec`, `ad8e9f7`, `2cab8f9`.
+- Strict evidence-v1 and StorageCommitment schemas, JCS bytes, Keccak hashes, and receipt binding.
+- RED cycles exposed 63 cumulative missing invariants across coverage, provenance, hostile inputs, and cross-field joins.
+- Final GREEN: 106 tests, frontend typecheck, production build, diff check.
+- Reviews: specification compliant; no open Critical or Important code-quality findings.

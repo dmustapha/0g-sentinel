@@ -53,3 +53,11 @@ ProofLock accepts only the decentralized model-TEE proof class. It does not turn
 Some SDK operations cannot be cancelled from inside the library. ProofLock therefore runs them in disposable child processes. A deadline kills and reaps the child, so a hung SDK cannot freeze the application or leave a process-wide networking override behind.
 
 Paid inference also creates a replay risk: the same valid receipt must not be reused for a different lease. ProofLock stores claims in a transactional SQLite ledger. The replay check, expiry cleanup, capacity check, and state change happen in one serialized transaction, eliminating the stale-lock races that a hand-rolled file lease would create. This operator path requires Node 24 and a persistent writable volume; the public read-only frontend does not need that authority.
+
+### Why the runner is more than orchestration
+
+The runner is the transaction boundary for the whole product. It executes identity, classification, deterministic checks, Compute, canonicalization, Storage, Chain write, and Chain readback in one fixed sequence. If any stage fails, no later stage is called. A progress listener may describe what is happening, but it cannot change the evidence or make a failed scan appear sealed.
+
+The contract also checks the analyzed runtime hash at the exact moment the lease is mined. This matters because code could change after the runner's preflight but before transaction execution. Without the contract check, the runner could notice the mismatch only after an ACTIVE lease had already been created. Reseals similarly include the exact prior version, so two competing updates cannot both advance from the same proof.
+
+Drift detection is intentionally on demand, not continuous monitoring. The operator recomputes the identity, card, subject, runtime, proxy or delegation target, implementation hash, and policy fingerprint. If it changed, the drift transaction names the version being invalidated and is accepted only after its calldata, finalized receipt, event, and onchain readback all agree.

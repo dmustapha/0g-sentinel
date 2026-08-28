@@ -22,7 +22,7 @@ In progress on `feature/sentinel-prooflock`.
 | Subject analysis | Complete | 67 focused tests; spec and code-quality reviews approved |
 | Strict Storage | Complete | 42 focused tests; corrective security review approved |
 | Strict Compute | Complete | 53 focused tests; transactional replay store; corrective security review approved |
-| Runner and APIs | Pending | Pending |
+| Runner and APIs | In progress | Runner/drift complete and reviewed; API/auth/health pending |
 | Frontend | Pending | Pending |
 | Mainnet and package | Pending | Pending |
 
@@ -79,3 +79,15 @@ In progress on `feature/sentinel-prooflock`.
 - Final GREEN: 53 focused Compute tests, 394 full ProofLock tests, 134 Hardhat tests, both TypeScript checks, and the Next production build.
 - Reviews: independent corrective security review found no open Critical or Important issues.
 - Runtime constraint: paid mutation paths require Node 24 and persistent writable storage for the SQLite replay ledger. Public read-only surfaces may be deployed separately.
+
+## Controlled Runner and Drift Phase
+
+- Commits: `d398080`, `d9c758d`, `9d2cc62`.
+- Executes the ten ProofLock stages synchronously in fixed order and proves that a failure at any stage produces no later-stage side effect.
+- Recomputes canonical evidence and commitments inside the runner; progress callbacks and injected digest values cannot control proof truth.
+- Atomically binds the analyzed runtime hash and expected prior version inside `SentinelRegistryV2`, closing the mining-window and competing-reseal races before state or events change.
+- Requires exact behavioral score, verdict risk, and policy-label agreement before Storage or Chain can run.
+- Derives a domain-separated predecessor proof ID from the current onchain record and verifies it before reseal.
+- On-demand drift writes are expected-version-bound and verify chain, code, calldata, receipt, finality, exactly one event, and drifted readback before reporting success.
+- Final GREEN: 58 focused runner tests, 452 full ProofLock tests, 140 Hardhat tests, both TypeScript checks, and the Next production build.
+- Reviews: contract/runtime and runner corrective reviews found no open Critical or Important issues.

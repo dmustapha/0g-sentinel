@@ -10,7 +10,7 @@ async function main(): Promise<void> {
 
 function parseIdentityKey(value: string | undefined): Bytes32 {
   if (!value || !/^0x[0-9a-fA-F]{64}$/.test(value) || /^0x0{64}$/i.test(value)) {
-    throw new Error("Usage: ts-node scripts/prooflock/check-drift.ts <identity-key> [--mark]");
+    throw new Error("Usage: npm run prooflock:drift -- <identity-key> [--mark]");
   }
   return value.toLowerCase() as Bytes32;
 }

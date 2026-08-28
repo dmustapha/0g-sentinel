@@ -34,8 +34,8 @@ type Environment = Record<string, string | undefined>;
 
 export type ProductionOperatorConfig = Readonly<{
   rpcUrl: string; storageIndexer: string; flowAddress: HexAddress; registryAddress: HexAddress;
-  scannerAddress: HexAddress; guardianAddress: HexAddress; scannerPrivateKey: string;
-  guardianPrivateKey: string; scannerSoftwareVersion: string; policyVersion: number;
+  adminAddress: HexAddress; scannerAddress: HexAddress; guardianAddress: HexAddress; scannerPrivateKey: string;
+  guardianPrivateKey: string; computePrivateKey: string; scannerSoftwareVersion: string; policyVersion: number;
   computeProvider: HexAddress; computeModel: string; stateDirectory: string;
   spendAuthorized: true; confirmations: number; timeoutMs: number;
 }>;
@@ -49,6 +49,7 @@ type Composition = Readonly<{
   runner: ProofLockRunnerDependencies;
   drift: Readonly<{
     chainAdapter: RegistryChainAdapter; registryAddress: HexAddress; confirmations: number; timeoutMs: number;
+    verifyAuthority(): Promise<void>;
     readSealedSnapshot(identityKey: Bytes32): Promise<Readonly<{ identityKey: Bytes32; version: bigint; fingerprint: DriftFingerprint }>>;
     resolveCurrentFingerprint(identityKey: Bytes32): Promise<DriftFingerprint>;
   }>;
@@ -63,19 +64,25 @@ export function readProductionOperatorConfig(
   requireNode24(nodeVersion);
   const scannerPrivateKey = required(env, "SENTINEL_0G_PRIVATE_KEY");
   const guardianPrivateKey = required(env, "PROOFLOCK_GUARDIAN_PRIVATE_KEY");
+  const computePrivateKey = required(env, "PROOFLOCK_COMPUTE_PRIVATE_KEY");
   const scannerAddress = address(env, "PROOFLOCK_SCANNER_ADDRESS");
   const guardianAddress = address(env, "PROOFLOCK_GUARDIAN_ADDRESS");
+  const adminAddress = address(env, "PROOFLOCK_ADMIN_ADDRESS");
   bindKey(scannerPrivateKey, scannerAddress, "scanner signing key");
   bindKey(guardianPrivateKey, guardianAddress, "guardian signing key");
-  if (scannerAddress.toLowerCase() === guardianAddress.toLowerCase()) {
-    throw new Error("ProofLock scanner and guardian signing keys must remain distinct");
+  const computeAddress = keyAddress(computePrivateKey, "Compute payer signing key");
+  if (new Set([adminAddress, scannerAddress, guardianAddress].map((value) => value.toLowerCase())).size !== 3) {
+    throw new Error("ProofLock admin, scanner, and guardian custody must remain distinct");
+  }
+  if ([scannerAddress, guardianAddress].some((address) => address.toLowerCase() === computeAddress.toLowerCase())) {
+    throw new Error("ProofLock Compute payer key must remain distinct from Registry role keys");
   }
   return Object.freeze({
     rpcUrl: exactUrl(env, "ZERO_G_RPC", MAINNET_RPC, "mainnet RPC"),
     storageIndexer: exactUrl(env, "ZERO_G_STORAGE_INDEXER", MAINNET_INDEXER, "mainnet Storage indexer"),
     flowAddress: exactAddress(env, "PROOFLOCK_STORAGE_FLOW_ADDRESS", MAINNET_FLOW),
     registryAddress: address(env, "PROOFLOCK_REGISTRY_V2_ADDRESS"),
-    scannerAddress, guardianAddress, scannerPrivateKey, guardianPrivateKey,
+    adminAddress, scannerAddress, guardianAddress, scannerPrivateKey, guardianPrivateKey, computePrivateKey,
     scannerSoftwareVersion: boundedText(env, "PROOFLOCK_SCANNER_SOFTWARE_VERSION", 128),
     policyVersion: integer(env, "PROOFLOCK_POLICY_VERSION", 1, 4_294_967_295),
     computeProvider: address(env, "PROOFLOCK_COMPUTE_PROVIDER"),
@@ -112,10 +119,7 @@ async function compose(config: ProductionOperatorConfig): Promise<Composition> {
   await requireMainnet(provider);
   const scanner = new Wallet(config.scannerPrivateKey, provider);
   const guardian = new Wallet(config.guardianPrivateKey, provider);
-  await Promise.all([
-    requireRole(provider, config.registryAddress, "SCANNER_ROLE", config.scannerAddress),
-    requireRole(provider, config.registryAddress, "GUARDIAN_ROLE", config.guardianAddress),
-  ]);
+  await requireCustody(provider, config);
   const subjectAdapter = subjectChainAdapter(provider);
   const scannerChain = createEthersRegistryChainAdapter(provider, scanner, config.registryAddress);
   const guardianChain = createEthersRegistryChainAdapter(provider, guardian, config.registryAddress);
@@ -128,7 +132,7 @@ async function compose(config: ProductionOperatorConfig): Promise<Composition> {
 }
 
 function createState(config: ProductionOperatorConfig, provider: JsonRpcProvider, scanner: Wallet) {
-  const compute = createProductionStrictComputeDependencies({ privateKey: config.scannerPrivateKey,
+  const compute = createProductionStrictComputeDependencies({ privateKey: config.computePrivateKey,
     rpcUrl: config.rpcUrl, stateDirectory: join(config.stateDirectory, "compute") });
   const storage = createZeroGStorageAdapter({ indexerRpc: config.storageIndexer,
     chainRpc: config.rpcUrl, expectedFlowAddress: config.flowAddress, signer: scanner });
@@ -159,8 +163,10 @@ function runnerDependencies(
       { confirmations: config.confirmations, receiptTimeoutMs: config.timeoutMs,
         expectedFlowAddress: config.flowAddress }),
     verifyStorage: (upload) => Promise.resolve(upload as Awaited<ReturnType<typeof persistVerifiedEvidence>>),
-    writeChain: (input) => writeProofLock(chain, input,
-      { confirmations: config.confirmations, timeoutMs: config.timeoutMs }),
+    writeChain: async (input) => {
+      await requireCustody(provider, config);
+      return writeProofLock(chain, input, { confirmations: config.confirmations, timeoutMs: config.timeoutMs });
+    },
     readChainBack: (input, write) => readProofLockBack(chain, input, write),
   });
 }
@@ -175,6 +181,7 @@ function driftDependencies(
 ): Composition["drift"] {
   return Object.freeze({
     chainAdapter, registryAddress: config.registryAddress,
+    verifyAuthority: () => requireCustody(provider, config),
     confirmations: config.confirmations, timeoutMs: config.timeoutMs,
     readSealedSnapshot: async (identityKey) => {
       const record = await chainAdapter.getProofLock(identityKey);
@@ -219,15 +226,26 @@ async function deterministicResult(
   subject: ClassifiedSubject,
 ): Promise<DeterministicStageResult> {
   const report = await runSubjectChecks(adapter, subject, sourceBlock(subject));
+  const evidenceSubject = toEvidenceSubject(subject, report);
+  assertProductionSealableSubject(subject, evidenceSubject);
   const findings = reportFindings(report);
   return Object.freeze({
     checks: [Object.freeze({ id: checkId(report), version: "1", status: report.status,
       inputDigest: digest({ address: subject.address, runtimeCodeHash: subject.runtimeCodeHash,
         block: sourceBlock(subject) }), outputDigest: digest(report), findings })],
-    report, evidenceSubject: toEvidenceSubject(subject, report),
+    report, evidenceSubject,
     codeRisk: report.status === "FAIL" ? 2 : report.status === "WARN" ? 1 : 0,
     omissions: subject.kind === "EOA" ? ["Contract code analysis is not applicable to an EOA."] : [],
   });
+}
+
+export function assertProductionSealableSubject(
+  subject: Pick<ClassifiedSubject, "kind">,
+  evidenceSubject: Pick<EvidenceEnvelopeV1["subject"], "proxyImplementation">,
+): void {
+  if (subject.kind === "EIP7702_DELEGATED_EOA" || evidenceSubject.proxyImplementation) {
+    throw new Error("Nested executable subjects are analyzed but not sealable until AgentGate enforces nested-code drift");
+  }
 }
 
 async function computeResult(
@@ -243,12 +261,14 @@ async function computeResult(
   const behavioral = await runStrictCompute(computeInput(config, "behavioral-risk", context), dependencies);
   const score = parseRiskScore(behavioral.content);
   const proofs = [behavioral.proof];
+  let codeRisk: number | null = null;
   if (subject.kind !== "EOA") {
     const code = await runStrictCompute(computeInput(config, "contract-risk", context), dependencies);
+    codeRisk = parseContractCodeRisk(code.content);
     proofs.push(code.proof);
   }
   const label = score < 30 ? "SAFE" as const : score < 60 ? "CAUTION" as const : "FLAGGED" as const;
-  return Object.freeze({ proofs: Object.freeze(proofs), behavioralScore: score,
+  return Object.freeze({ proofs: Object.freeze(proofs), behavioralScore: score, codeRisk,
     verdict: Object.freeze({ riskScore: score, label }) });
 }
 
@@ -348,19 +368,33 @@ async function requireMainnet(provider: JsonRpcProvider): Promise<void> {
   if (code === "0x") throw new Error("Canonical ERC-8004 Identity Registry is unavailable");
 }
 
-async function requireRole(
+async function requireCustody(
   provider: JsonRpcProvider,
-  registry: HexAddress,
-  roleMethod: "SCANNER_ROLE" | "GUARDIAN_ROLE",
-  account: HexAddress,
+  config: ProductionOperatorConfig,
 ): Promise<void> {
-  if (await provider.getCode(registry) === "0x") throw new Error("ProofLock RegistryV2 is unavailable");
-  const roleRaw = await provider.call({ to: registry, data: ROLE_INTERFACE.encodeFunctionData(roleMethod) });
-  const role = ROLE_INTERFACE.decodeFunctionResult(roleMethod, roleRaw)[0];
-  const hasRaw = await provider.call({ to: registry, data: ROLE_INTERFACE.encodeFunctionData("hasRole", [role, account]) });
-  if (ROLE_INTERFACE.decodeFunctionResult("hasRole", hasRaw)[0] !== true) {
-    throw new Error(`${roleMethod} signer is not authorized by RegistryV2`);
+  if (await provider.getCode(config.registryAddress) === "0x") throw new Error("ProofLock RegistryV2 is unavailable");
+  const scannerRole = await readRole(provider, config.registryAddress, "SCANNER_ROLE");
+  const guardianRole = await readRole(provider, config.registryAddress, "GUARDIAN_ROLE");
+  const adminRole = `0x${"00".repeat(32)}`;
+  const expected = [[scannerRole, config.scannerAddress], [guardianRole, config.guardianAddress],
+    [adminRole, config.adminAddress]] as const;
+  const forbidden = [[guardianRole, config.scannerAddress], [adminRole, config.scannerAddress],
+    [scannerRole, config.guardianAddress], [adminRole, config.guardianAddress],
+    [scannerRole, config.adminAddress], [guardianRole, config.adminAddress]] as const;
+  if ((await Promise.all(expected.map(([role, account]) => hasRole(provider, config.registryAddress, role, account)))).includes(false)
+    || (await Promise.all(forbidden.map(([role, account]) => hasRole(provider, config.registryAddress, role, account)))).includes(true)) {
+    throw new Error("RegistryV2 role custody no longer matches the separated production policy");
   }
+}
+
+async function readRole(provider: JsonRpcProvider, registry: HexAddress, method: "SCANNER_ROLE" | "GUARDIAN_ROLE") {
+  const raw = await provider.call({ to: registry, data: ROLE_INTERFACE.encodeFunctionData(method) });
+  return ROLE_INTERFACE.decodeFunctionResult(method, raw)[0] as string;
+}
+
+async function hasRole(provider: JsonRpcProvider, registry: HexAddress, role: string, account: HexAddress) {
+  const raw = await provider.call({ to: registry, data: ROLE_INTERFACE.encodeFunctionData("hasRole", [role, account]) });
+  return ROLE_INTERFACE.decodeFunctionResult("hasRole", raw)[0] === true;
 }
 
 function sourceBlock(subject: ClassifiedSubject) {
@@ -389,6 +423,11 @@ function parseRiskScore(content: string): number {
   let value: unknown;
   try { value = JSON.parse(content); } catch { throw new Error("0G Compute returned non-JSON risk output"); }
   return scoreSchema.parse(value).riskScore;
+}
+
+export function parseContractCodeRisk(content: string): number {
+  const score = parseRiskScore(content);
+  return score < 30 ? 0 : score < 60 ? 1 : 2;
 }
 
 function requireNode24(version: string): void {
@@ -457,7 +496,10 @@ function durableDirectory(env: Environment): string {
 }
 
 function bindKey(privateKey: string, expected: HexAddress, label: string): void {
-  let actual: string;
-  try { actual = new Wallet(privateKey).address; } catch { throw new Error(`${label} is invalid`); }
+  const actual = keyAddress(privateKey, label);
   if (actual !== expected) throw new Error(`${label} does not match configured address`);
+}
+
+function keyAddress(privateKey: string, label: string): string {
+  try { return new Wallet(privateKey).address; } catch { throw new Error(`${label} is invalid`); }
 }

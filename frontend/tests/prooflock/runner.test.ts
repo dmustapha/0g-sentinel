@@ -138,6 +138,7 @@ function dependencies(calls: RunnerStage[]): ProofLockRunnerDependencies {
     runCompute: stage("RUNNING_COMPUTE", {
       proofs: [computeProof()],
       behavioralScore: 12,
+      codeRisk: null,
       verdict: { riskScore: 12, label: "SAFE" as const },
     }),
     buildEvidenceEnvelope: stage("CANONICALIZING_EVIDENCE", envelope),
@@ -242,7 +243,7 @@ describe("controlled ProofLock runner", () => {
     const deps = dependencies(calls);
     vi.mocked(deps.runCompute).mockResolvedValueOnce({
       proofs: [computeProof(), { ...computeProof(), purpose: "contract-risk" }],
-      behavioralScore: 12, verdict: { riskScore: 12, label: "SAFE" },
+      behavioralScore: 12, codeRisk: null, verdict: { riskScore: 12, label: "SAFE" },
     });
     await expect(createProofLockRunner(deps).run({
       identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
@@ -257,7 +258,7 @@ describe("controlled ProofLock runner", () => {
     ["label mismatch", { behavioralScore: 60, verdict: { riskScore: 60, label: "SAFE" as const } }],
   ])("rejects policy-inconsistent Compute output: %s", async (_name, output) => {
     const deps = dependencies([]);
-    vi.mocked(deps.runCompute).mockResolvedValueOnce({ proofs: [computeProof()], ...output });
+    vi.mocked(deps.runCompute).mockResolvedValueOnce({ proofs: [computeProof()], codeRisk: null, ...output });
     await expect(createProofLockRunner(deps).run({
       identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
       scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800, mode: "SEAL",

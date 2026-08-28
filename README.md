@@ -71,12 +71,16 @@ The API accepts only identity, mode, expected prior version, and prior proof ID.
 software version, policy version, and seven-day TTL are injected by the server. The same boundary applies to:
 
 ```bash
-npx ts-node scripts/prooflock/run.ts /absolute/path/to/operator-input.json
-npx ts-node scripts/prooflock/check-drift.ts 0x<identity-key> [--mark]
+npm run prooflock:run -- /absolute/path/to/operator-input.json
+npm run prooflock:drift -- 0x<identity-key> [--mark]
 ```
 
-The scanner private key signs Compute, Storage, and Registry writes; the guardian key is distinct and only
-marks drift. Startup verifies both configured addresses against their keys and their onchain RegistryV2 roles.
+The Compute payer key is isolated from Registry authority. The scanner signs Storage and Registry writes; the
+guardian is distinct and only marks drift. Every mutation rechecks the separated admin/scanner/guardian role matrix.
+
+ProofLock analyzes proxy and EIP-7702 delegation targets, but this V2 Gate can enforce only the subject's direct
+runtime hash. Nested executable subjects therefore fail before paid Compute and cannot receive a lease until a later
+Gate version stores and checks the nested executable commitment on every admission.
 
 ### Deploy ProofLock V2 to 0G mainnet
 

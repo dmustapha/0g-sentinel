@@ -9,6 +9,7 @@ import type { ProductionOperatorBinding } from "./production-operator";
 
 type DriftOperator = Readonly<{
   chainAdapter: RegistryChainAdapter; registryAddress: `0x${string}`; confirmations: number; timeoutMs: number;
+  verifyAuthority(): Promise<void>;
   readSealedSnapshot(identityKey: Bytes32): Promise<Readonly<{ identityKey: Bytes32; version: bigint; fingerprint: DriftFingerprint }>>;
   resolveCurrentFingerprint(identityKey: Bytes32): Promise<DriftFingerprint>;
 }>;
@@ -41,12 +42,15 @@ export async function loadProofLockDrift(): Promise<DriftRunner> {
   const loaded = await loadModule();
   if (typeof loaded.createProofLockDriftOperator !== "function") throw new Error("Drift operator is unavailable");
   const operator = await loaded.createProofLockDriftOperator();
-  return Object.freeze({ run: (identityKey, mark) => runOnDemandDriftCheck({
+  return Object.freeze({ run: async (identityKey, mark) => {
+    if (mark) await operator.verifyAuthority();
+    return runOnDemandDriftCheck({
     readSealedSnapshot: operator.readSealedSnapshot,
     resolveCurrentFingerprint: operator.resolveCurrentFingerprint,
     markDrift: (request) => markProofLockDrift(operator.chainAdapter, { registryAddress: operator.registryAddress, ...request },
       { confirmations: operator.confirmations, timeoutMs: operator.timeoutMs }),
-  }, identityKey as Bytes32, mark) });
+    }, identityKey as Bytes32, mark);
+  } });
 }
 
 async function loadModule(): Promise<Partial<OperatorModule>> {

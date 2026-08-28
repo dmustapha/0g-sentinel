@@ -40,7 +40,7 @@ Registration-card retrieval is intentionally hostile-input code. It rejects priv
 
 ### Why subject type changes the audit
 
-A contract, a plain EOA, and an EIP-7702 delegated EOA do not have the same security behavior. ProofLock classifies the live bytecode first, then runs only checks that make sense for that subject. Contract analysis follows confirmed proxy implementations; a conventional EIP-1967 storage slot alone is only a candidate, because any contract can write a benign address there. Delegated EOAs must point to live code and include the delegation target's code hash in drift monitoring. Plain EOAs use nonce, balance, and bounded transaction history; no history becomes caution, never evidence of safety.
+A contract, a plain EOA, and an EIP-7702 delegated EOA do not have the same security behavior. ProofLock classifies the live bytecode first, then runs only checks that make sense for that subject. Contract analysis follows confirmed proxy implementations; a conventional EIP-1967 storage slot alone is only a candidate, because any contract can write a benign address there. Delegated EOAs must point to live code and include the delegation target's code hash in drift monitoring. Plain EOAs use nonce, balance, and bounded transaction history; no history becomes caution, never evidence of safety. V2 analyzes nested executables but refuses to seal them because AgentGateV2 cannot yet recheck their target code on every action.
 
 ### What Storage verification really proves
 
@@ -80,11 +80,11 @@ The server no longer loads an operator implementation from an environment-select
 is compiled with the application, and both the HTTP path and maintenance CLIs use it. That matters because otherwise
 the public UI could look strict while an entirely different runtime module issued the real leases.
 
-The scanner key signs Compute, Storage, and Registry operations. ProofLock compares that configured scanner with the
+The Compute SDK receives a separate payer key with no Registry role. The scanner key signs Storage and Registry operations. ProofLock compares that configured scanner with the
 key-derived address, its live Registry role, the submitted transaction sender, and the finalized transaction sender.
 The guardian key is distinct and only marks drift. Browser callers cannot choose either role, the registry, the policy,
 the scanner software label, or lease duration.
 
-The Compute SDK worker is a real file inside the production standalone artifact. It is launched as a disposable ESM
-child from the deployed application directory, so deadline cancellation still kills the process and deployment does
-not depend on a source-tree file that vanished during bundling.
+The Compute SDK worker is a self-contained file inside the production standalone artifact. The ESM source and its
+runtime dependencies are bundled into a Node CommonJS child so transitive dynamic requires remain valid without a
+development `node_modules` tree. Deadline cancellation still kills the process.

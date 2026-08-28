@@ -7,6 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProofLockDependencies,
   createProofLockDriftOperator,
+  assertProductionSealableSubject,
+  parseContractCodeRisk,
   readProductionOperatorConfig,
 } from "../../server/prooflock/production-operator";
 import { bindOperatorRunner } from "../../server/prooflock/operator";
@@ -14,10 +16,12 @@ import type { RunnerInput } from "../../server/prooflock/runner";
 
 const SCANNER_KEY = `0x${"11".repeat(32)}`;
 const GUARDIAN_KEY = `0x${"22".repeat(32)}`;
+const COMPUTE_KEY = `0x${"33".repeat(32)}`;
 const SCANNER = "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A";
 const GUARDIAN = "0x1563915e194D8CfBA1943570603F7606A3115508";
 const REGISTRY = "0x1000000000000000000000000000000000000001";
 const PROVIDER = "0x2000000000000000000000000000000000000002";
+const ADMIN = "0x3000000000000000000000000000000000000003";
 const FLOW = "0x62D4144dB0F0a6fBBaeb6296c785C71B3D57C526";
 const directories: string[] = [];
 
@@ -29,6 +33,7 @@ async function validEnv() {
     ZERO_G_STORAGE_INDEXER: "https://indexer-storage-turbo.0g.ai",
     PROOFLOCK_STORAGE_FLOW_ADDRESS: FLOW,
     PROOFLOCK_REGISTRY_V2_ADDRESS: REGISTRY,
+    PROOFLOCK_ADMIN_ADDRESS: ADMIN,
     PROOFLOCK_SCANNER_ADDRESS: SCANNER,
     PROOFLOCK_GUARDIAN_ADDRESS: GUARDIAN,
     PROOFLOCK_SCANNER_SOFTWARE_VERSION: "sentinel-prooflock-v2",
@@ -41,6 +46,7 @@ async function validEnv() {
     PROOFLOCK_TRANSACTION_TIMEOUT_MS: "60000",
     SENTINEL_0G_PRIVATE_KEY: SCANNER_KEY,
     PROOFLOCK_GUARDIAN_PRIVATE_KEY: GUARDIAN_KEY,
+    PROOFLOCK_COMPUTE_PRIVATE_KEY: COMPUTE_KEY,
   };
 }
 
@@ -79,6 +85,22 @@ describe("production ProofLock operator", () => {
     expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_GUARDIAN_PRIVATE_KEY: SCANNER_KEY,
       PROOFLOCK_GUARDIAN_ADDRESS: SCANNER }, "24.10.0"))
       .toThrow(/distinct/);
+    expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_COMPUTE_PRIVATE_KEY: SCANNER_KEY }, "24.10.0"))
+      .toThrow(/Compute payer key must remain distinct/);
+  });
+
+  it("refuses nested executable leases until AgentGate can enforce their live code", () => {
+    expect(() => assertProductionSealableSubject({ kind: "EIP7702_DELEGATED_EOA" }, {})).toThrow(/not sealable/);
+    expect(() => assertProductionSealableSubject({ kind: "CONTRACT" }, { proxyImplementation: PROVIDER })).toThrow(/not sealable/);
+    expect(() => assertProductionSealableSubject({ kind: "CONTRACT" }, {})).not.toThrow();
+  });
+
+  it("maps signed contract-risk output into the onchain code-risk band", () => {
+    expect(parseContractCodeRisk('{"riskScore":0}')).toBe(0);
+    expect(parseContractCodeRisk('{"riskScore":30}')).toBe(1);
+    expect(parseContractCodeRisk('{"riskScore":60}')).toBe(2);
+    expect(parseContractCodeRisk('{"riskScore":100}')).toBe(2);
+    expect(() => parseContractCodeRisk("not-json")).toThrow(/non-JSON/);
   });
 
   it("injects registry, scanner, software, policy, and TTL on the server", async () => {

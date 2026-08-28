@@ -60,7 +60,7 @@ export class SubprocessComputeSdk implements ComputeSdk {
   }
 
   private launchProductionWorker(): ChildProcess {
-    return fork(join(process.cwd(), "server/prooflock/compute/sdk-worker.mjs"), [], {
+    return fork(join(process.cwd(), ".prooflock-build/sdk-worker.cjs"), [], {
       env: {
         PATH: process.env.PATH,
         NODE_ENV: process.env.NODE_ENV,

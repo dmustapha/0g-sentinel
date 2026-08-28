@@ -1,12 +1,11 @@
 // File: frontend/app/api/health/route.ts
-import { NextResponse } from "next/server";
+import { createHealthHandler } from "@/lib/pulse";
+import { methodNotAllowedResponse } from "@/server/prooflock/api";
 
-export async function GET() {
-  return NextResponse.json({
-    status: "ok",
-    compute_endpoint: process.env.ZERO_G_COMPUTE_URL || "https://router-api.0g.ai/v1",
-    rpc: process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai",
-    registry: process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS || "not configured",
-    timestamp: new Date().toISOString(),
-  });
-}
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const GET = createHealthHandler();
+export const POST = () => methodNotAllowedResponse("HEALTH_CHECK");
+export const PUT = POST;
+export const PATCH = POST;
+export const DELETE = POST;

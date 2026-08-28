@@ -44,15 +44,15 @@ export type RunnerResult = Readonly<{
 }>;
 
 export type ProofLockRunnerDependencies = Readonly<{
-  validateIdentity(input: AgentIdentity): Promise<ResolvedAgentIdentity>;
-  classifySubject(identity: ResolvedAgentIdentity): Promise<ClassifiedSubject>;
-  runDeterministicChecks(identity: ResolvedAgentIdentity, subject: ClassifiedSubject): Promise<DeterministicStageResult>;
-  runCompute(identity: ResolvedAgentIdentity, subject: ClassifiedSubject, deterministic: DeterministicStageResult): Promise<ComputeStageResult>;
-  buildEvidenceEnvelope(context: RunnerContext): Promise<EvidenceEnvelopeV1>;
-  uploadStorage(canonical: CanonicalEvidenceResult): Promise<unknown>;
-  verifyStorage(upload: unknown, canonical: CanonicalEvidenceResult): Promise<StorageCommitment>;
-  writeChain(input: RunnerChainInput): Promise<ChainWriteResult>;
-  readChainBack(input: RunnerChainInput, write: ChainWriteResult): Promise<RegistryProofLockRecord>;
+  validateIdentity(input: AgentIdentity, signal?: AbortSignal): Promise<ResolvedAgentIdentity>;
+  classifySubject(identity: ResolvedAgentIdentity, signal?: AbortSignal): Promise<ClassifiedSubject>;
+  runDeterministicChecks(identity: ResolvedAgentIdentity, subject: ClassifiedSubject, signal?: AbortSignal): Promise<DeterministicStageResult>;
+  runCompute(identity: ResolvedAgentIdentity, subject: ClassifiedSubject, deterministic: DeterministicStageResult, signal?: AbortSignal): Promise<ComputeStageResult>;
+  buildEvidenceEnvelope(context: RunnerContext, signal?: AbortSignal): Promise<EvidenceEnvelopeV1>;
+  uploadStorage(canonical: CanonicalEvidenceResult, signal?: AbortSignal): Promise<unknown>;
+  verifyStorage(upload: unknown, canonical: CanonicalEvidenceResult, signal?: AbortSignal): Promise<StorageCommitment>;
+  writeChain(input: RunnerChainInput, signal?: AbortSignal): Promise<ChainWriteResult>;
+  readChainBack(input: RunnerChainInput, write: ChainWriteResult, signal?: AbortSignal): Promise<RegistryProofLockRecord>;
 }>;
 
 export class ProofLockStageError extends Error {
@@ -64,7 +64,7 @@ export class ProofLockStageError extends Error {
 
 export function createProofLockRunner(dependencies: ProofLockRunnerDependencies) {
   return Object.freeze({
-    run: (input: RunnerInput, report?: (stage: RunnerStage) => void) => run(input, dependencies, report),
+    run: (input: RunnerInput, report?: (stage: RunnerStage) => void, signal?: AbortSignal) => run(input, dependencies, report, signal),
   });
 }
 
@@ -72,33 +72,42 @@ async function run(
   rawInput: RunnerInput,
   dependencies: ProofLockRunnerDependencies,
   report?: (stage: RunnerStage) => void,
+  signal?: AbortSignal,
 ): Promise<RunnerResult> {
   const input = validateRunnerInput(rawInput);
-  const execute = executor(report);
-  const identity = await execute("VALIDATING_IDENTITY", () => dependencies.validateIdentity(input.identity));
+  const execute = executor(report, signal);
+  const identity = await execute("VALIDATING_IDENTITY", () => signal
+    ? dependencies.validateIdentity(input.identity, signal) : dependencies.validateIdentity(input.identity));
   assertResolvedBinding(input.identity, identity);
-  const subject = await execute("CLASSIFYING_SUBJECT", () => dependencies.classifySubject(identity));
+  const subject = await execute("CLASSIFYING_SUBJECT", () => signal
+    ? dependencies.classifySubject(identity, signal) : dependencies.classifySubject(identity));
   assertSubjectBinding(identity, subject);
-  const deterministic = await execute("RUNNING_DETERMINISTIC_CHECKS", () => dependencies.runDeterministicChecks(identity, subject));
+  const deterministic = await execute("RUNNING_DETERMINISTIC_CHECKS", () => signal
+    ? dependencies.runDeterministicChecks(identity, subject, signal) : dependencies.runDeterministicChecks(identity, subject));
   assertDeterministic(subject, deterministic);
-  const compute = await execute("RUNNING_COMPUTE", () => dependencies.runCompute(identity, subject, deterministic));
+  const compute = await execute("RUNNING_COMPUTE", () => signal
+    ? dependencies.runCompute(identity, subject, deterministic, signal) : dependencies.runCompute(identity, subject, deterministic));
   assertCompute(compute);
   const computeRoot = computeProofRoot(compute.proofs);
   const context = Object.freeze({ input, identity, subject, deterministic, compute, computeRoot });
   const canonical = await execute("CANONICALIZING_EVIDENCE", async () => {
-    const envelope = await dependencies.buildEvidenceEnvelope(context);
+    const envelope = signal ? await dependencies.buildEvidenceEnvelope(context, signal)
+      : await dependencies.buildEvidenceEnvelope(context);
     assertEnvelopeBinding(context, envelope);
     return makeCanonicalEvidence(envelope);
   });
-  const upload = await execute("UPLOADING_STORAGE", () => dependencies.uploadStorage(canonical));
-  const storage = await execute("VERIFYING_STORAGE", () => dependencies.verifyStorage(upload, canonical));
+  const upload = await execute("UPLOADING_STORAGE", () => signal
+    ? dependencies.uploadStorage(canonical, signal) : dependencies.uploadStorage(canonical));
+  const storage = await execute("VERIFYING_STORAGE", () => signal
+    ? dependencies.verifyStorage(upload, canonical, signal) : dependencies.verifyStorage(upload, canonical));
   assertStorageBinding(canonical, storage);
   let chainInput!: RunnerChainInput;
   const chain = await execute("WRITING_CHAIN", () => {
     chainInput = createChainInput(context, canonical, storage);
-    return dependencies.writeChain(chainInput);
+    return signal ? dependencies.writeChain(chainInput, signal) : dependencies.writeChain(chainInput);
   });
-  const proofLock = await execute("READING_CHAIN_BACK", () => dependencies.readChainBack(chainInput, chain));
+  const proofLock = await execute("READING_CHAIN_BACK", () => signal
+    ? dependencies.readChainBack(chainInput, chain, signal) : dependencies.readChainBack(chainInput, chain));
   assertReadback(chainInput, chain, proofLock);
   safeReport(report, "SEALED");
   return Object.freeze({ stage: "SEALED", identity, subject, envelope: canonical.envelope, storage, chain, proofLock });
@@ -135,9 +144,15 @@ function makeCanonicalEvidence(envelope: EvidenceEnvelopeV1): CanonicalEvidenceR
   return Object.freeze({ envelope, canonicalBytes, envelopeDigest: keccak256(canonicalBytes) as Bytes32 });
 }
 
-function executor(report?: (stage: RunnerStage) => void) {
+function executor(report?: (stage: RunnerStage) => void, signal?: AbortSignal) {
   return async <T>(stage: RunnerStage, operation: () => Promise<T>): Promise<T> => {
-    try { safeReport(report, stage); return await operation(); }
+    try {
+      signal?.throwIfAborted();
+      safeReport(report, stage);
+      const result = await operation();
+      signal?.throwIfAborted();
+      return result;
+    }
     catch (error) {
       if (error instanceof ProofLockStageError) throw error;
       throw new ProofLockStageError(stage, `ProofLock stopped at ${stage}`, error);

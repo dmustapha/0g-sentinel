@@ -1,19 +1,21 @@
 import { sha256 } from "ethers";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EventEmitter } from "node:events";
+import type { ChildProcess } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
 
 import {
   FileReceiptClaimStore,
   MemoryReceiptClaimStore,
+  SubprocessComputeSdk,
   StrictComputeError,
-  createPinnedSdkProcessResponseVerifier,
   runStrictCompute,
   type ComputeHttpRequest,
   type ComputeHttpResponse,
   type ReceiptClaimStore,
-  type StrictComputeBroker,
+  type ComputeSdk,
   type StrictComputeDependencies,
   type StrictComputeInput,
 } from "../../server/prooflock/compute/strict-broker";
@@ -104,31 +106,33 @@ function harness(
     serviceValue?: unknown;
     serviceAfterProcess?: unknown;
     receiptStore?: ReceiptClaimStore;
-    hang?: "metadata" | "headers" | "process";
+    hang?: "metadata" | "headers" | "service" | "process";
   } = {},
 ) {
-  const never = new Promise<never>(() => undefined);
-  const processResponse = vi.fn(async (): Promise<boolean | null> => {
-    if (options.hang === "process") return never;
+  const supervised = <T>(stage: string, signal: AbortSignal, value: T): Promise<T> => {
+    if (options.hang !== stage) return Promise.resolve(value);
+    return new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+    });
+  };
+  const processResponse = vi.fn(async (_input, signal): Promise<boolean | null> => {
+    if (options.hang === "process") return supervised("process", signal, true);
     if (options.processError) throw options.processError;
     return options.verification === undefined ? true : options.verification;
   });
   let serviceReads = 0;
-  const broker: StrictComputeBroker = {
-    inference: {
-      getServiceMetadata: vi.fn(async () =>
-        options.hang === "metadata"
-          ? never
-          : {
+  const sdk: ComputeSdk = {
+      getServiceMetadata: vi.fn(async (_provider, _model, signal) =>
+        supervised("metadata", signal, {
               endpoint: "https://compute.example/v1/proxy",
               model: options.metadataModel ?? MODEL,
-            },
+            }),
       ),
-      getRequestHeaders: vi.fn(async () =>
-        options.hang === "headers" ? never : { Authorization: "signed-voucher" },
+      getRequestHeaders: vi.fn(async (_provider, _content, signal) =>
+        supervised("headers", signal, { Authorization: "signed-voucher" }),
       ),
       processResponse,
-      listService: vi.fn(async () => [
+      listService: vi.fn(async (_offset, _limit, _include, signal) => supervised("service", signal, [
         (serviceReads++ > 0 && options.serviceAfterProcess) ||
           options.serviceValue || {
             provider: PROVIDER,
@@ -144,8 +148,7 @@ function harness(
             teeSignerAddress: SIGNER,
             teeSignerAcknowledged: options.serviceAcknowledged ?? true,
           },
-      ]),
-    },
+      ])),
   };
   const served = options.inference ?? inferenceResponse();
   let postedRequest = new Uint8Array();
@@ -166,13 +169,12 @@ function harness(
   });
   const verifySignature = vi.fn(() => options.signatureValid ?? true);
   const dependencies: StrictComputeDependencies = {
-    broker,
+    sdk,
     transport: { request },
     signatureVerifier: { verifySignature },
     receiptStore: options.receiptStore ?? new MemoryReceiptClaimStore(),
-    processResponseVerifier: { verify: processResponse },
   };
-  return { broker, dependencies, processResponse, request, verifySignature };
+  return { sdk, dependencies, processResponse, request, verifySignature };
 }
 
 describe("strict 0G Compute", () => {
@@ -218,7 +220,29 @@ describe("strict 0G Compute", () => {
           total_tokens: 12,
         }),
       }),
+      expect.any(AbortSignal),
     );
+  });
+
+  it("kills a supervised SDK child and rejects only after confirmed exit", async () => {
+    const child = new EventEmitter() as ChildProcess;
+    const killed: NodeJS.Signals[] = [];
+    child.send = vi.fn(() => true);
+    child.kill = vi.fn((signal = "SIGTERM") => {
+      killed.push(signal as NodeJS.Signals);
+      queueMicrotask(() => child.emit("close", null, signal));
+      return true;
+    });
+    const sdk = new SubprocessComputeSdk({
+      privateKey: `0x${"11".repeat(32)}`,
+      rpcUrl: "https://rpc.example",
+      workerLauncher: () => child,
+    });
+    const controller = new AbortController();
+    const pending = sdk.getServiceMetadata(PROVIDER, MODEL, controller.signal);
+    controller.abort(new Error("deadline"));
+    await expect(pending).rejects.toThrow("deadline");
+    expect(killed).toEqual(["SIGKILL"]);
   });
 
   it.each([
@@ -382,13 +406,13 @@ describe("strict 0G Compute", () => {
     await expect(runStrictCompute(unauthorized, h.dependencies)).rejects.toMatchObject({
       code: "COMPUTE_SPEND_NOT_AUTHORIZED",
     });
-    expect(h.broker.inference.getRequestHeaders).not.toHaveBeenCalled();
+    expect(h.sdk.getRequestHeaders).not.toHaveBeenCalled();
   });
 
   it("pins the configured model through metadata and response", async () => {
     const h = harness();
     await runStrictCompute(input(), h.dependencies);
-    expect(h.broker.inference.getServiceMetadata).toHaveBeenCalledWith(PROVIDER, MODEL);
+    expect(h.sdk.getServiceMetadata).toHaveBeenCalledWith(PROVIDER, MODEL, expect.any(AbortSignal));
   });
 
   it("rejects an on-chain service snapshot change after SDK verification", async () => {
@@ -420,39 +444,10 @@ describe("strict 0G Compute", () => {
     expect(receiptStore.commit).not.toHaveBeenCalled();
   });
 
-  it("serializes pinned SDK fetch guards so concurrent verifications cannot escape", async () => {
-    const seen: string[] = [];
-    const urls = {
-      a: "https://compute.example/v1/proxy/signature/a?model=model",
-      b: "https://compute.example/v1/proxy/signature/b?model=model",
-    };
-    const broker = {
-      inference: {
-        processResponse: vi.fn(async (_provider: string, chatId?: string) => {
-          const response = await fetch(urls[chatId as "a" | "b"]);
-          seen.push(((await response.json()) as { id: string }).id);
-          return true;
-        }),
-      },
-    } as unknown as StrictComputeBroker;
-    const verifier = createPinnedSdkProcessResponseVerifier(broker);
-    await Promise.all([
-      verifier.verify({
-        provider: PROVIDER,
-        chatId: "a",
-        usage: "{}",
-        signatureUrl: urls.a,
-        signatureBody: encode({ id: "a" }),
-      }),
-      verifier.verify({
-        provider: PROVIDER,
-        chatId: "b",
-        usage: "{}",
-        signatureUrl: urls.b,
-        signatureBody: encode({ id: "b" }),
-      }),
-    ]);
-    expect(seen).toEqual(["a", "b"]);
+  it("never replaces the main process global fetch during SDK verification", async () => {
+    const original = globalThis.fetch;
+    await runStrictCompute(input(), harness().dependencies);
+    expect(globalThis.fetch).toBe(original);
   });
 
   it("rejects a metadata model mismatch", async () => {
@@ -548,40 +543,27 @@ describe("strict 0G Compute", () => {
     ).resolves.toBeDefined();
   });
 
-  it.each(["metadata", "headers", "process"] as const)(
-    "does not falsely return while non-cancellable %s SDK work is still live",
+  it.each(["metadata", "headers", "service", "process"] as const)(
+    "terminates and settles a hung %s SDK worker within the deadline",
     async (hang) => {
       const { dependencies } = harness({ hang });
-      const run = runStrictCompute(input({ timeoutMs: 10 }), dependencies);
-      const state = await Promise.race([
-        run.then(
-          () => "settled",
-          () => "settled",
-        ),
-        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 30)),
-      ]);
-      expect(state).toBe("pending");
+      await expect(runStrictCompute(input({ timeoutMs: 10 }), dependencies)).rejects.toMatchObject({
+        code: "COMPUTE_TIMEOUT",
+      });
     },
   );
 
   it("does not commit a receipt when processResponse resolves after timeout", async () => {
-    let resolveProcess!: (value: true) => void;
-    const pending = new Promise<true>((resolve) => {
-      resolveProcess = resolve;
-    });
     const receiptStore: ReceiptClaimStore = {
       claim: vi.fn(async () => "late-claim"),
       renew: vi.fn(async () => undefined),
       commit: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
-    const h = harness({ receiptStore });
-    h.processResponse.mockImplementationOnce(() => pending);
-    const run = runStrictCompute(input({ timeoutMs: 10 }), h.dependencies);
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(receiptStore.commit).not.toHaveBeenCalled();
-    resolveProcess(true);
-    await expect(run).rejects.toMatchObject({ code: "COMPUTE_TIMEOUT" });
+    const h = harness({ receiptStore, hang: "process" });
+    await expect(runStrictCompute(input({ timeoutMs: 10 }), h.dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_TIMEOUT",
+    });
     await vi.waitFor(() => expect(receiptStore.release).toHaveBeenCalled());
     expect(receiptStore.commit).not.toHaveBeenCalled();
   });
@@ -678,14 +660,14 @@ describe("strict 0G Compute", () => {
       "https://compute.example/v1/proxy#fragment",
     ]) {
       const h = harness();
-      vi.mocked(h.broker.inference.getServiceMetadata).mockResolvedValueOnce({
+      vi.mocked(h.sdk.getServiceMetadata).mockResolvedValueOnce({
         endpoint,
         model: MODEL,
       });
       await expect(runStrictCompute(input(), h.dependencies)).rejects.toMatchObject({
         code: "COMPUTE_METADATA_INVALID",
       });
-      expect(h.broker.inference.getRequestHeaders).not.toHaveBeenCalled();
+      expect(h.sdk.getRequestHeaders).not.toHaveBeenCalled();
     }
   });
 
@@ -711,12 +693,12 @@ describe("strict 0G Compute", () => {
       requestSha256: `0x${"1".repeat(64)}` as const,
       responseSha256: `0x${"2".repeat(64)}` as const,
     };
-    const first = await store.claim("one", metadata, Date.now() + 1_000);
-    await store.commit("one", first!, Date.now() + 7 * 24 * 60 * 60 * 1_000);
-    await expect(store.claim("two", metadata, Date.now() + 1_000)).rejects.toMatchObject({
+    const first = await store.claim("one", metadata, 1_000);
+    await store.commit("one", first!, 7 * 24 * 60 * 60 * 1_000);
+    await expect(store.claim("two", metadata, 1_000)).rejects.toMatchObject({
       code: "COMPUTE_REPLAY_STORE_FULL",
     });
-    await expect(store.claim("one", metadata, Date.now() + 1_000)).resolves.toBeNull();
+    await expect(store.claim("one", metadata, 1_000)).resolves.toBeNull();
   });
 
   it("persists committed replay and equivocation rejection across file-store restarts", async () => {
@@ -730,15 +712,15 @@ describe("strict 0G Compute", () => {
         responseSha256: `0x${"2".repeat(64)}` as const,
       };
       const first = new FileReceiptClaimStore(options);
-      const token = await first.claim("receipt", metadata, now + 60_000);
-      await first.commit("receipt", token!, now + 7 * 24 * 60 * 60 * 1_000);
+      const token = await first.claim("receipt", metadata, 60_000);
+      await first.commit("receipt", token!, 7 * 24 * 60 * 60 * 1_000);
       const restarted = new FileReceiptClaimStore(options);
-      await expect(restarted.claim("receipt", metadata, now + 60_000)).resolves.toBeNull();
+      await expect(restarted.claim("receipt", metadata, 60_000)).resolves.toBeNull();
       await expect(
         restarted.claim(
           "receipt",
           { ...metadata, responseSha256: `0x${"3".repeat(64)}` },
-          now + 60_000,
+          60_000,
         ),
       ).resolves.toBeNull();
     } finally {
@@ -756,10 +738,10 @@ describe("strict 0G Compute", () => {
         requestSha256: `0x${"1".repeat(64)}` as const,
         responseSha256: `0x${"2".repeat(64)}` as const,
       };
-      await new FileReceiptClaimStore(options).claim("receipt", metadata, now + 1_000);
+      await new FileReceiptClaimStore(options).claim("receipt", metadata, 1_000);
       now += 1_001;
       await expect(
-        new FileReceiptClaimStore(options).claim("receipt", metadata, now + 1_000),
+        new FileReceiptClaimStore(options).claim("receipt", metadata, 1_000),
       ).resolves.toMatch(/^0x[0-9a-f]+$/);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -780,10 +762,74 @@ describe("strict 0G Compute", () => {
       responseSha256: `0x${"2".repeat(64)}` as const,
     };
     try {
-      await store.claim("one", metadata, now + 1_000);
-      await expect(store.claim("two", metadata, now + 1_000)).rejects.toMatchObject({
+      await store.claim("one", metadata, 1_000);
+      await expect(store.claim("two", metadata, 1_000)).rejects.toMatchObject({
         code: "COMPUTE_REPLAY_STORE_FULL",
       });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("coordinates capacity atomically across file-store instances", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    const options = { stateDirectory: directory, maximumRecords: 1 };
+    try {
+      const outcomes = await Promise.allSettled([
+        new FileReceiptClaimStore(options).claim("one", metadata, 60_000),
+        new FileReceiptClaimStore(options).claim("two", metadata, 60_000),
+      ]);
+      expect(outcomes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+      expect(outcomes.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("garbage-collects expired records before enforcing global capacity", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    let now = 1_000_000;
+    const options = { stateDirectory: directory, maximumRecords: 1, clock: () => now };
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    try {
+      await new FileReceiptClaimStore(options).claim("expired", metadata, 1_000);
+      now += 1_001;
+      await expect(
+        new FileReceiptClaimStore(options).claim("replacement", metadata, 1_000),
+      ).resolves.toMatch(/^0x[0-9a-f]+$/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers a crashed stale global store lock", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    const lock = join(directory, ".store.lock");
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    try {
+      await mkdir(lock, { mode: 0o700 });
+      const stale = new Date(Date.now() - 31_000);
+      await utimes(lock, stale, stale);
+      await expect(
+        new FileReceiptClaimStore({ stateDirectory: directory }).claim(
+          "after-crash",
+          metadata,
+          1_000,
+        ),
+      ).resolves.toMatch(/^0x[0-9a-f]+$/);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

@@ -14,13 +14,12 @@ export type ServiceDetail = Readonly<{
 }>;
 
 type ServiceBroker = Readonly<{
-  inference: Readonly<{
-    listService(
-      offset?: number,
-      limit?: number,
-      includeUnacknowledged?: boolean,
-    ): Promise<readonly unknown[]>;
-  }>;
+  listService(
+    offset: number,
+    limit: number,
+    includeUnacknowledged: boolean,
+    signal: AbortSignal,
+  ): Promise<readonly unknown[]>;
 }>;
 
 const addressPattern = /^0x[0-9a-fA-F]{40}$/;
@@ -42,7 +41,8 @@ export async function resolveService(
   signal: AbortSignal,
 ): Promise<ServiceDetail> {
   for (let offset = 0; offset < 1_000; offset += 50) {
-    const page = await waitForSdk(broker.inference.listService(offset, 50, true), signal);
+    const page = await broker.listService(offset, 50, true, signal);
+    signal.throwIfAborted();
     const candidate = page.map(normalizeService).find((service) => matches(service, provider));
     if (candidate) return parseService(candidate, model);
     if (page.length < 50) break;
@@ -148,11 +148,4 @@ function isDecentralizedModelTee(
     addressPattern.test(target) &&
     !/^0x0{40}$/i.test(target)
   );
-}
-
-async function waitForSdk<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  signal.throwIfAborted();
-  const result = await promise;
-  signal.throwIfAborted();
-  return result;
 }

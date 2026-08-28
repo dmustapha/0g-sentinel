@@ -1,3 +1,6 @@
+import { fork, type ChildProcess } from "node:child_process";
+import { fileURLToPath } from "node:url";
+
 export type ProcessResponseVerification = Readonly<{
   provider: string;
   chatId: string;
@@ -6,68 +9,104 @@ export type ProcessResponseVerification = Readonly<{
   signatureBody: Uint8Array;
 }>;
 
-export type ProcessResponseVerifier = Readonly<{
-  verify(input: ProcessResponseVerification): Promise<boolean | null>;
+export type ComputeSdk = Readonly<{
+  getServiceMetadata(provider: string, model: string, signal: AbortSignal): Promise<{ endpoint: string; model: string }>;
+  getRequestHeaders(provider: string, content: string, signal: AbortSignal): Promise<unknown>;
+  listService(offset: number, limit: number, includeUnacknowledged: boolean, signal: AbortSignal): Promise<readonly unknown[]>;
+  processResponse(input: ProcessResponseVerification, signal: AbortSignal): Promise<boolean | null>;
 }>;
 
-type SdkBroker = Readonly<{
-  inference: Readonly<{
-    processResponse(provider: string, chatId?: string, usage?: string): Promise<boolean | null>;
-  }>;
+type SdkAction =
+  | { action: "metadata"; provider: string; model: string }
+  | { action: "headers"; provider: string; content: string }
+  | { action: "services"; offset: number; limit: number; includeUnacknowledged: boolean }
+  | ({ action: "process" } & Omit<ProcessResponseVerification, "signatureBody"> & { signatureBodyBase64: string });
+type WorkerResult = { ok: true; value: unknown } | { ok: false; error: string };
+type WorkerLauncher = () => ChildProcess;
+
+export type SubprocessComputeSdkOptions = Readonly<{
+  privateKey: string;
+  rpcUrl: string;
+  /** Dependency seam for deterministic supervisor tests only. */
+  workerLauncher?: WorkerLauncher;
 }>;
 
-let sdkFetchTail: Promise<void> = Promise.resolve();
+/** Each SDK operation is isolated. Abort settles only after the child exits. */
+export class SubprocessComputeSdk implements ComputeSdk {
+  private readonly launch: WorkerLauncher;
 
-export function createPinnedSdkProcessResponseVerifier(broker: SdkBroker): ProcessResponseVerifier {
-  return {
-    verify: async (input) =>
-      withPinnedFetch(input, () =>
-        broker.inference.processResponse(input.provider, input.chatId, input.usage),
-      ),
-  };
-}
-
-async function withPinnedFetch<T>(
-  input: ProcessResponseVerification,
-  operation: () => Promise<T>,
-): Promise<T> {
-  const lock = await acquireFetchLock();
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = pinnedFetch(input);
-  try {
-    return await operation();
-  } finally {
-    globalThis.fetch = originalFetch;
-    lock.release();
+  constructor(private readonly options: SubprocessComputeSdkOptions) {
+    this.launch = options.workerLauncher ?? (() => this.launchProductionWorker());
   }
-}
 
-async function acquireFetchLock() {
-  let release!: () => void;
-  const predecessor = sdkFetchTail;
-  sdkFetchTail = new Promise<void>((resolve) => (release = resolve));
-  await predecessor;
-  return { release };
-}
+  async getServiceMetadata(provider: string, model: string, signal: AbortSignal) {
+    return (await this.run({ action: "metadata", provider, model }, signal)) as { endpoint: string; model: string };
+  }
 
-function pinnedFetch(input: ProcessResponseVerification): typeof globalThis.fetch {
-  return async (resource, init) => {
-    const request = new Request(resource, init);
-    assertPinnedRequest(request, input.signatureUrl);
-    return new Response(Uint8Array.from(input.signatureBody).buffer, {
-      status: 200,
-      headers: { "content-type": "application/json" },
+  async getRequestHeaders(provider: string, content: string, signal: AbortSignal) {
+    return await this.run({ action: "headers", provider, content }, signal);
+  }
+
+  async listService(offset: number, limit: number, includeUnacknowledged: boolean, signal: AbortSignal) {
+    return (await this.run({ action: "services", offset, limit, includeUnacknowledged }, signal)) as readonly unknown[];
+  }
+
+  async processResponse(input: ProcessResponseVerification, signal: AbortSignal) {
+    return (await this.run({
+      action: "process",
+      ...input,
+      signatureBodyBase64: Buffer.from(input.signatureBody).toString("base64"),
+    }, signal)) as boolean | null;
+  }
+
+  private launchProductionWorker(): ChildProcess {
+    return fork(fileURLToPath(new URL("./sdk-worker.mjs", import.meta.url)), [], {
+      env: {
+        PATH: process.env.PATH,
+        NODE_ENV: process.env.NODE_ENV,
+        SENTINEL_0G_PRIVATE_KEY: this.options.privateKey,
+        SENTINEL_0G_RPC_URL: this.options.rpcUrl,
+      },
+      stdio: ["ignore", "ignore", "ignore", "ipc"],
+      serialization: "json",
     });
-  };
+  }
+
+  private run(action: SdkAction, signal: AbortSignal): Promise<unknown> {
+    signal.throwIfAborted();
+    return supervise(this.launch(), action, signal);
+  }
 }
 
-function assertPinnedRequest(request: Request, expectedUrl: string): void {
-  if (
-    request.method !== "GET" ||
-    request.url !== expectedUrl ||
-    request.headers.has("authorization") ||
-    request.headers.has("proxy-authorization")
-  ) {
-    throw new TypeError("SDK fetch blocked outside pinned signature endpoint");
-  }
+function supervise(child: ChildProcess, action: SdkAction, signal: AbortSignal): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let result: WorkerResult | undefined;
+    let workerError: Error | undefined;
+    let aborted = false;
+    const abort = () => {
+      aborted = true;
+      child.kill("SIGKILL");
+    };
+    signal.addEventListener("abort", abort, { once: true });
+    child.once("message", (message) => {
+      result = message as WorkerResult;
+      child.kill();
+    });
+    child.once("error", (error) => {
+      workerError = error;
+      child.kill("SIGKILL");
+    });
+    child.once("close", (code, killedBy) => {
+      signal.removeEventListener("abort", abort);
+      if (aborted) return reject(signal.reason);
+      if (workerError) return reject(workerError);
+      if (!result) return reject(new Error(`0G SDK worker exited ${code ?? killedBy}`));
+      return result.ok ? resolve(result.value) : reject(new Error(result.error));
+    });
+    child.send(action, (error) => {
+      if (!error) return;
+      workerError = error;
+      child.kill("SIGKILL");
+    });
+  });
 }

@@ -130,7 +130,7 @@ Local release candidate complete on `feature/sentinel-prooflock`. Mainnet deploy
 - The scanner transaction sender is checked on submission, finalized transaction recovery, and runner readback.
 - A separate Compute payer key has no Registry authority; the separated admin/scanner/guardian role matrix is rechecked before every mutation.
 - The Compute worker and its runtime dependencies are bundled into one isolated Node artifact and output-traced into the standalone release.
-- Final local evidence: 620/620 frontend tests, 151/151 Hardhat contract/deployment tests, root and frontend
+- Final local evidence: 622/622 frontend tests, 151/151 Hardhat contract/deployment tests, root and frontend
   TypeScript checks, clean Next production build, standalone home `200`, independent health `503 DEGRADED` without
   canaries, unauthenticated operator `401`, and authenticated operator fail-closed dependency response without secrets.
 - Not yet provable locally: paid mainnet Compute, Storage upload/retrieval, V2 deployment receipts, restart replay,
@@ -138,3 +138,5 @@ Local release candidate complete on `feature/sentinel-prooflock`. Mainnet deploy
 - Production dependency audit still reports upstream advisories in the pinned official 0G Compute/Storage SDK trees
   and in the Next 14 line. Compatible fixes were applied and Next moved to 14.2.35; clearing the remainder requires
   upstream SDK releases and a separately tested Next major migration, not an unreviewed forced upgrade.
+- Both Gate-driving risk fields are canonical evidence: public verification requires the stored behavioral and code
+  risks to equal the onchain record, and every mutation proves the Compute payer holds no Registry authority.

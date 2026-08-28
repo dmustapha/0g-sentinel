@@ -86,8 +86,14 @@ export type StrictComputeBroker = Readonly<{
   }>;
 }>;
 
+export type ReceiptClaimMetadata = Readonly<{
+  model: string;
+  requestSha256: `0x${string}`;
+  responseSha256: `0x${string}`;
+}>;
+
 export type ReceiptClaimStore = Readonly<{
-  claim(key: string): Promise<string | null>;
+  claim(key: string, metadata: ReceiptClaimMetadata): Promise<string | null>;
   commit(key: string, token: string): Promise<void>;
   release(key: string, token: string): Promise<void>;
 }>;
@@ -212,7 +218,11 @@ const serviceSchema = z
 export class MemoryReceiptClaimStore implements ReceiptClaimStore {
   private readonly records = new Map<
     string,
-    { token: string; state: "CLAIMED" | "COMMITTED" }
+    {
+      token: string;
+      state: "CLAIMED" | "COMMITTED";
+      metadata: ReceiptClaimMetadata;
+    }
   >();
 
   constructor(private readonly maximum = 10_000) {
@@ -221,7 +231,10 @@ export class MemoryReceiptClaimStore implements ReceiptClaimStore {
     }
   }
 
-  async claim(key: string): Promise<string | null> {
+  async claim(
+    key: string,
+    metadata: ReceiptClaimMetadata
+  ): Promise<string | null> {
     if (this.records.has(key)) return null;
     if (this.records.size >= this.maximum) {
       throw failure(
@@ -230,7 +243,11 @@ export class MemoryReceiptClaimStore implements ReceiptClaimStore {
       );
     }
     const token = hexlify(randomBytes(32));
-    this.records.set(key, { token, state: "CLAIMED" });
+    this.records.set(key, {
+      token,
+      state: "CLAIMED",
+      metadata: Object.freeze({ ...metadata }),
+    });
     return token;
   }
 
@@ -545,7 +562,7 @@ async function verifyAndAccept(
     rawResponse.body,
     dependencies
   );
-  const key = receiptClaimKey(input, receipt.chatId, binding.responseSha256);
+  const key = receiptClaimKey(input, receipt.chatId);
   return withReceiptClaim(
     key,
     input,
@@ -670,7 +687,15 @@ async function withReceiptClaim(
   dependencies: StrictComputeDependencies,
   signal: AbortSignal
 ): Promise<StrictComputeResult> {
-  const token = await stage(dependencies.receiptStore.claim(key), signal);
+  const metadata: ReceiptClaimMetadata = {
+    model: input.model,
+    requestSha256: binding.requestSha256,
+    responseSha256: binding.responseSha256,
+  };
+  const token = await stage(
+    dependencies.receiptStore.claim(key, metadata),
+    signal
+  );
   if (!token)
     throw failure(
       "COMPUTE_RECEIPT_REPLAY",
@@ -787,18 +812,8 @@ function assertReturnedProvider(
   }
 }
 
-function receiptClaimKey(
-  input: ParsedInput,
-  chatId: string,
-  responseSha256: string
-): string {
-  return JSON.stringify([
-    input.chainId,
-    input.provider,
-    input.model,
-    chatId,
-    responseSha256,
-  ]);
+function receiptClaimKey(input: ParsedInput, chatId: string): string {
+  return JSON.stringify([input.chainId, input.provider, chatId]);
 }
 
 function buildResult(

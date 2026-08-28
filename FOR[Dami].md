@@ -85,6 +85,9 @@ key-derived address, its live Registry role, the submitted transaction sender, a
 The guardian key is distinct and only marks drift. Browser callers cannot choose either role, the registry, the policy,
 the scanner software label, or lease duration.
 
+Behavioral risk and code risk both live inside the canonical evidence verdict. The public verifier compares both values
+with the Registry record, so an authorized writer cannot present valid evidence while quietly weakening a Gate-driving score.
+
 The Compute SDK worker is a self-contained file inside the production standalone artifact. The ESM source and its
 runtime dependencies are bundled into a Node CommonJS child so transitive dynamic requires remain valid without a
 development `node_modules` tree. Deadline cancellation still kills the process.

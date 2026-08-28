@@ -10,6 +10,7 @@ import { GateDecisionCard } from "@/components/GateDecisionCard";
 import { ProofCoverageGrid } from "@/components/ProofCoverageGrid";
 import { RescanButton } from "@/components/RescanButton";
 import { SealLifecycle } from "@/components/SealLifecycle";
+import { TrustRoleDisclosure } from "@/components/TrustRoleDisclosure";
 import { computeProofId, readProofLockDetail, resolveIdentity, verifyProof } from "@/lib/prooflock-client";
 import { admittedConsumerState } from "@/lib/prooflock-status";
 import type { CanonicalIdentity, GateDecision, ProofLockDetailResponse, VerifiedProof } from "@/lib/prooflock-types";
@@ -38,7 +39,7 @@ export default function AgentDetailPage({ params }: { params: { address: string 
 function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
   const { identity, detail, proofId, proof } = data; const record = detail.proofLock;
   const gate: GateDecision | null = detail.detail.gate.status === "VERIFIED" ? { allowed: detail.detail.gate.allowed,
-    reason: detail.detail.gate.reason, subject: record.subject, version: record.version } : null;
+    reason: detail.detail.gate.reason, subject: detail.detail.gate.subject, version: detail.detail.gate.version } : null;
   const envelope = proof?.storage.envelope; const previous = typeof envelope?.previousProofId === "string" ? envelope.previousProofId : undefined;
   const compute = computeSummary(envelope); const storage = storageSummary(proof);
   return <section className="workspace-section detail-page"><div className="wrap"><Link href="/agents" className="text-link">← ProofLocks</Link>
@@ -49,9 +50,10 @@ function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
     <div className={data.consumerAllowed ? "consumer-call state-good" : "consumer-call state-bad"}><span className="card-kicker">Guarded ProofLockConsumerDemo simulation</span>
       <b>{data.consumerAllowed ? "CONSUMER ACTION ACCEPTED" : "CONSUMER ACTION BLOCKED"}</b><p>Accepted only when the server-guarded consumer simulation, Gate subject, Gate version, current lease, and ERC-8004 wallet all match.</p></div>
     <ProofCoverageGrid coverage={record.coverage} /><EvidenceProofCard record={record} compute={compute} storage={storage} />
-    <SealLifecycle currentVersion={record.version} previousProofId={previous} />
+    <SealLifecycle currentVersion={record.version} previousProofId={previous} identityKey={record.identityKey} />
     <RescanButton identity={identity} record={record} previousProofId={proofId} onComplete={onComplete} />
-    <aside className="trust-disclosure"><h2>Operator trust disclosure</h2><p>Validator <code>{process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS ?? "not configured"}</code> is authorized to issue leases. Guardian authority may be the same disclosed EOA for this build. Drift detection is on-demand, not continuous.</p></aside>
+    <TrustRoleDisclosure admin={process.env.NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS} guardian={process.env.NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS}
+      validator={process.env.NEXT_PUBLIC_PROOFLOCK_SCANNER_ADDRESS} custodyConstraint={process.env.NEXT_PUBLIC_PROOFLOCK_CUSTODY_CONSTRAINT} />
     <aside className="legacy-banner"><b>LEGACY V1 · excluded</b><span>Historical AttestationRegistry records never appear as an active ProofLock V2 lease.</span></aside>
   </div></section>;
 }

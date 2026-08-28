@@ -33,7 +33,8 @@ describe("ProofLock dashboard and detail", () => {
   });
 
   it("keeps superseded versions in append-preserved history", () => {
-    const html = renderToStaticMarkup(React.createElement(SealLifecycle, { currentVersion: "3", previousProofId: `0x${"aa".repeat(32)}` }));
+    const html = renderToStaticMarkup(React.createElement(SealLifecycle, { currentVersion: "3", previousProofId: `0x${"aa".repeat(32)}`,
+      identityKey: `0x${"bb".repeat(32)}` }));
     expect(html).toContain("v3"); expect(html).toContain("SUPERSEDED"); expect(html).toContain("append-preserved");
   });
 

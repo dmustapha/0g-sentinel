@@ -12,6 +12,7 @@ describe("ProofLock inventory navigation", () => {
     expect(html).toContain("Identity unavailable");
     expect(html).toContain(`/proof/`);
     expect(html).toContain(`identityKey=${item.identityKey}`);
+    expect(html).toContain(`sourceTxHash=${item.transactionHash}`);
   });
 });
 

@@ -66,9 +66,12 @@ export async function discoverProofLocks(signal?: AbortSignal): Promise<readonly
     blockNumber: z.number().int().nonnegative() })) }).parse(body).identities as readonly DiscoveryRecord[];
 }
 
-export async function verifyProof(proofId: string, identityKey: string, signal?: AbortSignal): Promise<VerifiedProof> {
-  const body = await requestJson(`/api/v1/proofs/${encodeURIComponent(proofId)}/verify?identityKey=${encodeURIComponent(identityKey)}`, { signal });
-  const schema = z.object({ proofId: hex32, identityKey: hex32, proofLock: lockSchema,
+export async function verifyProof(proofId: string, identityKey: string, signal?: AbortSignal, sourceTxHash?: string): Promise<VerifiedProof> {
+  const query = new URLSearchParams({ identityKey }); if (sourceTxHash) query.set("sourceTxHash", sourceTxHash);
+  const body = await requestJson(`/api/v1/proofs/${encodeURIComponent(proofId)}/verify?${query}`, { signal });
+  const schema = z.object({ proofId: hex32, identityKey: hex32, source: z.object({ kind: z.literal("ProofLocked"),
+      registryAddress: hex20, transactionHash: hex32, blockNumber: z.number().int().nonnegative(), blockHash: hex32,
+      logIndex: z.number().int().nonnegative() }), proofLock: lockSchema,
     storage: z.object({ retrievalVerified: z.literal(true), networkProofVerified: z.literal(false),
       envelope: z.record(z.string(), z.unknown()), computeVerification: z.array(z.unknown()).optional(),
       storageCommitment: z.record(z.string(), z.unknown()).optional() }) });

@@ -65,6 +65,8 @@ export type StorageVerification = Readonly<{
 export type VerifiedProof = Readonly<{
   proofId: Bytes32;
   identityKey: Bytes32;
+  source: Readonly<{ kind: "ProofLocked"; registryAddress: HexAddress; transactionHash: Bytes32;
+    blockNumber: number; blockHash: Bytes32; logIndex: number }>;
   proofLock: ProofLockRecord;
   storage: StorageVerification;
 }>;
@@ -121,11 +123,6 @@ export type ApiErrorShape = Readonly<{
 
 export type OperatorRunInput = Readonly<{
   identity: CanonicalIdentity["identity"];
-  registryAddress: HexAddress;
-  policyVersion: number;
-  scanner: HexAddress;
-  scannerSoftwareVersion: string;
-  validForSeconds: 604800;
   mode: "SEAL" | "RESEAL";
   expectedPriorVersion?: string;
   previousProofId?: Bytes32;

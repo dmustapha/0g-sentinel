@@ -41,7 +41,7 @@ function values(item: ProofLockInventoryItem) {
 function historicalProofHref(item: ProofLockInventoryItem): string | null {
   const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
   if (!registry) return null;
-  try { return `/proof/${computeProofId(registry, item.proofLock)}?identityKey=${item.identityKey}`; }
+  try { return `/proof/${computeProofId(registry, item.proofLock)}?identityKey=${item.identityKey}&sourceTxHash=${item.transactionHash}`; }
   catch { return null; }
 }
 function short(value: string): string { return `${value.slice(0, 8)}…${value.slice(-6)}`; }

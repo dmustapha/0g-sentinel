@@ -22,14 +22,9 @@ export function RescanButton({ identity, record, previousProofId, onComplete }: 
     finally { setBusy(null); }
   }
   async function reseal() {
-    const registryAddress = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
-    const scanner = process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS;
-    if (!token || !validAddress(registryAddress) || !validAddress(scanner)) { setError("Operator configuration is unavailable."); return; }
+    if (!token) return;
     setBusy("reseal"); setError(""); setStages([]);
-    try { await runProofLock({ identity: identity.identity, registryAddress, scanner,
-      scannerSoftwareVersion: process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_VERSION ?? "sentinel-prooflock-v2",
-      policyVersion: Number(process.env.NEXT_PUBLIC_PROOFLOCK_POLICY_VERSION ?? "1"), validForSeconds: 604800,
-      mode: "RESEAL", expectedPriorVersion: record.version, previousProofId }, token,
+    try { await runProofLock({ identity: identity.identity, mode: "RESEAL", expectedPriorVersion: record.version, previousProofId }, token,
       (stage) => setStages((value) => value.includes(stage) ? value : [...value, stage])); setToken(""); onComplete();
     } catch { setError("Reseal stopped safely. The previous version remains append-preserved."); setToken(""); }
     finally { setBusy(null); }
@@ -44,5 +39,4 @@ export function RescanButton({ identity, record, previousProofId, onComplete }: 
     {error && <p className="inline-state state-bad">{error}</p>}{stages.length > 0 && <StreamingScanPanel stages={stages} />}
   </section>;
 }
-function validAddress(value?: string): value is `0x${string}` { return !!value && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value); }
 function string(value: unknown): string | undefined { return typeof value === "string" ? value : undefined; }

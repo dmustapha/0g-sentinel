@@ -38,6 +38,21 @@ describe("release configuration and legacy boundary", () => {
     expect(text).not.toContain("simulateConsumerAction");
   });
 
+  it("guards verifier admission through the bound consumer predicate", () => {
+    const text = readFileSync(resolve(process.cwd(), "components/VerifyEvidenceButton.tsx"), "utf8");
+    expect(text).toContain("admittedConsumerState");
+    expect(text).not.toMatch(/gate\.status === "VERIFIED" && gate\.allowed/);
+  });
+
+  it.each(["components/ScanInput.tsx", "components/RescanButton.tsx"])("keeps provenance policy out of browser mutation payloads in %s", (path) => {
+    const text = readFileSync(resolve(process.cwd(), path), "utf8");
+    for (const field of ["registryAddress:", "scanner:", "scannerSoftwareVersion:", "policyVersion:", "validForSeconds:"]) expect(text).not.toContain(field);
+  });
+
+  it("removes the unused legacy share-card claim surface", () => {
+    expect(() => readFileSync(resolve(process.cwd(), "components/ShareCard.tsx"), "utf8")).toThrow();
+  });
+
   it.each(["app/api/v1/attestation/[address]/route.ts", "app/api/verify-evidence/route.ts"])("retires %s", (path) => {
     const text = readFileSync(resolve(process.cwd(), path), "utf8");
     expect(text).toContain("goneResponse");

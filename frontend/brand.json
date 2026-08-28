@@ -1,27 +1,27 @@
 {
   "colors": {
-    "primary": "#0A0E1A",
-    "secondary": "#0F172A",
-    "accent": "#00D4FF",
-    "accentSecondary": "#7C3AED",
-    "background": "#050810",
-    "surface": "#0D1224",
-    "surfaceHover": "#141830",
-    "text": "#E2E8F0",
-    "textMuted": "#64748B",
-    "textDim": "#334155",
-    "safe": "#10B981",
-    "caution": "#F59E0B",
-    "flagged": "#EF4444",
-    "border": "#1E2D4A"
+    "primary": "#111214",
+    "secondary": "#191A1E",
+    "accent": "#AD72FF",
+    "accentSecondary": "#F1EBDF",
+    "background": "#111214",
+    "surface": "#222329",
+    "surfaceHover": "#2B2C32",
+    "text": "#F2EFE8",
+    "textMuted": "#A7A39B",
+    "textDim": "#716F6B",
+    "safe": "#39B982",
+    "caution": "#D79A36",
+    "flagged": "#E45D5D",
+    "border": "rgba(242,239,232,0.14)"
   },
   "fonts": {
-    "heading": "Space Grotesk",
-    "body": "Inter",
-    "mono": "JetBrains Mono"
+    "heading": "Chakra Petch",
+    "body": "IBM Plex Sans",
+    "mono": "IBM Plex Mono"
   },
   "logoPath": "public/logo.svg",
   "darkMode": true,
-  "name": "0G Sentinel",
-  "tagline": "Every AI agent, verified — behavioral audit, code scan, on-chain proof."
+  "name": "0G Sentinel ProofLock",
+  "tagline": "Identity-bound, policy-scoped admission with exact 0G evidence."
 }

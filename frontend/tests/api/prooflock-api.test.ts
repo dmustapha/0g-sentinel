@@ -3,11 +3,11 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { authenticateOperator } from "../../server/prooflock/auth";
-import { IdentityError } from "../../server/prooflock/errors";
+import { IdentityError, ProofMismatchError } from "../../server/prooflock/errors";
 import { ProofLockStageError, computeProofRoot } from "../../server/prooflock/runner";
 import { canonicalizeEvidence, hashCanonical, receiptDigest } from "../../server/prooflock/canonical";
-import { computeIdentityKey } from "../../server/prooflock/chain";
-import { enrichProofLockDetail } from "../../server/prooflock/read-api";
+import { REGISTRY_V2_INTERFACE, computeIdentityKey, computeProofLockId } from "../../server/prooflock/chain";
+import { enrichProofLockDetail, recoverHistoricalProofLock } from "../../server/prooflock/read-api";
 import { ERC8004_IDENTITY_REGISTRY, type Bytes32, type EvidenceEnvelopeV1 } from "../../server/prooflock/types";
 import {
   apiErrorResponse,
@@ -18,7 +18,7 @@ import {
   type ProofLockReadDependencies,
 } from "../../server/prooflock/api";
 
-const hex = (byte: string, size: number) => `0x${byte.repeat(size)}`;
+const hex = (byte: string, size: number): `0x${string}` => `0x${byte.repeat(size)}`;
 const identityKey = hex("11", 32);
 const proofId = hex("22", 32);
 const operatorToken = "s".repeat(32);
@@ -146,8 +146,13 @@ describe("public read handlers", () => {
       registryAddress: hex("12", 20),
       resolveIdentity: vi.fn().mockResolvedValue(identity),
       readProofLock: vi.fn().mockResolvedValue(record),
+      readProofById: vi.fn().mockResolvedValue({ record, source: {
+        kind: "ProofLocked", transactionHash: hex("90", 32), blockNumber: 9,
+      } }),
       readProofLockDetail: vi.fn().mockResolvedValue({ status: "VERIFIED", identity: { agentId: "7" },
-        resolution: { agentWallet: record.subject }, gate: { status: "VERIFIED", allowed: true, reason: 0 } }),
+        resolution: { agentWallet: record.subject }, gate: { status: "VERIFIED", allowed: true, reason: 0,
+          subject: record.subject, version: "1" }, consumer: { status: "VERIFIED", accepted: true,
+          address: hex("77", 20), subject: record.subject, version: "1" } }),
       computeProofId: vi.fn().mockReturnValue(proofId),
       verifyStoredEvidence: vi.fn().mockResolvedValue({ envelope: { schema: "sentinel.prooflock/evidence-v1" }, retrievalVerified: true, networkProofVerified: false }),
       ...overrides,
@@ -161,7 +166,7 @@ describe("public read handlers", () => {
     );
     expect(response.status).toBe(200);
     expect(deps.resolveIdentity).toHaveBeenCalledWith("7", expect.any(AbortSignal));
-    expect(response.headers.get("cache-control")).toBe("public, max-age=15, stale-while-revalidate=45");
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
   it("maps a missing ERC-8004 token to a stable not-found error", async () => {
@@ -195,7 +200,9 @@ describe("public read handlers", () => {
     expect(deps.readProofLockDetail).toHaveBeenCalledWith(record, expect.any(AbortSignal));
     expect(await response.json()).toMatchObject({ detail: { status: "VERIFIED",
       identity: { agentId: "7" }, resolution: { agentWallet: record.subject },
-      gate: { status: "VERIFIED", allowed: true, reason: 0 } } });
+      gate: { status: "VERIFIED", allowed: true, reason: 0, subject: record.subject, version: "1" },
+      consumer: { status: "VERIFIED", accepted: true, subject: record.subject, version: "1" } } });
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
   it("binds proofId and identityKey before returning verified Storage evidence", async () => {
@@ -209,16 +216,43 @@ describe("public read handlers", () => {
     const body = await response.json();
     expect(body.proofId).toBe(proofId);
     expect(body.storage.networkProofVerified).toBe(false);
+    expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
   it("rejects a proofId mismatch without retrieving Storage", async () => {
-    const deps = dependencies({ computeProofId: vi.fn().mockReturnValue(hex("99", 32)) });
+    const deps = dependencies({ readProofById: vi.fn().mockResolvedValue(null) });
     const response = await createProofLockReadHandlers(deps).verifyProof(
       proofId,
       new Request(`https://sentinel.test?identityKey=${identityKey}`),
     );
     expect(response.status).toBe(404);
     expect(deps.verifyStoredEvidence).not.toHaveBeenCalled();
+  });
+
+  it("verifies an exact superseded proof record without reading the current registry snapshot", async () => {
+    const historical = { ...record, version: 1n, envelopeDigest: hex("71", 32) };
+    const current = { ...record, version: 2n, envelopeDigest: hex("72", 32) };
+    const historicalId = computeProofLockId(hex("12", 20), historical);
+    const deps = dependencies({ readProofLock: vi.fn().mockResolvedValue(current),
+      readProofById: vi.fn().mockResolvedValue({ record: historical,
+        source: { kind: "ProofLocked", transactionHash: hex("91", 32), blockNumber: 8 } }),
+      computeProofId: computeProofLockId });
+    const response = await createProofLockReadHandlers(deps).verifyProof(historicalId,
+      new Request(`https://sentinel.test?identityKey=${identityKey}`));
+    expect(response.status).toBe(200);
+    expect(deps.readProofLock).not.toHaveBeenCalled();
+    expect(deps.verifyStoredEvidence).toHaveBeenCalledWith(historical, expect.any(AbortSignal));
+    expect(await response.json()).toMatchObject({ proofLock: { version: "1", envelopeDigest: hex("71", 32) },
+      source: { kind: "ProofLocked", transactionHash: hex("91", 32), blockNumber: 8 } });
+  });
+
+  it("maps cryptographic proof mismatch to stable non-retryable MISMATCH", async () => {
+    const deps = dependencies({ verifyStoredEvidence: vi.fn().mockRejectedValue(new ProofMismatchError()) });
+    const response = await createProofLockReadHandlers(deps).verifyProof(proofId,
+      new Request(`https://sentinel.test?identityKey=${identityKey}`));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ error: { code: "MISMATCH", retryable: false,
+      stage: "VERIFYING_PROOF" } });
   });
 });
 
@@ -229,6 +263,7 @@ describe("ProofLock detail provenance", () => {
       verifyStorageRoot: vi.fn().mockResolvedValue(undefined),
       resolveIdentity: vi.fn().mockResolvedValue(detailResolution()),
       checkGate: vi.fn().mockResolvedValue({ allowed: true, reason: 0, subject: hex("bb", 20), version: 1n }),
+      simulateConsumer: vi.fn().mockResolvedValue({ accepted: true, address: hex("77", 20) }),
       ...overrides,
     };
   }
@@ -242,7 +277,9 @@ describe("ProofLock detail provenance", () => {
       identity: { identityKey: record.identityKey, chainId: 16661, registryAddress: ERC8004_IDENTITY_REGISTRY,
         agentId: "7", owner: envelope.identity.owner, agentWallet: record.subject },
       resolution: { owner: envelope.identity.owner, agentWallet: record.subject, sourceBlockNumber: "101" },
-      gate: { status: "VERIFIED", allowed: true, reason: 0 } });
+      gate: { status: "VERIFIED", allowed: true, reason: 0, subject: record.subject, version: "1" },
+      consumer: { status: "VERIFIED", accepted: true, address: hex("77", 20),
+        subject: record.subject, version: "1" } });
     expect(deps.resolveIdentity).toHaveBeenCalledWith("7", expect.any(AbortSignal));
     expect(deps.checkGate).toHaveBeenCalledWith("7", expect.any(AbortSignal));
   });
@@ -253,7 +290,8 @@ describe("ProofLock detail provenance", () => {
     ) });
     const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
     expect(result).toEqual({ status: "UNAVAILABLE", code: "EVIDENCE_INVALID", identity: null,
-      resolution: null, gate: { status: "UNKNOWN", allowed: false, reason: null } });
+      resolution: null, gate: { status: "UNKNOWN", allowed: false, reason: null },
+      consumer: { status: "UNKNOWN", accepted: false } });
     expect(deps.resolveIdentity).not.toHaveBeenCalled();
     expect(deps.checkGate).not.toHaveBeenCalled();
   });
@@ -275,36 +313,71 @@ describe("ProofLock detail provenance", () => {
     const deps = detailDependencies({ downloadEvidence: vi.fn().mockRejectedValue(new Error("private indexer detail")) });
     await expect(enrichProofLockDetail(detailRecord(), deps, new AbortController().signal)).resolves.toEqual({
       status: "UNAVAILABLE", code: "EVIDENCE_UNAVAILABLE", identity: null, resolution: null,
-      gate: { status: "UNKNOWN", allowed: false, reason: null },
+      gate: { status: "UNKNOWN", allowed: false, reason: null }, consumer: { status: "UNKNOWN", accepted: false },
     });
     expect(deps.resolveIdentity).not.toHaveBeenCalled();
   });
 
-  it("rejects a current ERC-8004 wallet that no longer binds the sealed subject", async () => {
+  it("keeps sealed identity visible and surfaces Gate SUBJECT_CHANGED for the current wallet", async () => {
+    const changedWallet = hex("cc", 20);
     const deps = detailDependencies({ resolveIdentity: vi.fn().mockResolvedValue({
-      ...detailResolution(), agentWallet: hex("cc", 20),
-    }) });
+      ...detailResolution(), agentWallet: changedWallet,
+    }), checkGate: vi.fn().mockResolvedValue({ allowed: false, reason: 5,
+      subject: changedWallet, version: 1n }),
+    simulateConsumer: vi.fn().mockResolvedValue({ accepted: false, address: hex("77", 20) }) });
     const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
-    expect(result).toMatchObject({ status: "UNAVAILABLE", code: "IDENTITY_INVALID",
-      gate: { status: "UNKNOWN", allowed: false, reason: null } });
-    expect(deps.checkGate).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: "VERIFIED",
+      identity: { agentWallet: hex("bb", 20) }, resolution: { agentWallet: changedWallet },
+      gate: { status: "VERIFIED", allowed: false, reason: 5, subject: changedWallet, version: "1" },
+      consumer: { status: "VERIFIED", accepted: false, subject: changedWallet, version: "1" } });
+    expect(deps.checkGate).toHaveBeenCalledWith("7", expect.any(AbortSignal));
+    expect(deps.simulateConsumer).toHaveBeenCalledWith("7", changedWallet, expect.any(AbortSignal));
   });
 
   it("preserves a verified Gate denial as its exact stable reason", async () => {
     const deps = detailDependencies({ checkGate: vi.fn().mockResolvedValue({
       allowed: false, reason: 3, subject: hex("bb", 20), version: 1n,
-    }) });
+    }), simulateConsumer: vi.fn().mockResolvedValue({ accepted: false, address: hex("77", 20) }) });
     const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
     expect(result).toMatchObject({ status: "VERIFIED",
-      gate: { status: "VERIFIED", allowed: false, reason: 3 } });
+      gate: { status: "VERIFIED", allowed: false, reason: 3, subject: hex("bb", 20), version: "1" },
+      consumer: { status: "VERIFIED", accepted: false, subject: hex("bb", 20), version: "1" } });
   });
 
   it("returns a fail-closed UNKNOWN Gate result when the Gate read reverts", async () => {
     const deps = detailDependencies({ checkGate: vi.fn().mockRejectedValue(new Error("private RPC revert")) });
     const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
     expect(result).toMatchObject({ status: "VERIFIED",
-      gate: { status: "UNKNOWN", allowed: false, reason: null } });
+      gate: { status: "UNKNOWN", allowed: false, reason: null },
+      consumer: { status: "UNKNOWN", accepted: false } });
+    expect(deps.simulateConsumer).not.toHaveBeenCalled();
     expect(JSON.stringify(result)).not.toContain("private RPC revert");
+  });
+});
+
+describe("historical ProofLocked recovery", () => {
+  function historicalLog() {
+    const envelope = detailEnvelope();
+    const record = detailRecord(envelope);
+    const event = REGISTRY_V2_INTERFACE.encodeEventLog(REGISTRY_V2_INTERFACE.getEvent("ProofLocked")!, [
+      record.identityKey, record.subject, record.version, record.issuedAt, record.validUntil,
+      record.envelopeDigest, record.storageRoot, record.computeRoot, record.artifactHash,
+      record.runtimeCodeHash, record.policyVersion, record.behavioralScore, record.codeRisk, record.coverage,
+    ]);
+    return { record, log: { address: hex("12", 20), topics: event.topics, data: event.data,
+      transactionHash: hex("93", 32), blockNumber: 123 } };
+  }
+
+  it("reconstructs the immutable record and source from the exact proofId event", () => {
+    const { record, log } = historicalLog();
+    const proof = recoverHistoricalProofLock(hex("12", 20), record.identityKey,
+      computeProofLockId(hex("12", 20), record), [log]);
+    expect(proof).toEqual({ record, source: { kind: "ProofLocked", transactionHash: hex("93", 32), blockNumber: 123 } });
+  });
+
+  it("does not substitute another version when no event matches the requested proofId", () => {
+    const { record, log } = historicalLog();
+    expect(recoverHistoricalProofLock(hex("12", 20), record.identityKey, hex("99", 32), [log])).toBeNull();
   });
 });
 

@@ -1,24 +1,31 @@
 import { Indexer } from "@0gfoundation/0g-storage-ts-sdk";
 import { createReadOnlyInferenceBroker } from "@0gfoundation/0g-compute-ts-sdk";
-import { Interface, JsonRpcProvider, VoidSigner, keccak256 } from "ethers";
+import { Interface, JsonRpcProvider, VoidSigner, isError, keccak256 } from "ethers";
 
 import { canonicalizeEvidence } from "./canonical";
-import { computeIdentityKey, computeProofLockId, createEthersRegistryChainAdapter } from "./chain";
+import { REGISTRY_V2_INTERFACE, computeIdentityKey, computeProofLockId, createEthersRegistryChainAdapter } from "./chain";
 import { resolveAgentIdentity } from "./identity/erc8004";
 import { verifyOfflineComputeProof, verifyStorageArtifactBinding } from "./offline-verifier";
 import { resolveService } from "./compute/service";
 import { computeProofRoot } from "./runner";
 import { computeZeroGLayout, STORAGE_VERIFICATION_CAPABILITY } from "./storage";
 import { assertZeroGMainnetRpc } from "./rpc";
-import { recoverStorageCommitment } from "./storage-recovery";
+import { StorageRecoveryMismatchError, recoverStorageCommitment } from "./storage-recovery";
 import { ERC8004_IDENTITY_REGISTRY, type EvidenceEnvelopeV1, type ResolvedAgentIdentity } from "./types";
-import type { ProofLockDetail, ProofLockReadDependencies } from "./api";
+import { ProofMismatchError } from "./errors";
+import type { HistoricalProofLock, ProofLockDetail, ProofLockReadDependencies } from "./api";
+import type { RegistryProofLockRecord } from "./chain";
+import { StrictComputeError } from "./compute/strict-error";
 
 const CHAIN_ID = 16661;
 const MAX_EVIDENCE_BYTES = 1_048_576;
 const ZERO = "0x0000000000000000000000000000000000000001";
+const LOG_CHUNK = 2_000;
 const GATE = new Interface([
   "function checkAgent(uint256 agentId) view returns (bool allowed,uint8 reason,address subject,uint64 version)",
+]);
+const CONSUMER = new Interface([
+  "function gate() view returns (address)", "function acceptAgent(uint256 agentId)",
 ]);
 
 export type ProofLockDetailDependencies = Readonly<{
@@ -27,6 +34,9 @@ export type ProofLockDetailDependencies = Readonly<{
   resolveIdentity(agentId: string, signal: AbortSignal): Promise<ResolvedAgentIdentity>;
   checkGate(agentId: string, signal: AbortSignal): Promise<Readonly<{
     allowed: boolean; reason: number; subject: string; version: bigint;
+  }>>;
+  simulateConsumer(agentId: string, subject: string, signal: AbortSignal): Promise<Readonly<{
+    accepted: boolean; address: string;
   }>>;
 }>;
 
@@ -50,6 +60,13 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       signal.throwIfAborted();
       return record;
     },
+    readProofById: async (identityKey, proofId, signal) => {
+      if (!registryAddress) throw new Error("PROOFLOCK_REGISTRY_V2_ADDRESS is not configured");
+      await assertZeroGMainnetRpc(rpcUrl, signal);
+      return findHistoricalProofLock(provider, registryAddress, identityKey, proofId,
+        requiredInteger(env.PROOFLOCK_REGISTRY_V2_FROM_BLOCK,
+          "PROOFLOCK_REGISTRY_V2_FROM_BLOCK", 0), signal);
+    },
     readProofLockDetail: (record, signal) => enrichProofLockDetail(record, {
       downloadEvidence: (root, innerSignal) => downloadEvidence(
         requiredHttps(env.ZERO_G_STORAGE_INDEXER, "ZERO_G_STORAGE_INDEXER"), root, innerSignal),
@@ -58,6 +75,10 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       checkGate: (agentId, innerSignal) => checkAgentGate(
         rpcUrl, provider, requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS,
           "PROOFLOCK_AGENT_GATE_V2_ADDRESS"), agentId, innerSignal),
+      simulateConsumer: (agentId, subject, innerSignal) => simulateProofLockConsumer(
+        rpcUrl, provider, requiredAddress(env.PROOFLOCK_CONSUMER_ADDRESS,
+          "PROOFLOCK_CONSUMER_ADDRESS"), requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS,
+          "PROOFLOCK_AGENT_GATE_V2_ADDRESS"), agentId, subject, innerSignal),
     }, signal),
     computeProofId: computeProofLockId,
     verifyStoredEvidence: (record, signal) => verifyStorageEvidence({
@@ -79,9 +100,12 @@ export async function enrichProofLockDetail(
   if (!envelope.ok) return unavailable(envelope.code);
   const resolution = await resolveDetailIdentity(envelope.value, record, dependencies, signal);
   if (!resolution.ok) return unavailable(resolution.code);
-  const gate = await readGateDetail(envelope.value.identity.agentId, record, dependencies, signal);
+  const gate = await readGateDetail(envelope.value.identity.agentId,
+    resolution.value.agentWallet, record, dependencies, signal);
+  const consumer = await readConsumerDetail(envelope.value.identity.agentId,
+    resolution.value.agentWallet, gate, dependencies, signal);
   return Object.freeze({ status: "VERIFIED", identity: identitySummary(envelope.value, record),
-    resolution: resolutionSummary(resolution.value), gate });
+    resolution: resolutionSummary(resolution.value), gate, consumer });
 }
 
 async function recoverDetailEnvelope(
@@ -125,6 +149,7 @@ async function resolveDetailIdentity(
 
 async function readGateDetail(
   agentId: string,
+  currentWallet: string,
   record: Awaited<ReturnType<ProofLockReadDependencies["readProofLock"]>>,
   dependencies: ProofLockDetailDependencies,
   signal: AbortSignal,
@@ -132,11 +157,32 @@ async function readGateDetail(
   try {
     const result = await dependencies.checkGate(agentId, signal);
     signal.throwIfAborted();
-    if (!validGateResult(result, record)) throw new Error();
-    return Object.freeze({ status: "VERIFIED" as const, allowed: result.allowed, reason: result.reason });
+    if (!validGateResult(result, currentWallet, record)) throw new Error();
+    return Object.freeze({ status: "VERIFIED" as const, allowed: result.allowed, reason: result.reason,
+      subject: result.subject.toLowerCase() as `0x${string}`, version: result.version.toString() });
   } catch (error) {
     rethrowAbort(error, signal);
     return unknownGate();
+  }
+}
+
+async function readConsumerDetail(
+  agentId: string,
+  currentWallet: string,
+  gate: Awaited<ReturnType<typeof readGateDetail>>,
+  dependencies: ProofLockDetailDependencies,
+  signal: AbortSignal,
+) {
+  if (gate.status !== "VERIFIED") return unknownConsumer();
+  try {
+    const result = await dependencies.simulateConsumer(agentId, currentWallet, signal);
+    signal.throwIfAborted();
+    if (result.accepted !== gate.allowed || !/^0x[0-9a-fA-F]{40}$/.test(result.address)) throw new Error();
+    return Object.freeze({ status: "VERIFIED" as const, accepted: result.accepted,
+      address: result.address.toLowerCase() as `0x${string}`, subject: gate.subject, version: gate.version });
+  } catch (error) {
+    rethrowAbort(error, signal);
+    return unknownConsumer();
   }
 }
 
@@ -150,23 +196,94 @@ async function verifyStorageEvidence(
   if (error || blob.size === 0 || blob.size > MAX_EVIDENCE_BYTES) throw error ?? new Error("Storage evidence unavailable");
   const bytes = new Uint8Array(await blob.arrayBuffer());
   signal.throwIfAborted();
-  if (keccak256(bytes).toLowerCase() !== record.envelopeDigest.toLowerCase()) throw new Error("Envelope digest mismatch");
-  const layout = await computeZeroGLayout(bytes, ZERO);
-  if (layout.storageRoot.toLowerCase() !== record.storageRoot.toLowerCase()) throw new Error("Storage root mismatch");
-  const envelope = parseCanonicalEvidence(bytes);
-  assertEnvelopeRecordBinding(envelope, record);
+  if (keccak256(bytes).toLowerCase() !== record.envelopeDigest.toLowerCase()) mismatch();
+  let envelope: EvidenceEnvelopeV1;
+  try {
+    const layout = await computeZeroGLayout(bytes, ZERO);
+    if (layout.storageRoot.toLowerCase() !== record.storageRoot.toLowerCase()) mismatch();
+    envelope = parseCanonicalEvidence(bytes);
+    assertEnvelopeRecordBinding(envelope, record);
+  } catch (error) { rethrowMismatch(error, signal); }
   await assertZeroGMainnetRpc(config.rpcUrl, signal);
   const broker = await raceAbort(createReadOnlyInferenceBroker(config.rpcUrl, CHAIN_ID), signal);
   const computeVerification = await Promise.all(envelope.computeProofs.map(async (proof) => {
-    const live = await resolveService(broker, proof.provider, proof.model, signal);
-    return verifyOfflineComputeProof(proof, live);
+    let live;
+    try { live = await resolveService(broker, proof.provider, proof.model, signal); }
+    catch (error) { if (computeMismatch(error)) mismatch(); throw error; }
+    try { return verifyOfflineComputeProof(proof, live); }
+    catch (error) { rethrowMismatch(error, signal); }
   }));
   await assertZeroGMainnetRpc(config.rpcUrl, signal);
-  const storageCommitment = await recoverStorageCommitment(config.provider, config.flowAddress,
-    config.flowFromBlock, config.confirmations, record, signal);
-  verifyStorageArtifactBinding(record.artifactHash, storageCommitment);
+  let storageCommitment;
+  try { storageCommitment = await recoverStorageCommitment(config.provider, config.flowAddress,
+    config.flowFromBlock, config.confirmations, record, signal); }
+  catch (error) { if (error instanceof StorageRecoveryMismatchError) mismatch(); throw error; }
+  try { verifyStorageArtifactBinding(record.artifactHash, storageCommitment); }
+  catch (error) { rethrowMismatch(error, signal); }
   return Object.freeze({ envelope, computeVerification, storageCommitment, retrievalVerified: true as const,
     networkProofVerified: STORAGE_VERIFICATION_CAPABILITY.networkProofVerified });
+}
+
+async function findHistoricalProofLock(
+  provider: JsonRpcProvider,
+  registryAddress: `0x${string}`,
+  identityKey: string,
+  proofId: string,
+  fromBlock: number,
+  signal: AbortSignal,
+): Promise<HistoricalProofLock | null> {
+  const latest = await raceAbort(provider.getBlockNumber(), signal);
+  const topics = REGISTRY_V2_INTERFACE.encodeFilterTopics("ProofLocked", [identityKey]);
+  for (let end = latest; end >= fromBlock; end -= LOG_CHUNK) {
+    signal.throwIfAborted();
+    const start = Math.max(fromBlock, end - LOG_CHUNK + 1);
+    const logs = await raceAbort(provider.getLogs({ address: registryAddress, topics,
+      fromBlock: start, toBlock: end }), signal);
+    const match = recoverHistoricalProofLock(registryAddress, identityKey, proofId, logs);
+    if (match) return match;
+  }
+  return null;
+}
+
+export function recoverHistoricalProofLock(
+  registryAddress: string,
+  identityKey: string,
+  proofId: string,
+  logs: readonly Readonly<{ address: string; topics: readonly string[]; data: string;
+    transactionHash: string; blockNumber: number }>[],
+): HistoricalProofLock | null {
+  const matches = logs.flatMap((log) => {
+    try {
+      if (log.address.toLowerCase() !== registryAddress.toLowerCase()) return [];
+      const parsed = REGISTRY_V2_INTERFACE.parseLog({ topics: [...log.topics], data: log.data });
+      if (!parsed || parsed.name !== "ProofLocked") return [];
+      const record = recordFromProofLocked(parsed.args);
+      if (record.identityKey.toLowerCase() !== identityKey.toLowerCase()
+        || computeProofLockId(registryAddress, record).toLowerCase() !== proofId.toLowerCase()
+        || !/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)
+        || !Number.isSafeInteger(log.blockNumber) || log.blockNumber < 0) return [];
+      return [{ record, source: { kind: "ProofLocked" as const,
+        transactionHash: log.transactionHash.toLowerCase() as `0x${string}`, blockNumber: log.blockNumber } }];
+    } catch { return []; }
+  });
+  if (matches.length > 1) mismatch();
+  return matches[0] ?? null;
+}
+
+function recordFromProofLocked(args: Record<string, unknown>): RegistryProofLockRecord {
+  return {
+    identityKey: String(args.identityKey).toLowerCase() as `0x${string}`,
+    subject: String(args.subject).toLowerCase() as `0x${string}`,
+    envelopeDigest: String(args.envelopeDigest).toLowerCase() as `0x${string}`,
+    storageRoot: String(args.storageRoot).toLowerCase() as `0x${string}`,
+    computeRoot: String(args.computeRoot).toLowerCase() as `0x${string}`,
+    artifactHash: String(args.artifactHash).toLowerCase() as `0x${string}`,
+    runtimeCodeHash: String(args.runtimeCodeHash).toLowerCase() as `0x${string}`,
+    version: BigInt(String(args.version)), issuedAt: BigInt(String(args.issuedAt)),
+    validUntil: BigInt(String(args.validUntil)), policyVersion: Number(args.policyVersion),
+    behavioralScore: Number(args.behavioralScore), codeRisk: Number(args.codeRisk),
+    coverage: Number(args.coverage), state: 1, stateReason: 0,
+  };
 }
 
 async function resolveProductionIdentity(
@@ -214,6 +331,33 @@ async function checkAgentGate(
     subject: String(decoded.subject).toLowerCase(), version: BigInt(decoded.version) };
 }
 
+async function simulateProofLockConsumer(
+  rpcUrl: string,
+  provider: JsonRpcProvider,
+  consumerAddress: `0x${string}`,
+  gateAddress: `0x${string}`,
+  agentId: string,
+  subject: string,
+  signal: AbortSignal,
+) {
+  await assertZeroGMainnetRpc(rpcUrl, signal);
+  signal.throwIfAborted();
+  const code = await raceAbort(provider.getCode(consumerAddress), signal);
+  if (code === "0x") throw new Error("ProofLock consumer is unavailable");
+  const pointerRaw = await raceAbort(provider.call({ to: consumerAddress,
+    data: CONSUMER.encodeFunctionData("gate") }), signal);
+  const pointer = String(CONSUMER.decodeFunctionResult("gate", pointerRaw)[0]).toLowerCase();
+  if (pointer !== gateAddress.toLowerCase()) throw new Error("ProofLock consumer Gate mismatch");
+  try {
+    await raceAbort(provider.call({ to: consumerAddress, from: subject,
+      data: CONSUMER.encodeFunctionData("acceptAgent", [BigInt(agentId)]) }), signal);
+    return { accepted: true, address: consumerAddress };
+  } catch (error) {
+    if (isError(error, "CALL_EXCEPTION")) return { accepted: false, address: consumerAddress };
+    throw error;
+  }
+}
+
 function assertStoredIdentityBinding(
   envelope: EvidenceEnvelopeV1,
   record: Awaited<ReturnType<ProofLockReadDependencies["readProofLock"]>>,
@@ -235,17 +379,17 @@ function assertResolvedIdentityBinding(
   if (current.namespace !== stored.namespace || current.chainId !== stored.chainId
     || current.registryAddress.toLowerCase() !== stored.registryAddress.toLowerCase()
     || current.agentId !== stored.agentId
-    || computeIdentityKey(current).toLowerCase() !== record.identityKey.toLowerCase()
-    || resolution.agentWallet.toLowerCase() !== record.subject.toLowerCase()) throw new Error();
+    || computeIdentityKey(current).toLowerCase() !== record.identityKey.toLowerCase()) throw new Error();
 }
 
 function validGateResult(
   result: Readonly<{ allowed: boolean; reason: number; subject: string; version: bigint }>,
+  currentWallet: string,
   record: Awaited<ReturnType<ProofLockReadDependencies["readProofLock"]>>,
 ): boolean {
   return Number.isInteger(result.reason) && result.reason >= 0 && result.reason <= 16
     && result.allowed === (result.reason === 0)
-    && result.subject.toLowerCase() === record.subject.toLowerCase()
+    && result.subject.toLowerCase() === currentWallet.toLowerCase()
     && result.version === record.version;
 }
 
@@ -266,14 +410,30 @@ function resolutionSummary(resolution: ResolvedAgentIdentity) {
 }
 
 function unavailable(code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID"): ProofLockDetail {
-  return Object.freeze({ status: "UNAVAILABLE", code, identity: null, resolution: null, gate: unknownGate() });
+  return Object.freeze({ status: "UNAVAILABLE", code, identity: null, resolution: null,
+    gate: unknownGate(), consumer: unknownConsumer() });
 }
 
 function unknownGate() { return Object.freeze({ status: "UNKNOWN" as const, allowed: false as const, reason: null }); }
+function unknownConsumer() { return Object.freeze({ status: "UNKNOWN" as const, accepted: false as const }); }
 
 function rethrowAbort(error: unknown, signal: AbortSignal): void {
   if (signal.aborted) throw signal.reason ?? error;
 }
+
+function rethrowMismatch(error: unknown, signal: AbortSignal): never {
+  rethrowAbort(error, signal);
+  if (error instanceof ProofMismatchError) throw error;
+  mismatch();
+}
+
+function computeMismatch(error: unknown): boolean {
+  return error instanceof StrictComputeError && ["COMPUTE_METADATA_INVALID", "COMPUTE_PROOF_CLASS_UNSUPPORTED",
+    "COMPUTE_MODEL_MISMATCH", "COMPUTE_SIGNER_UNACKNOWLEDGED", "COMPUTE_SIGNER_MISMATCH"]
+    .includes(error.code);
+}
+
+function mismatch(): never { throw new ProofMismatchError(); }
 
 function parseCanonicalEvidence(bytes: Uint8Array): EvidenceEnvelopeV1 {
   const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);

@@ -6,6 +6,10 @@ import type { Bytes32, HexAddress, StorageCommitment } from "./types";
 
 const CHUNK = 2_000;
 
+export class StorageRecoveryMismatchError extends Error {
+  constructor() { super("Canonical Storage commitment was not found"); this.name = "StorageRecoveryMismatchError"; }
+}
+
 export type StorageRecoveryProvider = Readonly<{
   getBlockNumber(): Promise<number>;
   getLogs(filter: Filter): Promise<Log[]>;
@@ -45,7 +49,7 @@ export async function recoverStorageCommitment(
       catch { /* Another submission may have used the same root. */ }
     }
   }
-  throw new Error("Canonical Storage commitment could not be recovered");
+  throw new StorageRecoveryMismatchError();
 }
 
 function containsRoot(submission: unknown, expected: string): boolean {

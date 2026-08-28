@@ -2,17 +2,28 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SubsystemHealthGrid } from "../../components/SubsystemHealthGrid";
-import { currentAccessFor, HistoricalProofDetails, VerificationResult, verificationStateForError } from "../../components/VerifyEvidenceButton";
+import { currentAccessFor, HistoricalProofDetails, VerificationResult, verificationStateForError, VerifyEvidenceButton } from "../../components/VerifyEvidenceButton";
 import { ProofLockApiError } from "../../lib/prooflock-client";
 import type { HealthSnapshot, ProofVerificationState } from "../../lib/prooflock-types";
 
 describe("public proof verification", () => {
-  it("maps mismatch, dependency outage, and abort to distinct stable states", () => {
+  it("keys the stateful verifier by the complete identifier tuple", () => {
+    const first = VerifyEvidenceButton({ proofId: "proof", identityKey: "identity", sourceTxHash: "tx-1" });
+    const same = VerifyEvidenceButton({ proofId: "proof", identityKey: "identity", sourceTxHash: "tx-1" });
+    const proofChanged = VerifyEvidenceButton({ proofId: "proof-2", identityKey: "identity", sourceTxHash: "tx-1" });
+    const identityChanged = VerifyEvidenceButton({ proofId: "proof", identityKey: "identity-2", sourceTxHash: "tx-1" });
+    const sourceChanged = VerifyEvidenceButton({ proofId: "proof", identityKey: "identity", sourceTxHash: "tx-2" });
+
+    expect(first.key).toBe(same.key);
+    expect(new Set([first.key, proofChanged.key, identityChanged.key, sourceChanged.key])).toHaveLength(4);
+  });
+  it("maps mismatch, dependency outage, timeout, and user cancel to distinct stable states", () => {
     const error = (code: string, status: number) => new ProofLockApiError({ code, message: code, stage: "VERIFYING_PROOF",
       retryable: status === 503, requestId: "req" }, status);
-    expect(verificationStateForError(error("MISMATCH", 409), false)).toBe("MISMATCH");
-    expect(verificationStateForError(error("DEPENDENCY_UNAVAILABLE", 503), false)).toBe("UNAVAILABLE");
-    expect(verificationStateForError(new DOMException("Aborted", "AbortError"), true)).toBe("TIMEOUT");
+    expect(verificationStateForError(error("MISMATCH", 409))).toBe("MISMATCH");
+    expect(verificationStateForError(error("DEPENDENCY_UNAVAILABLE", 503))).toBe("UNAVAILABLE");
+    expect(verificationStateForError(new DOMException("Aborted", "AbortError"), "TIMEOUT")).toBe("TIMEOUT");
+    expect(verificationStateForError(new DOMException("Aborted", "AbortError"), "CANCELED")).toBe("CANCELED");
   });
 
   it("keeps current access blocked when Gate allows but guarded consumer proof is unknown", () => {
@@ -37,7 +48,8 @@ describe("public proof verification", () => {
   });
   it.each([
     ["MATCH", "Historical artifact matches"], ["MISMATCH", "Historical artifact mismatch"],
-    ["UNAVAILABLE", "Evidence unavailable"], ["TIMEOUT", "Verification timed out"], ["RETRYING", "Retrying verification"],
+    ["UNAVAILABLE", "Evidence unavailable"], ["TIMEOUT", "Verification timed out"], ["CANCELED", "Verification canceled"],
+    ["RETRYING", "Retrying verification"],
   ] satisfies readonly (readonly [ProofVerificationState, string])[])("renders %s explicitly", (state, label) => {
     const html = renderToStaticMarkup(React.createElement(VerificationResult, { state })); expect(html).toContain(label);
   });
@@ -45,6 +57,16 @@ describe("public proof verification", () => {
     const html = renderToStaticMarkup(React.createElement(VerificationResult, { state: "MATCH", current: "BLOCKED", reasonCode: "DRIFTED" }));
     expect(html).toContain("Historical artifact matches"); expect(html).toContain("Current access: BLOCKED"); expect(html).toContain("DRIFTED");
     expect(html).not.toContain("Current access: ADMITTED");
+  });
+  it("announces busy verification with concise status semantics", () => {
+    const html = renderToStaticMarkup(React.createElement(VerificationResult, { state: "VERIFYING", busy: true }));
+    expect(html).toContain('role="status"');
+    expect(html).toContain('aria-busy="true"');
+  });
+  it("keeps a historical match visible when current access is unavailable", () => {
+    const html = renderToStaticMarkup(React.createElement(VerificationResult, { state: "MATCH", current: "UNAVAILABLE" }));
+    expect(html).toContain("Historical artifact matches");
+    expect(html).toContain("Current access: UNAVAILABLE");
   });
 });
 

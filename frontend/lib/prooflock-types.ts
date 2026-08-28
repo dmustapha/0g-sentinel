@@ -52,7 +52,20 @@ export type GateDecision = Readonly<{
 }>;
 
 export type LeaseStatus = "ACTIVE" | "EXPIRING" | "EXPIRED" | "REVOKED" | "DRIFTED" | "INCOMPLETE";
-export type ProofVerificationState = "IDLE" | "VERIFYING" | "MATCH" | "MISMATCH" | "UNAVAILABLE" | "TIMEOUT" | "RETRYING";
+export type ProofVerificationState =
+  | "IDLE" | "VERIFYING" | "MATCH" | "MISMATCH"
+  | "UNAVAILABLE" | "TIMEOUT" | "CANCELED" | "RETRYING";
+export type HistoricalVerification =
+  | Readonly<{ status: Exclude<ProofVerificationState, "MATCH"> }>
+  | Readonly<{ status: "MATCH"; proof: VerifiedProof }>;
+export type CurrentVerification =
+  | Readonly<{ status: "IDLE" | "READING" | "UNAVAILABLE" | "TIMEOUT" | "CANCELED" }>
+  | Readonly<{ status: "ADMITTED" | "BLOCKED"; reason: string }>;
+export type VerificationState = Readonly<{
+  generation: number;
+  historical: HistoricalVerification;
+  current: CurrentVerification;
+}>;
 
 export type ObservationScope = "HISTORICAL" | "CURRENT";
 export type ObservationStatus = "VERIFIED" | "BLOCKED" | "UNAVAILABLE" | "STALE" | "MISMATCH" | "NOT_APPLICABLE";

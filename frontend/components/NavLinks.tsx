@@ -8,13 +8,13 @@ export function NavLinks() {
   return (
     <nav className="nav" aria-label="Primary">
       <Link href="/" className={pathname === "/" ? "active" : ""}>
-        Home
+        Evaluate
       </Link>
       <Link href="/agents" className={pathname.startsWith("/agents") ? "active" : ""}>
-        Dashboard
+        ProofLocks
       </Link>
-      <Link href="/proof" className={pathname === "/proof" ? "active" : ""}>
-        Proof
+      <Link href="/proof" className={pathname.startsWith("/proof") ? "active" : ""}>
+        Verify
       </Link>
     </nav>
   );

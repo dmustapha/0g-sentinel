@@ -15,14 +15,12 @@ export default function Error({
 
   return (
     <div className="centered-state">
-      <span className="eyebrow" style={{ color: "var(--bad)" }}>Error</span>
-      <h2 style={{ fontSize: "var(--fs-h3)" }}>Something went wrong</h2>
-      <p className="mini-note" style={{ maxWidth: 420 }}>
-        {error.message || "An unexpected error occurred."}
-      </p>
-      <div className="cta-row" style={{ justifyContent: "center" }}>
-        <button onClick={reset} className="btn btn-primary">Try again</button>
-        <Link href="/agents" className="btn btn-ghost">Dashboard →</Link>
+      <span className="eyebrow">Fail-closed interface</span>
+      <h2>Proof surface unavailable</h2>
+      <p>The requested proof data could not be rendered. No admission state has been inferred.</p>
+      <div className="action-row">
+        <button onClick={reset} className="button primary">Retry read</button>
+        <Link href="/agents" className="button">ProofLocks →</Link>
       </div>
     </div>
   );

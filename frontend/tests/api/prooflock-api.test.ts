@@ -17,23 +17,31 @@ import {
 const hex = (byte: string, size: number) => `0x${byte.repeat(size)}`;
 const identityKey = hex("11", 32);
 const proofId = hex("22", 32);
+const operatorToken = "s".repeat(32);
 
 describe("operator authentication", () => {
   it.each([undefined, "", "Bearer", "Basic abc", "Bearer wrong", "Bearer wrong-but-longer"])(
     "rejects missing or invalid authorization without exposing the token (%s)",
     (authorization) => {
-      const result = authenticateOperator(authorization, "correct-token");
+      const result = authenticateOperator(authorization, operatorToken);
       expect(result).toBe(false);
     },
   );
 
   it("accepts only an exact Bearer token", () => {
-    expect(authenticateOperator("Bearer correct-token", "correct-token")).toBe(true);
-    expect(authenticateOperator("bearer correct-token", "correct-token")).toBe(false);
+    expect(authenticateOperator(`Bearer ${operatorToken}`, operatorToken)).toBe(true);
+    expect(authenticateOperator(`bearer ${operatorToken}`, operatorToken)).toBe(false);
   });
 
   it("fails closed when the configured token is empty", () => {
     expect(authenticateOperator("Bearer anything", "")).toBe(false);
+  });
+
+  it("rejects configured tokens outside the 32..256 UTF-8 byte policy", () => {
+    expect(authenticateOperator("Bearer short", "short")).toBe(false);
+    expect(authenticateOperator(`Bearer ${"x".repeat(257)}`, "x".repeat(257))).toBe(false);
+    expect(authenticateOperator(`Bearer ${"💥".repeat(16)}`, "💥".repeat(16))).toBe(true);
+    expect(authenticateOperator(`Bearer ${"💥".repeat(65)}`, "💥".repeat(65))).toBe(false);
   });
 });
 
@@ -151,7 +159,7 @@ describe("public read handlers", () => {
 describe("admin ProofLock stream", () => {
   it("authenticates before loading an operator or constructing a stream", async () => {
     const loadRunner = vi.fn();
-    const response = await createProofLockStreamHandler({ operatorToken: "secret", loadRunner })(
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner })(
       new Request("https://sentinel.test", { method: "POST", headers: { authorization: "Bearer wrong" }, body: "{}" }),
     );
     expect(response.status).toBe(401);
@@ -166,35 +174,76 @@ describe("admin ProofLock stream", () => {
       return { stage: "SEALED", chain: { transactionHash: hex("aa", 32) } };
     });
     const request = new Request("https://sentinel.test", {
-        method: "POST", headers: { authorization: "Bearer secret", "content-type": "application/json" },
+        method: "POST", headers: { authorization: `Bearer ${operatorToken}`, "content-type": "application/json" },
         body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661, registryAddress: hex("80", 20), agentId: "7" }, registryAddress: hex("12", 20), policyVersion: 1, scanner: hex("13", 20), scannerSoftwareVersion: "1.0.0", validForSeconds: 604800, mode: "SEAL" }),
       });
-    const response = await createProofLockStreamHandler({ operatorToken: "secret", loadRunner: async () => ({ run }) })(request);
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(request);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     const frames = await response.text();
     expect(frames).toContain('"type":"stage","stage":"VALIDATING_IDENTITY"');
     expect(frames).toContain('"type":"complete"');
     expect(run).toHaveBeenCalledTimes(1);
-    expect(run.mock.calls[0]?.[2]).toBe(request.signal);
+    expect(run.mock.calls[0]?.[2]).toBeInstanceOf(AbortSignal);
+    expect(run.mock.calls[0]?.[2]).not.toBe(request.signal);
   });
 
   it("uses the runner stage and stable code for terminal Compute errors", async () => {
     const run = vi.fn().mockRejectedValue(new ProofLockStageError("RUNNING_COMPUTE", "private provider detail"));
-    const response = await createProofLockStreamHandler({ operatorToken: "secret", loadRunner: async () => ({ run }) })(
-      new Request("https://sentinel.test", { method: "POST", headers: { authorization: "Bearer secret" }, body: JSON.stringify({ mode: "SEAL" }) }),
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` }, body: JSON.stringify({ mode: "SEAL" }) }),
     );
     const frames = await response.text();
     expect(frames).toContain('"code":"COMPUTE_UNVERIFIED"');
     expect(frames).toContain('"stage":"RUNNING_COMPUTE"');
     expect(frames).not.toContain("private provider detail");
   });
+
+  it("aborts the runner when the response reader is cancelled", async () => {
+    let paidStageReached = false;
+    let runnerSignal: AbortSignal | undefined;
+    const run = vi.fn(async (_input, report, signal?: AbortSignal) => {
+      runnerSignal = signal;
+      report("VALIDATING_IDENTITY");
+      await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }));
+      if (!signal?.aborted) paidStageReached = true;
+      throw new DOMException("Aborted", "AbortError");
+    });
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` }, body: JSON.stringify({ mode: "SEAL" }) }),
+    );
+    const reader = response.body!.getReader();
+    await reader.read();
+    await reader.cancel();
+    await vi.waitFor(() => expect(runnerSignal?.aborted).toBe(true));
+    expect(paidStageReached).toBe(false);
+  });
+
+  it("cancels an oversized chunked request before loading the runner", async () => {
+    const cancelled = vi.fn();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(10_000));
+        controller.enqueue(new Uint8Array(10_000));
+      },
+      cancel: cancelled,
+    });
+    const loadRunner = vi.fn();
+    const request = new Request("https://sentinel.test", {
+      method: "POST", headers: { authorization: `Bearer ${operatorToken}` }, body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner })(request);
+    expect(response.status).toBe(400);
+    expect(loadRunner).not.toHaveBeenCalled();
+    expect(cancelled).toHaveBeenCalled();
+  });
 });
 
 describe("admin on-demand drift", () => {
   it("rejects unauthenticated mutation before loading the operator", async () => {
     const loadDrift = vi.fn();
-    const response = await createDriftHandler({ operatorToken: "secret", loadDrift })(
+    const response = await createDriftHandler({ operatorToken, loadDrift })(
       identityKey, new Request("https://sentinel.test", { method: "POST", body: "{}" }),
     );
     expect(response.status).toBe(401);
@@ -203,9 +252,9 @@ describe("admin on-demand drift", () => {
 
   it("runs an explicit on-demand drift check without marking by default", async () => {
     const run = vi.fn().mockResolvedValue({ mode: "ON_DEMAND", drifted: false, marked: false });
-    const response = await createDriftHandler({ operatorToken: "secret", loadDrift: async () => ({ run }) })(
+    const response = await createDriftHandler({ operatorToken, loadDrift: async () => ({ run }) })(
       identityKey,
-      new Request("https://sentinel.test", { method: "POST", headers: { authorization: "Bearer secret" }, body: "{}" }),
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` }, body: "{}" }),
     );
     expect(response.status).toBe(200);
     expect(run).toHaveBeenCalledWith(identityKey, false);

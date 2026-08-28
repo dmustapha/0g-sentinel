@@ -75,12 +75,15 @@ export function verifyContentBinding(
 }
 
 export function responseHeadersSha256(headers: ComputeHttpResponse["headers"]): `0x${string}` {
+  return sha256(toUtf8Bytes(JSON.stringify(normalizeResponseHeaders(headers)))) as `0x${string}`;
+}
+
+export function normalizeResponseHeaders(headers: ComputeHttpResponse["headers"]): readonly (readonly [string, string])[] {
   const sensitive = new Set(["authorization", "proxy-authorization", "cookie", "set-cookie"]);
-  const normalized = headers
+  return headers
     .map(([name, value]) => [name.trim().toLowerCase(), value.trim()] as const)
     .filter(([name]) => !sensitive.has(name))
     .sort(compareHeaders);
-  return sha256(toUtf8Bytes(JSON.stringify(normalized))) as `0x${string}`;
 }
 
 export function decodeUtf8(bytes: Uint8Array): string {

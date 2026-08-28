@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { checkSystemPulse, createHealthHandler, type HealthProbeDependencies } from "../../lib/pulse";
+import { assertZeroGMainnetRpc, guardedZeroGMainnetRead } from "../../server/prooflock/rpc";
+import { probeComputeService } from "../../server/prooflock/health";
 
 const ok = (detail: Record<string, unknown> = {}) => async () => detail;
 
@@ -55,5 +57,52 @@ describe("ProofLock health", () => {
     );
     expect(response.status).toBe(503);
     expect((await response.json()).status).toBe("DEGRADED");
+  });
+});
+
+describe("0G RPC chain guard", () => {
+  it("uses raw eth_chainId and accepts only 16661", async () => {
+    const rpcFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ jsonrpc: "2.0", id: "sentinel-chain-id", result: "0x4115" })));
+    await expect(assertZeroGMainnetRpc("https://rpc.example", new AbortController().signal, rpcFetch)).resolves.toBeUndefined();
+    expect(JSON.parse(String(rpcFetch.mock.calls[0]?.[1]?.body))).toEqual({ jsonrpc: "2.0", id: "sentinel-chain-id", method: "eth_chainId", params: [] });
+  });
+
+  it("rejects a healthy-looking RPC on the wrong chain", async () => {
+    const rpcFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ jsonrpc: "2.0", id: "sentinel-chain-id", result: "0x1" })));
+    await expect(assertZeroGMainnetRpc("https://rpc.example", new AbortController().signal, rpcFetch)).rejects.toThrow("chain");
+  });
+
+  it("does not perform a downstream contract read after a wrong-chain response", async () => {
+    const rpcFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ jsonrpc: "2.0", id: "sentinel-chain-id", result: "0x1" })));
+    const contractRead = vi.fn().mockResolvedValue("0x1234");
+    await expect(guardedZeroGMainnetRead("https://rpc.example", new AbortController().signal,
+      contractRead, rpcFetch)).rejects.toThrow("chain");
+    expect(contractRead).not.toHaveBeenCalled();
+  });
+});
+
+describe("read-only Compute health policy", () => {
+  const provider = "0x1111111111111111111111111111111111111111";
+  const signer = "0x2222222222222222222222222222222222222222";
+  const service = (additional: Record<string, unknown>, acknowledged = true) => ({
+    provider, url: "https://compute.example", model: "model-tee",
+    additionalInfo: JSON.stringify(additional), teeSignerAddress: signer,
+    teeSignerAcknowledged: acknowledged,
+  });
+  const broker = (value: unknown) => ({ listService: vi.fn().mockResolvedValue([value]) });
+
+  it("accepts only an acknowledged decentralized separated model TEE without spend methods", async () => {
+    const readOnly = broker(service({ ProviderType: "decentralized", TargetSeparated: true, TargetTeeAddress: signer }));
+    const result = await probeComputeService(readOnly, provider, "model-tee", new AbortController().signal);
+    expect(result).toMatchObject({ proofClass: "DECENTRALIZED_MODEL_TEE", expectedSigner: signer, paidInference: false });
+    expect(Object.keys(readOnly)).toEqual(["listService"]);
+  });
+
+  it.each([
+    ["centralized", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: signer })],
+    ["unseparated", service({ ProviderType: "decentralized", TargetSeparated: false, TargetTeeAddress: signer })],
+    ["unacknowledged", service({ ProviderType: "decentralized", TargetSeparated: true, TargetTeeAddress: signer }, false)],
+  ])("rejects %s Compute services", async (_label, value) => {
+    await expect(probeComputeService(broker(value), provider, "model-tee", new AbortController().signal)).rejects.toThrow();
   });
 });

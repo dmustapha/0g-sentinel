@@ -62,6 +62,17 @@ const usageSchema = z
     else if (usage.totalTokens !== total) addIssue(context, "totalTokens mismatch");
   });
 
+const serviceSnapshotSchema = z.object({
+  provider: address,
+  url: boundedString(4096),
+  model: boundedString(256),
+  additionalInfo: boundedString(65_536),
+  teeSignerAddress: address,
+  teeSignerAcknowledged: z.boolean(),
+}).strict();
+const transcriptHeaderSchema = z.tuple([boundedString(256), boundedString(8192)]);
+const base64 = boundedString(700_000).regex(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/);
+
 const computeProofSchema = z
   .object({
     proofClass: z.literal("DECENTRALIZED_MODEL_TEE"),
@@ -82,12 +93,21 @@ const computeProofSchema = z
     responseHeadersSha256: nonZeroBytes32,
     usage: usageSchema,
     processResponseVerified: z.literal(true),
+    requestBodyBase64: base64.optional(),
+    rawResponseBodyBase64: base64.optional(),
+    signedText: boundedString(256).optional(),
+    normalizedResponseHeaders: z.array(transcriptHeaderSchema).max(100).optional(),
+    serviceSnapshot: serviceSnapshotSchema.optional(),
   })
   .strict()
   .superRefine((proof, context) => {
     if (proof.receiptDigest !== receiptDigest(proof.chatId)) {
       context.addIssue({ code: "custom", message: "receipt digest mismatch" });
     }
+    const extension = [proof.requestBodyBase64, proof.rawResponseBodyBase64, proof.signedText,
+      proof.normalizedResponseHeaders, proof.serviceSnapshot];
+    const count = extension.filter((value) => value !== undefined).length;
+    if (count !== 0 && count !== extension.length) addIssue(context, "Compute provenance extension must be complete");
   });
 
 const evidenceEnvelopeSchema = z
@@ -185,6 +205,7 @@ const storageCommitmentSchema = z
     retrievedDigest: nonZeroBytes32,
     finalizedAtBlock: uint64String,
     retrievalVerified: z.literal(true),
+    networkProofVerified: z.literal(false),
   })
   .strict()
   .superRefine((value, context) => {

@@ -22,6 +22,7 @@ import {
 import {
   decodeUtf8,
   parseSignature,
+  normalizeResponseHeaders,
   responseHeadersSha256,
   verifyContentBinding,
   type ContentBinding,
@@ -338,6 +339,7 @@ async function verifyAndAccept(
   return withReceiptClaim(
     key,
     input,
+    requestBytes,
     response,
     receipt,
     rawResponse,
@@ -378,6 +380,7 @@ async function fetchSignature(
 async function withReceiptClaim(
   key: string,
   input: ParsedInput,
+  requestBytes: Uint8Array,
   response: ResponseBody,
   receipt: Receipt,
   rawResponse: ComputeHttpResponse,
@@ -426,7 +429,7 @@ async function withReceiptClaim(
       dependencies.receiptStore.commit(key, token, MIN_COMMITTED_RETENTION_MS),
       signal,
     );
-    return buildResult(input, response, receipt, rawResponse, binding);
+    return buildResult(input, requestBytes, response, receipt, rawResponse, binding, service);
   } catch (error) {
     await release();
     throw error;
@@ -535,10 +538,12 @@ function receiptClaimKey(input: ParsedInput, chatId: string): string {
 
 function buildResult(
   input: ParsedInput,
+  requestBytes: Uint8Array,
   response: ResponseBody,
   receipt: Receipt,
   rawResponse: ComputeHttpResponse,
   binding: ContentBinding,
+  service: ServiceDetail,
 ): StrictComputeResult {
   const content = response.choices[0].message.content;
   return {
@@ -551,6 +556,9 @@ function buildResult(
       binding,
       receipt.source,
       responseHeadersSha256(rawResponse.headers),
+      requestBytes,
+      rawResponse,
+      service,
     ),
     receiptSource: receipt.source,
     rawResponseHeaders: rawResponse.headers,
@@ -570,6 +578,9 @@ function buildProof(
   binding: ContentBinding,
   receiptSource: Receipt["source"],
   responseHeadersSha256: `0x${string}`,
+  requestBytes: Uint8Array,
+  rawResponse: ComputeHttpResponse,
+  service: ServiceDetail,
 ): ComputeProof {
   return {
     purpose: input.purpose,
@@ -594,6 +605,18 @@ function buildProof(
       totalTokens: response.usage.total_tokens,
     },
     processResponseVerified: true,
+    requestBodyBase64: Buffer.from(requestBytes).toString("base64"),
+    rawResponseBodyBase64: Buffer.from(rawResponse.body).toString("base64"),
+    signedText: binding.signedText,
+    normalizedResponseHeaders: normalizeResponseHeaders(rawResponse.headers),
+    serviceSnapshot: {
+      provider: service.provider.toLowerCase() as HexAddress,
+      url: service.url,
+      model: service.model,
+      additionalInfo: service.additionalInfo,
+      teeSignerAddress: service.teeSignerAddress.toLowerCase() as HexAddress,
+      teeSignerAcknowledged: service.teeSignerAcknowledged,
+    },
   };
 }
 

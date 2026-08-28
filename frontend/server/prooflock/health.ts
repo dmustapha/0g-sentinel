@@ -1,11 +1,12 @@
-import { createZGComputeNetworkBroker } from "@0gfoundation/0g-compute-ts-sdk";
+import { createReadOnlyInferenceBroker } from "@0gfoundation/0g-compute-ts-sdk";
 import { Indexer } from "@0gfoundation/0g-storage-ts-sdk";
-import { Interface, JsonRpcProvider, Wallet, keccak256 } from "ethers";
+import { Interface, JsonRpcProvider, keccak256 } from "ethers";
 
 import type { HealthProbe, HealthProbeDependencies } from "../../lib/pulse";
 import { REGISTRY_V2_INTERFACE } from "./chain";
-import { assertServiceEndpoint, resolveService } from "./compute/service";
+import { resolveExpectedSigner, resolveService, validateBaseUrl } from "./compute/service";
 import { computeZeroGLayout, STORAGE_VERIFICATION_CAPABILITY } from "./storage";
+import { assertZeroGMainnetRpc } from "./rpc";
 import { ERC8004_IDENTITY_REGISTRY } from "./types";
 
 const CHAIN_ID = 16661n;
@@ -17,36 +18,39 @@ const GATE = new Interface(["function registry() view returns (address)", "funct
 
 export function createProductionHealthProbes(env = process.env): HealthProbeDependencies {
   const rpcUrl = env.ZERO_G_RPC || env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
-  const provider = new JsonRpcProvider(rpcUrl, Number(CHAIN_ID), { staticNetwork: true });
+  const provider = new JsonRpcProvider(rpcUrl);
   return Object.freeze({
-    rpc: bounded((signal) => probeRpc(provider, signal)),
-    identity: bounded((signal) => probeIdentity(provider, env.PROOFLOCK_HEALTH_AGENT_ID, signal)),
-    registry: bounded((signal) => probeRegistry(provider, env.PROOFLOCK_REGISTRY_V2_ADDRESS,
+    rpc: bounded((signal) => probeRpc(rpcUrl, provider, signal)),
+    identity: bounded((signal) => probeIdentity(rpcUrl, provider, env.PROOFLOCK_HEALTH_AGENT_ID, signal)),
+    registry: bounded((signal) => probeRegistry(rpcUrl, provider, env.PROOFLOCK_REGISTRY_V2_ADDRESS,
       env.PROOFLOCK_HEALTH_IDENTITY_KEY, env.PROOFLOCK_STORAGE_CANARY_ROOT, signal)),
-    gate: bounded((signal) => probeGate(provider, env.PROOFLOCK_AGENT_GATE_V2_ADDRESS, env.PROOFLOCK_REGISTRY_V2_ADDRESS, signal)),
-    compute: bounded((signal) => probeCompute(env, signal)),
+    gate: bounded((signal) => probeGate(rpcUrl, provider, env.PROOFLOCK_AGENT_GATE_V2_ADDRESS, env.PROOFLOCK_REGISTRY_V2_ADDRESS, signal)),
+    compute: bounded((signal) => probeCompute(rpcUrl, env, signal)),
     storage: bounded((signal) => probeStorage(env.ZERO_G_STORAGE_INDEXER, env.PROOFLOCK_STORAGE_CANARY_ROOT, signal)),
   });
 }
 
-async function probeRpc(provider: JsonRpcProvider, signal: AbortSignal) {
+async function probeRpc(rpcUrl: string, provider: JsonRpcProvider, signal: AbortSignal) {
+  await assertZeroGMainnetRpc(rpcUrl, signal);
   signal.throwIfAborted();
   const [network, block] = await Promise.all([provider.getNetwork(), provider.getBlockNumber()]);
   if (network.chainId !== CHAIN_ID) throw new Error("wrong chain");
   return { chainId: Number(network.chainId), blockNumber: block };
 }
 
-async function probeIdentity(provider: JsonRpcProvider, agentId: string | undefined, signal: AbortSignal) {
+async function probeIdentity(rpcUrl: string, provider: JsonRpcProvider, agentId: string | undefined, signal: AbortSignal) {
   if (!agentId || !/^(0|[1-9]\d*)$/.test(agentId)) return null;
+  await assertZeroGMainnetRpc(rpcUrl, signal);
   const code = await requireCode(provider, ERC8004_IDENTITY_REGISTRY, signal);
   const raw = await provider.call({ to: ERC8004_IDENTITY_REGISTRY, data: IDENTITY.encodeFunctionData("ownerOf", [BigInt(agentId)]) });
   const owner = String(IDENTITY.decodeFunctionResult("ownerOf", raw)[0]);
   return { bytecodeHash: keccak256(code), agentId, owner };
 }
 
-async function probeRegistry(provider: JsonRpcProvider, address: string | undefined, key: string | undefined,
+async function probeRegistry(rpcUrl: string, provider: JsonRpcProvider, address: string | undefined, key: string | undefined,
   canaryRoot: string | undefined, signal: AbortSignal) {
   if (!validAddress(address) || !validBytes32(key) || !validBytes32(canaryRoot)) return null;
+  await assertZeroGMainnetRpc(rpcUrl, signal);
   const code = await requireCode(provider, address, signal);
   const raw = await provider.call({ to: address, data: REGISTRY_V2_INTERFACE.encodeFunctionData("getProofLock", [key]) });
   const record = REGISTRY_V2_INTERFACE.decodeFunctionResult("getProofLock", raw)[0];
@@ -56,8 +60,9 @@ async function probeRegistry(provider: JsonRpcProvider, address: string | undefi
   return { address: address.toLowerCase(), bytecodeHash: keccak256(code), identityKey: key.toLowerCase(), version: String(record.version) };
 }
 
-async function probeGate(provider: JsonRpcProvider, gate: string | undefined, registry: string | undefined, signal: AbortSignal) {
+async function probeGate(rpcUrl: string, provider: JsonRpcProvider, gate: string | undefined, registry: string | undefined, signal: AbortSignal) {
   if (!validAddress(gate) || !validAddress(registry)) return null;
+  await assertZeroGMainnetRpc(rpcUrl, signal);
   const code = await requireCode(provider, gate, signal);
   const [registryRaw, identityRaw] = await Promise.all([
     provider.call({ to: gate, data: GATE.encodeFunctionData("registry") }),
@@ -69,21 +74,26 @@ async function probeGate(provider: JsonRpcProvider, gate: string | undefined, re
   return { address: gate.toLowerCase(), bytecodeHash: keccak256(code), registry: pointer, identityRegistry: identityPointer };
 }
 
-async function probeCompute(env: NodeJS.ProcessEnv, signal: AbortSignal) {
+async function probeCompute(rpcUrl: string, env: NodeJS.ProcessEnv, signal: AbortSignal) {
   const model = env.PROOFLOCK_COMPUTE_MODEL;
   const provider = env.PROOFLOCK_COMPUTE_PROVIDER;
-  const privateKey = env.ZERO_G_PRIVATE_KEY;
-  const rpcUrl = env.ZERO_G_RPC || env.NEXT_PUBLIC_RPC_URL;
-  if (!model || !validAddress(provider) || !privateKey || !rpcUrl) return null;
-  const broker = await raceAbort(createZGComputeNetworkBroker(new Wallet(privateKey, new JsonRpcProvider(rpcUrl))), signal);
-  const sdk = { listService: (offset: number, limit: number, include: boolean, sdkSignal: AbortSignal) =>
-    raceAbort(broker.inference.listService(offset, limit, include), sdkSignal) };
-  const [metadata, service] = await Promise.all([
-    raceAbort(broker.inference.getServiceMetadata(provider, model), signal),
-    resolveService(sdk, provider.toLowerCase(), model, signal),
-  ]);
-  assertServiceEndpoint(metadata.endpoint, service.url);
-  return { provider: provider.toLowerCase(), model, teeSignerAcknowledged: service.teeSignerAcknowledged, paidInference: false };
+  if (!model || !validAddress(provider)) return null;
+  await assertZeroGMainnetRpc(rpcUrl, signal);
+  const broker = await raceAbort(createReadOnlyInferenceBroker(rpcUrl, Number(CHAIN_ID)), signal);
+  return probeComputeService(broker, provider, model, signal);
+}
+
+export async function probeComputeService(
+  broker: Readonly<{ listService(offset: number, limit: number, includeUnacknowledged: boolean): Promise<readonly unknown[]> }>,
+  provider: string,
+  model: string,
+  signal: AbortSignal,
+) {
+  const service = await resolveService(broker, provider.toLowerCase(), model, signal);
+  validateBaseUrl(service.url);
+  const expectedSigner = resolveExpectedSigner(service);
+  return { proofClass: "DECENTRALIZED_MODEL_TEE", provider: provider.toLowerCase(), model,
+    expectedSigner, signerAcknowledged: true, paidInference: false, inferenceExecuted: false };
 }
 
 async function probeStorage(indexerUrl: string | undefined, root: string | undefined, signal: AbortSignal) {

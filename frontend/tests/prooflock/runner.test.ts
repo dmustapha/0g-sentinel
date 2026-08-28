@@ -149,6 +149,7 @@ function dependencies(calls: RunnerStage[]): ProofLockRunnerDependencies {
       retrievedDigest: envelopeDigest,
       finalizedAtBlock: "456",
       retrievalVerified: true as const,
+      networkProofVerified: false as const,
     }),
     writeChain: stage("WRITING_CHAIN", { transactionHash: H6, expectedVersion: 1n }),
     readChainBack: vi.fn(async (input) => {
@@ -271,7 +272,7 @@ describe("controlled ProofLock runner", () => {
     const deps = dependencies(calls);
     vi.mocked(deps.verifyStorage).mockResolvedValueOnce({
       envelopeDigest: H1, storageRoot: H5, uploadTxHash: H6, retrievedDigest: H1,
-      finalizedAtBlock: "456", retrievalVerified: true,
+      finalizedAtBlock: "456", retrievalVerified: true, networkProofVerified: false,
     });
     await expect(createProofLockRunner(deps).run({
       identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
@@ -317,7 +318,7 @@ describe("controlled ProofLock runner", () => {
     vi.mocked(deps.buildEvidenceEnvelope).mockResolvedValueOnce(envelope);
     vi.mocked(deps.verifyStorage).mockResolvedValueOnce({
       envelopeDigest, storageRoot: H5, uploadTxHash: H6, retrievedDigest: envelopeDigest,
-      finalizedAtBlock: "456", retrievalVerified: true,
+      finalizedAtBlock: "456", retrievalVerified: true, networkProofVerified: false,
     });
     vi.mocked(deps.writeChain).mockResolvedValueOnce({ transactionHash: H6, expectedVersion: 2n });
     vi.mocked(deps.readChainBack).mockImplementationOnce(async (input) => ({

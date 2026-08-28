@@ -36,6 +36,7 @@ export type StreamRunner = Readonly<{
   run(input: RunnerInput, report?: (stage: RunnerStage) => void, signal?: AbortSignal): Promise<RunnerResult | unknown>;
 }>;
 export type DriftRunner = Readonly<{ run(identityKey: string, mark: boolean): Promise<unknown> }>;
+type LinkedAbort = Readonly<{ controller: AbortController; cleanup(): void }>;
 
 export function apiErrorResponse(_cause: unknown, options: ApiErrorOptions): Response {
   const requestId = options.requestId ?? createRequestId();
@@ -62,12 +63,14 @@ export function createProofLockStreamHandler(config: Readonly<{
     if (!authenticateOperator(request.headers.get("authorization"), config.operatorToken)) {
       return apiErrorResponse(null, unauthorized(requestId));
     }
+    const linked = linkedAbort(request.signal);
     try {
-      const input = await parseRunnerInput(request);
-      if (request.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      const input = await parseRunnerInput(request, linked.controller.signal);
+      linked.controller.signal.throwIfAborted();
       const runner = await config.loadRunner();
-      return streamRun(runner, input, request, requestId);
+      return streamRun(runner, input, linked, requestId);
     } catch (error) {
+      linked.cleanup();
       return mapApiError(error, "VALIDATING_IDENTITY", requestId);
     }
   };
@@ -84,7 +87,7 @@ export function createDriftHandler(config: Readonly<{
     }
     try {
       const identityKey = bytes32(key);
-      const body = await parseSmallObject(request);
+      const body = await parseSmallObject(request, deadline(request.signal));
       if (body.mark !== undefined && typeof body.mark !== "boolean") invalid();
       const operator = await config.loadDrift();
       const result = await operator.run(identityKey, body.mark === true);
@@ -142,20 +145,35 @@ async function verifyProof(proof: string, request: Request, deps: ProofLockReadD
   } catch (error) { return mapApiError(error, "VERIFYING_PROOF", requestId); }
 }
 
-function streamRun(runner: StreamRunner, input: RunnerInput, request: Request, requestId: string): Response {
+function streamRun(runner: StreamRunner, input: RunnerInput, linked: LinkedAbort, requestId: string): Response {
   const encoder = new TextEncoder();
+  let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      const send = (value: unknown) => controller.enqueue(encoder.encode(`data: ${safeJson(value)}\n\n`));
+      const send = (value: unknown) => {
+        const queued = safeEnqueue(controller, encoder.encode(`data: ${safeJson(value)}\n\n`), linked.controller.signal);
+        if (!queued && !linked.controller.signal.aborted) {
+          linked.controller.abort(new DOMException("Response stream closed", "AbortError"));
+        }
+        linked.controller.signal.throwIfAborted();
+      };
       try {
         const result = await runner.run(input, (stage) => {
-          if (request.signal.aborted) throw new DOMException("Aborted", "AbortError");
+          linked.controller.signal.throwIfAborted();
           send({ type: "stage", stage, requestId });
-        }, request.signal);
-        if (!request.signal.aborted) send({ type: "complete", result, requestId });
+        }, linked.controller.signal);
+        if (!linked.controller.signal.aborted) send({ type: "complete", result, requestId });
       } catch (error) {
-        if (!request.signal.aborted) send({ type: "error", ...runnerErrorBody(error, requestId) });
-      } finally { try { controller.close(); } catch { /* Client disconnected. */ } }
+        if (!linked.controller.signal.aborted) send({ type: "error", ...runnerErrorBody(error, requestId) });
+      } finally {
+        linked.cleanup();
+        if (!cancelled) try { controller.close(); } catch { cancelled = true; }
+      }
+    },
+    cancel() {
+      cancelled = true;
+      linked.controller.abort(new DOMException("Response stream cancelled", "AbortError"));
+      linked.cleanup();
     },
   });
   return new Response(stream, { headers: {
@@ -164,11 +182,13 @@ function streamRun(runner: StreamRunner, input: RunnerInput, request: Request, r
   } });
 }
 
-async function parseRunnerInput(request: Request): Promise<RunnerInput> {
+async function parseRunnerInput(request: Request, signal: AbortSignal): Promise<RunnerInput> {
   const length = Number(request.headers.get("content-length") ?? "0");
-  if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) invalid();
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) invalid();
+  if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) {
+    await request.body?.cancel();
+    invalid();
+  }
+  const text = await readBoundedBody(request, signal);
   let value: unknown;
   try { value = JSON.parse(text); } catch { invalid(); }
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
@@ -180,14 +200,36 @@ async function parseRunnerInput(request: Request): Promise<RunnerInput> {
   return input as RunnerInput;
 }
 
-async function parseSmallObject(request: Request): Promise<Record<string, unknown>> {
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) invalid();
+async function parseSmallObject(request: Request, signal: AbortSignal): Promise<Record<string, unknown>> {
+  const text = await readBoundedBody(request, signal);
   if (!text.trim()) return {};
   let value: unknown;
   try { value = JSON.parse(text); } catch { invalid(); }
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
   return value as Record<string, unknown>;
+}
+
+async function readBoundedBody(request: Request, signal: AbortSignal): Promise<string> {
+  if (!request.body) return "";
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const result = await raceAbort(reader.read(), signal);
+      if (result.done) break;
+      size += result.value.byteLength;
+      if (size > MAX_BODY_BYTES) { await reader.cancel(); invalid(); }
+      chunks.push(result.value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => undefined);
+    throw error;
+  } finally { reader.releaseLock(); }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
 }
 
 function mapApiError(error: unknown, stage: ApiStage, requestId: string): Response {
@@ -230,4 +272,27 @@ function runnerErrorBody(error: unknown, requestId: string) {
       error.stage, true, requestId);
   }
   return errorBody(error, "INTERNAL_ERROR", "ProofLock run failed", "VALIDATING_IDENTITY", true, requestId);
+}
+
+function linkedAbort(parent: AbortSignal): LinkedAbort {
+  const controller = new AbortController();
+  const abort = () => controller.abort(parent.reason ?? new DOMException("Request aborted", "AbortError"));
+  if (parent.aborted) abort();
+  else parent.addEventListener("abort", abort, { once: true });
+  return { controller, cleanup: () => parent.removeEventListener("abort", abort) };
+}
+
+function safeEnqueue(controller: ReadableStreamDefaultController<Uint8Array>, bytes: Uint8Array, signal: AbortSignal): boolean {
+  if (signal.aborted) return false;
+  try { controller.enqueue(bytes); return true; }
+  catch { return false; }
+}
+
+function raceAbort<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason);
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    signal.addEventListener("abort", abort, { once: true });
+    operation.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
 }

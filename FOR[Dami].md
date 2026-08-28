@@ -103,3 +103,9 @@ The audit also separated historical truth from current operational truth. A hist
 the current Gate read is unavailable. Those observations need independent UI state. Combining them in one
 `Promise.all` makes a current outage erase a valid historical result and can leave stale evidence after a later
 mismatch. That is a provenance bug, not merely a presentation issue.
+
+## What the design-system audit taught us
+
+A visual language is the recognizable look and feel; a design system is the governed machinery that reproduces it reliably. Sentinel already has the former—graphite infrastructure, warm evidence paper, provenance violet, square geometry, and the clipped dossier corner—but not yet the latter. Runtime CSS, `brand.json`, an empty Tailwind theme, raw values, stale design notes, and dormant cyan-era components currently tell different versions of the truth.
+
+The remedy is consolidation, not a generic redesign. Canonical CSS tokens should define primitive values, semantic roles, and the small set of product components. Six typed primitives—Button, Field, StatusBadge, EvidenceSheet, DataRow, and StateMessage—can then enforce touch size, focus, invalid state, loading, wrapping, and status semantics everywhere. A short `DESIGN_SYSTEM.md` and visual/accessibility regression tests make that consistency durable while preserving the product's signature.

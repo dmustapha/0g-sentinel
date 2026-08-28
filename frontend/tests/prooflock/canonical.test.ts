@@ -110,7 +110,7 @@ function validEnvelope() {
         processResponseVerified: true,
       },
     ],
-    verdict: { riskScore: 12, label: "SAFE" },
+    verdict: { riskScore: 12, codeRisk: 0, label: "SAFE" },
     omissions: [],
     scanner: {
       address: "0x4444444444444444444444444444444444444444",
@@ -124,8 +124,12 @@ const EXPECTED_CANONICAL =
 
 describe("canonical ProofLock evidence", () => {
   it("matches the fixed JCS bytes and Keccak-256 fixture", () => {
-    expect(canonicalizeEvidence(validEnvelope())).toBe(EXPECTED_CANONICAL);
-    expect(hashCanonical(validEnvelope())).toBe("0x8f1aa958ce7c733119ef3f8b548e95a9b4ab802a753bae870cfe94cb6842b112");
+    const expectedV2 = EXPECTED_CANONICAL.replace(
+      '"verdict":{"label":"SAFE"',
+      '"verdict":{"codeRisk":0,"label":"SAFE"',
+    );
+    expect(canonicalizeEvidence(validEnvelope())).toBe(expectedV2);
+    expect(hashCanonical(validEnvelope())).toBe("0xb6271493a013df25bfe82fd7c7ff2a1afc3e6ec74a0ad774db8a0bc998b5a841");
   });
 
   it("is invariant to input key order and address casing", () => {

@@ -182,7 +182,7 @@ function envelopeSubject(subject: ReturnType<typeof toEvidenceSubject>) {
             },
           ]),
     ],
-    verdict: { riskScore: 20, label: "CAUTION" },
+    verdict: { riskScore: 20, codeRisk: 0, label: "CAUTION" },
     omissions: [],
     scanner: {
       address: "0x4444444444444444444444444444444444444444",

@@ -17,6 +17,7 @@ import type { RunnerInput } from "../../server/prooflock/runner";
 const SCANNER_KEY = `0x${"11".repeat(32)}`;
 const GUARDIAN_KEY = `0x${"22".repeat(32)}`;
 const COMPUTE_KEY = `0x${"33".repeat(32)}`;
+const COMPUTE = "0x5CbDd86a2FA8Dc4bDdd8a8f69dBa48572EeC07FB";
 const SCANNER = "0x19E7E376E7C213B7E7e7e46cc70A5dD086DAff2A";
 const GUARDIAN = "0x1563915e194D8CfBA1943570603F7606A3115508";
 const REGISTRY = "0x1000000000000000000000000000000000000001";
@@ -65,6 +66,7 @@ describe("production ProofLock operator", () => {
     const config = readProductionOperatorConfig(env, "24.10.0");
     expect(config.scannerAddress).toBe(SCANNER);
     expect(config.guardianAddress).toBe(GUARDIAN);
+    expect(config.computeAddress).toBe(COMPUTE);
     expect(config.stateDirectory).toBe(env.PROOFLOCK_STATE_DIRECTORY);
     expect(config.confirmations).toBe(3);
     expect(config.spendAuthorized).toBe(true);
@@ -86,6 +88,8 @@ describe("production ProofLock operator", () => {
       PROOFLOCK_GUARDIAN_ADDRESS: SCANNER }, "24.10.0"))
       .toThrow(/distinct/);
     expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_COMPUTE_PRIVATE_KEY: SCANNER_KEY }, "24.10.0"))
+      .toThrow(/Compute payer key must remain distinct/);
+    expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_ADMIN_ADDRESS: COMPUTE }, "24.10.0"))
       .toThrow(/Compute payer key must remain distinct/);
   });
 

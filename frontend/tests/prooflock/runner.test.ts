@@ -105,7 +105,7 @@ function runnerEnvelope() {
     subject: { address: B, kind: "EOA" as const, runtimeCodeHash: `0x${"00".repeat(32)}` as Bytes32 },
     deterministicChecks: [{ id: "eoa-snapshot", version: "1", status: "WARN" as const, inputDigest: H1, outputDigest: H2, findings: ["HISTORY_SOURCE_UNAVAILABLE"] }],
     computeProofs: [computeProof()],
-    verdict: { riskScore: 12, label: "SAFE" as const },
+    verdict: { riskScore: 12, codeRisk: 0, label: "SAFE" as const },
     omissions: ["Contract code analysis is not applicable to an EOA."],
     scanner: { address: A, softwareVersion: "sentinel-wave3" },
   };
@@ -138,8 +138,8 @@ function dependencies(calls: RunnerStage[]): ProofLockRunnerDependencies {
     runCompute: stage("RUNNING_COMPUTE", {
       proofs: [computeProof()],
       behavioralScore: 12,
-      codeRisk: null,
-      verdict: { riskScore: 12, label: "SAFE" as const },
+      codeRisk: 0,
+      verdict: { riskScore: 12, codeRisk: 0, label: "SAFE" as const },
     }),
     buildEvidenceEnvelope: stage("CANONICALIZING_EVIDENCE", envelope),
     uploadStorage: stage("UPLOADING_STORAGE", { opaqueUpload: "real-adapter-result" }),
@@ -243,7 +243,7 @@ describe("controlled ProofLock runner", () => {
     const deps = dependencies(calls);
     vi.mocked(deps.runCompute).mockResolvedValueOnce({
       proofs: [computeProof(), { ...computeProof(), purpose: "contract-risk" }],
-      behavioralScore: 12, codeRisk: null, verdict: { riskScore: 12, label: "SAFE" },
+      behavioralScore: 12, codeRisk: 0, verdict: { riskScore: 12, codeRisk: 0, label: "SAFE" },
     });
     await expect(createProofLockRunner(deps).run({
       identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
@@ -253,12 +253,14 @@ describe("controlled ProofLock runner", () => {
   });
 
   it.each([
-    ["fractional score", { behavioralScore: 12.5, verdict: { riskScore: 12.5, label: "SAFE" as const } }],
-    ["score mismatch", { behavioralScore: 12, verdict: { riskScore: 13, label: "SAFE" as const } }],
-    ["label mismatch", { behavioralScore: 60, verdict: { riskScore: 60, label: "SAFE" as const } }],
+    ["fractional score", { behavioralScore: 12.5, verdict: { riskScore: 12.5, codeRisk: 0, label: "SAFE" as const } }],
+    ["score mismatch", { behavioralScore: 12, verdict: { riskScore: 13, codeRisk: 0, label: "SAFE" as const } }],
+    ["label mismatch", { behavioralScore: 60, verdict: { riskScore: 60, codeRisk: 0, label: "SAFE" as const } }],
+    ["code risk mismatch", { behavioralScore: 12, codeRisk: 1,
+      verdict: { riskScore: 12, codeRisk: 0, label: "SAFE" as const } }],
   ])("rejects policy-inconsistent Compute output: %s", async (_name, output) => {
     const deps = dependencies([]);
-    vi.mocked(deps.runCompute).mockResolvedValueOnce({ proofs: [computeProof()], codeRisk: null, ...output });
+    vi.mocked(deps.runCompute).mockResolvedValueOnce({ proofs: [computeProof()], codeRisk: 0, ...output });
     await expect(createProofLockRunner(deps).run({
       identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
       scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800, mode: "SEAL",

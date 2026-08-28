@@ -47,7 +47,7 @@ function detailEnvelope(agentId = "7"): EvidenceEnvelopeV1 {
       rawResponseSha256: hex("38", 32) as Bytes32, receiptSource: "ZG-Res-Key",
       responseHeadersSha256: hex("39", 32) as Bytes32,
       usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, processResponseVerified: true }],
-    verdict: { riskScore: 10, label: "SAFE" }, omissions: [],
+    verdict: { riskScore: 10, codeRisk: 0, label: "SAFE" }, omissions: [],
     scanner: { address: hex("44", 20) as `0x${string}`, softwareVersion: "1.0.0" },
   };
 }

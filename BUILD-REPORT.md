@@ -2,7 +2,7 @@
 
 ## Status
 
-In progress on `feature/sentinel-prooflock`.
+Local release candidate complete on `feature/sentinel-prooflock`. Mainnet deployment is credential-gated.
 
 ## Baseline
 
@@ -23,8 +23,9 @@ In progress on `feature/sentinel-prooflock`.
 | Strict Storage | Complete | 42 focused tests; corrective security review approved |
 | Strict Compute | Complete | 53 focused tests; transactional replay store; corrective security review approved |
 | Runner and APIs | Complete | Runner/drift and API/auth/health corrective reviews approved |
-| Frontend | Pending | Pending |
-| Mainnet and package | Pending | Pending |
+| Frontend | Complete | Proof-ledger UI, historical verifier, trust/provenance surfaces, guarded consumer |
+| Production operator | Complete | Built-in server composition, signer binding, durable state, standalone artifact smoke |
+| Mainnet and package | Blocked externally | Requires funded scanner/guardian/deployer keys and acknowledged Compute provider/model |
 
 ## Contract Phase
 
@@ -105,3 +106,30 @@ In progress on `feature/sentinel-prooflock`.
 - Final GREEN: 42 focused API/health tests, 502 combined ProofLock/API tests, 140 Hardhat tests, both TypeScript checks, and the Next production build.
 - Reviews: independent corrective security review found no open Critical or Important issues.
 - Operational note: set `PROOFLOCK_STORAGE_FLOW_FROM_BLOCK` near deployment to bound public Flow event recovery cost.
+
+## Frontend and Release Hardening Phase
+
+- Commits: `8195e61`, `182867a`, `be45702`, `416b863`, `30afeee`, `8e15fec`, `677140a`, `7b37b7b`.
+- Replaced the legacy score dashboard with ERC-8004 resolution, current ProofLock inventory, agent detail,
+  historical proof verification, six independent health observations, explicit mismatch taxonomy, and a
+  caller-bound guarded-consumer result.
+- Historical pages display the emitting RegistryV2 address, transaction, block, log index, predecessor proof,
+  evidence commitments, and the distinction between historical artifact validity and current admission.
+- Browser mutations send only identity, mode, expected prior version, and predecessor proof. Policy, scanner,
+  registry, software version, and TTL are injected by the server.
+- Responsive browser verification passed at 390 px and 320 px for all five primary and historical routes with
+  no horizontal overflow, console errors, or missing keyboard focus indicators.
+
+## Production Operator and Final Local Gates
+
+- Commit: `e812197`.
+- Ships one built-in production composition; runtime-selected executable modules are removed from the API and CLIs.
+- Startup enforces Node 24, 0G mainnet chain `16661`, canonical Chain/Storage dependencies, explicit paid-operation
+  consent, durable absolute state, key-to-address equality, distinct scanner/guardian custody, and live RegistryV2 roles.
+- The scanner transaction sender is checked on submission, finalized transaction recovery, and runner readback.
+- The exact ESM Compute worker is output-traced into the standalone artifact without being transformed into a browser asset.
+- Final local evidence: 618/618 frontend tests, 151/151 Hardhat contract/deployment tests, root and frontend
+  TypeScript checks, clean Next production build, standalone home `200`, independent health `503 DEGRADED` without
+  canaries, unauthenticated operator `401`, and authenticated operator fail-closed dependency response without secrets.
+- Not yet provable locally: paid mainnet Compute, Storage upload/retrieval, V2 deployment receipts, restart replay,
+  and seal → consumer → drift → reseal. These require the real funded deployment profile and cannot be fabricated.

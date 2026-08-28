@@ -15,7 +15,7 @@ export type RegistrationCard = Readonly<Record<string, unknown>> &
   Readonly<{
     type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1";
     registrations: readonly Readonly<{
-      agentId: number;
+      agentId: string;
       agentRegistry: string;
     }>[];
     active?: boolean;

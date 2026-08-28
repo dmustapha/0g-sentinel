@@ -1,4 +1,4 @@
-import { id, Interface, keccak256, type Provider, type TransactionRequest } from "ethers";
+import { id, Interface, type Provider, type TransactionRequest } from "ethers";
 
 import { IdentityError } from "../errors";
 import {
@@ -58,16 +58,27 @@ export async function resolveAgentIdentity(
     identity,
     options.cardLoaderOptions,
   );
+  await assertSourceBlockUnchanged(adapter, block);
   return deepFreeze({
     identity,
     owner,
     agentWallet,
     agentURI,
-    registrationDigest: keccak256(registration.bytes) as Bytes32,
+    registrationDigest: registration.registrationDigest,
     sourceBlockNumber: blockNumber.toString(),
     sourceBlockHash: normalizeBytes32(block.hash),
     card: registration.card,
   });
+}
+
+async function assertSourceBlockUnchanged(
+  adapter: IdentityChainAdapter,
+  source: Readonly<{ number: bigint; hash: string }>,
+): Promise<void> {
+  const current = await loadSourceBlock(adapter, source.number);
+  if (normalizeBytes32(current.hash) !== normalizeBytes32(source.hash)) {
+    throw new IdentityError("REGISTRY_UNAVAILABLE", "registry", true);
+  }
 }
 
 export function createErc8004Adapter(provider: Provider): IdentityChainAdapter {

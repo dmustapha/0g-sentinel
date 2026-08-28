@@ -1,6 +1,7 @@
 import { promises as dns } from "node:dns";
 import https from "node:https";
 import { isIP, type LookupFunction } from "node:net";
+import { keccak256 } from "ethers";
 import {
   isLosslessNumber,
   parse as parseLosslessJson,
@@ -8,7 +9,7 @@ import {
 } from "lossless-json";
 
 import { IdentityError } from "../errors";
-import type { AgentIdentity, RegistrationCard } from "../types";
+import type { AgentIdentity, Bytes32, RegistrationCard } from "../types";
 
 export const REGISTRATION_V1_TYPE =
   "https://eips.ethereum.org/EIPS/eip-8004#registration-v1" as const;
@@ -29,6 +30,7 @@ export type CardRequest = Readonly<{
   family: 4 | 6;
   timeoutMs: number;
   maxBytes: number;
+  signal: AbortSignal;
 }>;
 
 export type CardLoaderOptions = Readonly<{
@@ -41,13 +43,16 @@ export type CardLoaderOptions = Readonly<{
 }>;
 
 export type LoadedRegistrationCard = Readonly<{
-  bytes: Uint8Array;
   card: RegistrationCard;
+  registrationDigest: Bytes32;
+  byteLength: number;
 }>;
 
 type DestroyableAsyncBytes = AsyncIterable<Uint8Array> & {
   destroy?: (error?: Error) => void;
 };
+
+type DestroyableTransport = { destroy(error?: Error): unknown };
 
 export async function loadRegistrationCard(
   uri: string,
@@ -59,16 +64,18 @@ export async function loadRegistrationCard(
   const deadline = Date.now() + timeoutMs;
   const bytes = uri.startsWith("data:")
     ? decodeDataUri(uri, maxBytes)
-    : await loadRemoteCard(
+    : await loadRemoteWithDeadline(
       resolveRemoteUri(uri, options.ipfsGateway),
       options,
       maxBytes,
       deadline,
+      timeoutMs,
     );
   const { value, shadow } = parseJson(bytes);
   return Object.freeze({
-    bytes,
     card: validateRegistrationCard(value, identity, shadow),
+    registrationDigest: keccak256(bytes) as Bytes32,
+    byteLength: bytes.byteLength,
   });
 }
 
@@ -86,10 +93,32 @@ export function validateRegistrationCard(
     && Array.isArray(losslessShadow.registrations)
     ? losslessShadow.registrations
     : [];
-  const matches = value.registrations.filter((entry, index) =>
-    matchesIdentity(entry, shadowRegistrations[index], identity));
+  const normalized = normalizeRegistrationCard(value, shadowRegistrations);
+  const backlink = `eip155:16661:${identity.registryAddress.toLowerCase()}`;
+  const matches = normalized.registrations.filter((entry) =>
+    entry.agentId === identity.agentId && entry.agentRegistry === backlink);
   if (matches.length !== 1) fail("CARD_BACKLINK_MISMATCH", false);
-  return deepFreeze(value) as RegistrationCard;
+  return deepFreeze(normalized);
+}
+
+async function loadRemoteWithDeadline(
+  initial: URL,
+  options: CardLoaderOptions,
+  maxBytes: number,
+  deadline: number,
+  timeoutMs: number,
+): Promise<Uint8Array> {
+  const controller = new AbortController();
+  const error = new IdentityError("CARD_TIMEOUT", "card", true);
+  const timer = setTimeout(() => controller.abort(error), remainingTime(deadline));
+  try {
+    return await raceAbort(
+      loadRemoteCard(initial, options, maxBytes, deadline, controller.signal),
+      controller.signal,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function loadRemoteCard(
@@ -97,6 +126,7 @@ async function loadRemoteCard(
   options: CardLoaderOptions,
   maxBytes: number,
   deadline: number,
+  signal: AbortSignal,
 ): Promise<Uint8Array> {
   const redirects = boundedOption(options.maxRedirects, 3, 0, 3);
   const visited = new Set<string>();
@@ -105,13 +135,22 @@ async function loadRemoteCard(
     validateHttpsUrl(current);
     if (visited.has(current.href)) fail("CARD_REDIRECT_LOOP", false);
     visited.add(current.href);
-    const response = await requestValidated(current, options, maxBytes, deadline);
+    const response = await requestValidated(
+      current,
+      options,
+      maxBytes,
+      deadline,
+      signal,
+    );
     if (!REDIRECTS.has(response.status)) return validateResponse(response, maxBytes);
     const location = response.headers.location;
-    if (!location || count === redirects) fail("CARD_REDIRECT_LOOP", false);
-    current = redirectUrl(location, current);
+    if (!location) fail("CARD_REDIRECT_INVALID", false);
+    const next = redirectUrl(location, current);
+    if (visited.has(next.href)) fail("CARD_REDIRECT_LOOP", false);
+    if (count === redirects) fail("CARD_REDIRECT_LIMIT", false);
+    current = next;
   }
-  fail("CARD_REDIRECT_LOOP", false);
+  fail("CARD_REDIRECT_LIMIT", false);
 }
 
 async function requestValidated(
@@ -119,12 +158,14 @@ async function requestValidated(
   options: CardLoaderOptions,
   maxBytes: number,
   deadline: number,
+  signal: AbortSignal,
 ): Promise<CardHttpResponse> {
   const hostname = cleanHostname(url.hostname);
   const addresses = isIP(hostname) ? [hostname] : await resolveAddresses(
     hostname,
     options.resolveDns ?? defaultResolveDns,
     deadline,
+    signal,
   );
   if (addresses.length === 0 || addresses.some((address) => !isPublicIp(address))) {
     fail("CARD_PRIVATE_NETWORK", false);
@@ -132,19 +173,30 @@ async function requestValidated(
   const timeoutMs = remainingTime(deadline);
   const request = options.requestHttps ?? defaultHttpsRequest;
   const pinnedAddress = addresses[0];
-  return withTimeout(
-    request({ url, pinnedAddress, family: isIP(pinnedAddress) as 4 | 6, timeoutMs, maxBytes }),
-    timeoutMs,
-  );
+  try {
+    return await raceAbort(request({
+      url,
+      pinnedAddress,
+      family: isIP(pinnedAddress) as 4 | 6,
+      timeoutMs,
+      maxBytes,
+      signal,
+    }), signal);
+  } catch (error) {
+    if (error instanceof IdentityError) throw error;
+    return fail("AGENT_URI_UNAVAILABLE", true);
+  }
 }
 
 async function resolveAddresses(
   hostname: string,
   resolver: (hostname: string) => Promise<readonly string[]>,
   deadline: number,
+  signal: AbortSignal,
 ): Promise<readonly string[]> {
   try {
-    return await withTimeout(resolver(hostname), remainingTime(deadline));
+    remainingTime(deadline);
+    return await raceAbort(resolver(hostname), signal);
   } catch (error) {
     if (error instanceof IdentityError) throw error;
     return fail("AGENT_URI_UNAVAILABLE", true);
@@ -155,7 +207,14 @@ function validateResponse(response: CardHttpResponse, maxBytes: number): Uint8Ar
   const declared = Number(response.headers["content-length"]);
   if (Number.isFinite(declared) && declared > maxBytes) fail("CARD_TOO_LARGE", false);
   if (response.body.byteLength > maxBytes) fail("CARD_TOO_LARGE", false);
-  if (response.status < 200 || response.status >= 300) fail("AGENT_URI_UNAVAILABLE", true);
+  if (response.status < 200 || response.status >= 300) {
+    const specialRetry = response.status === 408
+      || response.status === 429
+      || response.status >= 500;
+    const ordinaryClientError = response.status >= 400 && response.status < 500;
+    const retryable = specialRetry || !ordinaryClientError;
+    fail("AGENT_URI_UNAVAILABLE", retryable);
+  }
   const contentType = response.headers["content-type"]?.split(";", 1)[0].trim().toLowerCase();
   if (contentType !== "application/json" && !contentType?.endsWith("+json")) {
     fail("CARD_CONTENT_TYPE", false);
@@ -195,16 +254,25 @@ function parseIpfsUri(uri: string): Readonly<{ cid: string; segments: string[] }
 }
 
 function decodePathSegment(raw: string): string {
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(raw);
-  } catch {
-    unsupported();
+  let current = raw;
+  for (let depth = 0; depth < 4; depth += 1) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(current);
+    } catch {
+      unsupported();
+    }
+    assertSafeDecodedSegment(decoded);
+    if (decoded === current) return decoded;
+    current = decoded;
   }
-  if (!decoded || decoded === "." || decoded === ".." || /[\\/\0]/.test(decoded)) {
-    unsupported();
-  }
-  return decoded;
+  if (/%[0-9a-f]{2}/i.test(current)) unsupported();
+  return current;
+}
+
+function assertSafeDecodedSegment(value: string): void {
+  if (!value || value === "." || value === ".." || /[\\/\0]/.test(value)) unsupported();
+  if (/%(?:2e|2f|5c|00)/i.test(value)) unsupported();
 }
 
 function isSupportedCid(cid: string): boolean {
@@ -277,28 +345,32 @@ function assertBoundedJson(root: unknown): void {
   }
 }
 
-function matchesIdentity(
-  entry: unknown,
-  shadow: unknown,
-  identity: AgentIdentity,
-): boolean {
-  if (!isRecord(entry) || !isRecord(shadow)) return false;
-  if (!matchesAgentId(entry.agentId, shadow.agentId, identity.agentId)) return false;
-  const backlink = `eip155:16661:${identity.registryAddress.toLowerCase()}`;
-  return entry.agentRegistry === backlink && shadow.agentRegistry === backlink;
+function normalizeRegistrationCard(
+  value: Record<string, unknown>,
+  shadows: readonly unknown[],
+): RegistrationCard {
+  const registrations = (value.registrations as unknown[]).map((entry, index) => {
+    const shadow = shadows[index];
+    if (!isRecord(entry) || !isRecord(shadow)) malformed();
+    if (typeof entry.agentRegistry !== "string") malformed();
+    const agentId = canonicalAgentId(entry.agentId, shadow.agentId);
+    if (!agentId) fail("CARD_BACKLINK_MISMATCH", false);
+    return { ...structuredClone(entry), agentId };
+  });
+  return { ...structuredClone(value), registrations } as unknown as RegistrationCard;
 }
 
-function matchesAgentId(value: unknown, shadow: unknown, expected: string): boolean {
+function canonicalAgentId(value: unknown, shadow: unknown): string | null {
   if (isLosslessNumber(shadow)) {
-    if (!/^(0|[1-9]\d*)$/.test(shadow.value)) return false;
+    if (!/^(0|[1-9]\d*)$/.test(shadow.value)) return null;
     const parsed = parseNumberAndBigInt(shadow.value);
-    return typeof parsed === "bigint"
-      && parsed <= (1n << 256n) - 1n
-      && parsed.toString() === expected;
+    return typeof parsed === "bigint" && parsed <= (1n << 256n) - 1n
+      ? parsed.toString()
+      : null;
   }
-  return Number.isSafeInteger(value)
-    && typeof value === "number"
-    && BigInt(value).toString() === expected;
+  return Number.isSafeInteger(value) && typeof value === "number" && value >= 0
+    ? BigInt(value).toString()
+    : null;
 }
 
 function validateHttpsUrl(url: URL): void {
@@ -384,33 +456,77 @@ async function defaultResolveDns(hostname: string): Promise<readonly string[]> {
 
 function defaultHttpsRequest(request: CardRequest): Promise<CardHttpResponse> {
   return new Promise((resolve, reject) => {
-    const req = https.request(request.url, {
-      method: "GET",
-      timeout: request.timeoutMs,
-      lookup: createPinnedLookup(request.pinnedAddress, request.family),
-      headers: { accept: "application/json" },
-    }, async (response) => {
-      const length = Number(response.headers["content-length"]);
-      if (Number.isFinite(length) && length > request.maxBytes) {
-        response.destroy();
-        reject(new IdentityError("CARD_TOO_LARGE", "card", false));
-        return;
-      }
-      try {
-        const body = await collectBoundedBody(response, request.maxBytes);
-        resolve({
-          status: response.statusCode ?? 0,
-          headers: normalizeHeaders(response.headers),
-          body,
-        });
-      } catch (error) {
-        reject(error);
-      }
+    let activeResponse: (DestroyableAsyncBytes & DestroyableTransport) | undefined;
+    let settled = false;
+    let cleanupAbort: () => void = () => {};
+    const finish = (action: () => void) => {
+      if (settled) return;
+      settled = true;
+      cleanupAbort();
+      action();
+    };
+    const req = https.request(
+      request.url,
+      createPinnedRequestOptions(request),
+      async (response) => {
+        activeResponse = response;
+        const length = Number(response.headers["content-length"]);
+        if (Number.isFinite(length) && length > request.maxBytes) {
+          response.destroy();
+          finish(() => reject(new IdentityError("CARD_TOO_LARGE", "card", false)));
+          return;
+        }
+        try {
+          const body = await collectBoundedBody(response, request.maxBytes);
+          finish(() => resolve({
+            status: response.statusCode ?? 0,
+            headers: normalizeHeaders(response.headers),
+            body,
+          }));
+        } catch (error) {
+          finish(() => reject(error));
+        }
+      },
+    );
+    cleanupAbort = bindAbortToTransport(request.signal, req, () => activeResponse);
+    req.on("timeout", () => {
+      const error = new IdentityError("CARD_TIMEOUT", "card", true);
+      req.destroy(error);
+      activeResponse?.destroy?.(error);
     });
-    req.on("timeout", () => req.destroy(new IdentityError("CARD_TIMEOUT", "card", true)));
-    req.on("error", reject);
+    req.on("error", (error) => finish(() => reject(error)));
     req.end();
   });
+}
+
+export function createPinnedRequestOptions(
+  request: CardRequest,
+): https.RequestOptions {
+  return {
+    method: "GET",
+    timeout: request.timeoutMs,
+    lookup: createPinnedLookup(request.pinnedAddress, request.family),
+    headers: { accept: "application/json" },
+    signal: request.signal,
+    agent: false,
+  };
+}
+
+export function bindAbortToTransport(
+  signal: AbortSignal,
+  request: DestroyableTransport,
+  getResponse: () => DestroyableTransport | undefined,
+): () => void {
+  const abort = () => {
+    const error = signal.reason instanceof Error
+      ? signal.reason
+      : new IdentityError("CARD_TIMEOUT", "card", true);
+    request.destroy(error);
+    getResponse()?.destroy(error);
+  };
+  if (signal.aborted) abort();
+  else signal.addEventListener("abort", abort, { once: true });
+  return () => signal.removeEventListener("abort", abort);
 }
 
 export function createPinnedLookup(
@@ -442,19 +558,22 @@ function normalizeHeaders(headers: Record<string, string | string[] | undefined>
   return Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), Array.isArray(value) ? value[0] : value]));
 }
 
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new IdentityError("CARD_TIMEOUT", "card", true)), timeoutMs);
+function raceAbort<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(abortReason(signal));
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(abortReason(signal));
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(
+      (value) => { signal.removeEventListener("abort", abort); resolve(value); },
+      (error) => { signal.removeEventListener("abort", abort); reject(error); },
+    );
   });
-  try {
-    return await Promise.race([promise, timeout]);
-  } catch (error) {
-    if (error instanceof IdentityError) throw error;
-    return fail("AGENT_URI_UNAVAILABLE", true);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
+}
+
+function abortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new IdentityError("CARD_TIMEOUT", "card", true);
 }
 
 function remainingTime(deadline: number): number {
@@ -467,7 +586,7 @@ function redirectUrl(location: string, current: URL): URL {
   try {
     return new URL(location, current);
   } catch {
-    unsupported();
+    return fail("CARD_REDIRECT_INVALID", false);
   }
 }
 

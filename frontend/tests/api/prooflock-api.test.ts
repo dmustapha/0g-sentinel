@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { authenticateOperator } from "../../server/prooflock/auth";
 import { IdentityError } from "../../server/prooflock/errors";
-import { ProofLockStageError } from "../../server/prooflock/runner";
+import { ProofLockStageError, computeProofRoot } from "../../server/prooflock/runner";
+import { canonicalizeEvidence, hashCanonical, receiptDigest } from "../../server/prooflock/canonical";
+import { computeIdentityKey } from "../../server/prooflock/chain";
+import { enrichProofLockDetail } from "../../server/prooflock/read-api";
+import { ERC8004_IDENTITY_REGISTRY, type Bytes32, type EvidenceEnvelopeV1 } from "../../server/prooflock/types";
 import {
   apiErrorResponse,
   createDriftHandler,
@@ -18,6 +22,56 @@ const hex = (byte: string, size: number) => `0x${byte.repeat(size)}`;
 const identityKey = hex("11", 32);
 const proofId = hex("22", 32);
 const operatorToken = "s".repeat(32);
+
+function detailEnvelope(agentId = "7"): EvidenceEnvelopeV1 {
+  const registryAddress = ERC8004_IDENTITY_REGISTRY;
+  return {
+    schema: "sentinel.prooflock/evidence-v1", proofClass: "COMPUTE_VERIFIED", schemaVersion: 1,
+    policyVersion: 1, coverage: { preStorageMask: 0x5f, requiredSealMask: 0x7f,
+      identityValidated: true, subjectClassified: true, deterministicChecksRun: true,
+      behavioralComputeVerified: true, codeCompute: { status: "NOT_APPLICABLE", reason: "EOA" },
+      evidenceStorage: "PENDING_EXTERNAL_COMMITMENT", policyEvaluated: true },
+    identity: { namespace: "eip155", chainId: 16661, registryAddress, agentId,
+      owner: hex("aa", 20) as `0x${string}`, agentWallet: hex("bb", 20) as `0x${string}`,
+      registrationUri: "https://agent.example/card.json", registrationDigest: hex("31", 32) as Bytes32 },
+    source: { blockNumber: "100", blockHash: hex("32", 32) as Bytes32 },
+    subject: { address: hex("bb", 20) as `0x${string}`, kind: "EOA", runtimeCodeHash: hex("00", 32) as Bytes32 },
+    deterministicChecks: [{ id: "eoa", version: "1", status: "WARN", inputDigest: hex("33", 32) as Bytes32,
+      outputDigest: hex("34", 32) as Bytes32, findings: ["NO_HISTORY"] }],
+    computeProofs: [{ proofClass: "DECENTRALIZED_MODEL_TEE", purpose: "behavioral-risk",
+      provider: hex("55", 20) as `0x${string}`, model: "model", chatId: "chat-detail",
+      receiptDigest: receiptDigest("chat-detail"), requestDigest: hex("35", 32) as Bytes32,
+      responseDigest: hex("36", 32) as Bytes32, signatureScheme: "EIP191",
+      expectedSigner: hex("66", 20) as `0x${string}`, signature: `0x${"ab".repeat(65)}`,
+      signedTextSha256: hex("37", 32) as Bytes32, requestSha256: hex("35", 32) as Bytes32,
+      rawResponseSha256: hex("38", 32) as Bytes32, receiptSource: "ZG-Res-Key",
+      responseHeadersSha256: hex("39", 32) as Bytes32,
+      usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 }, processResponseVerified: true }],
+    verdict: { riskScore: 10, label: "SAFE" }, omissions: [],
+    scanner: { address: hex("44", 20) as `0x${string}`, softwareVersion: "1.0.0" },
+  };
+}
+
+function detailRecord(envelope = detailEnvelope()) {
+  return {
+    identityKey: computeIdentityKey(envelope.identity), subject: envelope.subject.address,
+    envelopeDigest: hashCanonical(envelope), storageRoot: hex("44", 32) as Bytes32, computeRoot: computeProofRoot(envelope.computeProofs),
+    artifactHash: hex("66", 32) as Bytes32, runtimeCodeHash: envelope.subject.runtimeCodeHash,
+    version: 1n, issuedAt: 10n, validUntil: 20n, policyVersion: 1, behavioralScore: 10,
+    codeRisk: 0, coverage: 0x7f, state: 1, stateReason: 0,
+  } as const;
+}
+
+function detailResolution(agentId = "7") {
+  return {
+    identity: { namespace: "eip155" as const, chainId: 16661 as const,
+      registryAddress: ERC8004_IDENTITY_REGISTRY, agentId },
+    owner: hex("aa", 20) as `0x${string}`, agentWallet: hex("bb", 20) as `0x${string}`,
+    agentURI: "https://agent.example/card.json", registrationDigest: hex("31", 32) as Bytes32,
+    sourceBlockNumber: "101", sourceBlockHash: hex("41", 32) as Bytes32,
+    card: { type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1" as const, registrations: [] },
+  };
+}
 
 describe("operator authentication", () => {
   it.each([undefined, "", "Bearer", "Basic abc", "Bearer wrong", "Bearer wrong-but-longer"])(
@@ -92,6 +146,8 @@ describe("public read handlers", () => {
       registryAddress: hex("12", 20),
       resolveIdentity: vi.fn().mockResolvedValue(identity),
       readProofLock: vi.fn().mockResolvedValue(record),
+      readProofLockDetail: vi.fn().mockResolvedValue({ status: "VERIFIED", identity: { agentId: "7" },
+        resolution: { agentWallet: record.subject }, gate: { status: "VERIFIED", allowed: true, reason: 0 } }),
       computeProofId: vi.fn().mockReturnValue(proofId),
       verifyStoredEvidence: vi.fn().mockResolvedValue({ envelope: { schema: "sentinel.prooflock/evidence-v1" }, retrievalVerified: true, networkProofVerified: false }),
       ...overrides,
@@ -132,6 +188,16 @@ describe("public read handlers", () => {
     expect((await response.json()).error.code).toBe("NOT_FOUND");
   });
 
+  it("returns proof-bound identity resolution and the actual AgentGate decision", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey, new Request("https://sentinel.test"));
+    expect(response.status).toBe(200);
+    expect(deps.readProofLockDetail).toHaveBeenCalledWith(record, expect.any(AbortSignal));
+    expect(await response.json()).toMatchObject({ detail: { status: "VERIFIED",
+      identity: { agentId: "7" }, resolution: { agentWallet: record.subject },
+      gate: { status: "VERIFIED", allowed: true, reason: 0 } } });
+  });
+
   it("binds proofId and identityKey before returning verified Storage evidence", async () => {
     const deps = dependencies();
     const response = await createProofLockReadHandlers(deps).verifyProof(
@@ -153,6 +219,92 @@ describe("public read handlers", () => {
     );
     expect(response.status).toBe(404);
     expect(deps.verifyStoredEvidence).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProofLock detail provenance", () => {
+  function detailDependencies(overrides: Record<string, unknown> = {}) {
+    return {
+      downloadEvidence: vi.fn().mockResolvedValue(new TextEncoder().encode(canonicalizeEvidence(detailEnvelope()))),
+      verifyStorageRoot: vi.fn().mockResolvedValue(undefined),
+      resolveIdentity: vi.fn().mockResolvedValue(detailResolution()),
+      checkGate: vi.fn().mockResolvedValue({ allowed: true, reason: 0, subject: hex("bb", 20), version: 1n }),
+      ...overrides,
+    };
+  }
+
+  it("binds canonical Storage evidence, current ERC-8004 resolution, and Gate result", async () => {
+    const envelope = detailEnvelope();
+    const record = detailRecord(envelope);
+    const deps = detailDependencies();
+    const result = await enrichProofLockDetail(record, deps, new AbortController().signal);
+    expect(result).toMatchObject({ status: "VERIFIED",
+      identity: { identityKey: record.identityKey, chainId: 16661, registryAddress: ERC8004_IDENTITY_REGISTRY,
+        agentId: "7", owner: envelope.identity.owner, agentWallet: record.subject },
+      resolution: { owner: envelope.identity.owner, agentWallet: record.subject, sourceBlockNumber: "101" },
+      gate: { status: "VERIFIED", allowed: true, reason: 0 } });
+    expect(deps.resolveIdentity).toHaveBeenCalledWith("7", expect.any(AbortSignal));
+    expect(deps.checkGate).toHaveBeenCalledWith("7", expect.any(AbortSignal));
+  });
+
+  it("fails closed on an envelope hash mismatch without resolving or calling Gate", async () => {
+    const deps = detailDependencies({ downloadEvidence: vi.fn().mockResolvedValue(
+      new TextEncoder().encode(canonicalizeEvidence(detailEnvelope("8"))),
+    ) });
+    const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
+    expect(result).toEqual({ status: "UNAVAILABLE", code: "EVIDENCE_INVALID", identity: null,
+      resolution: null, gate: { status: "UNKNOWN", allowed: false, reason: null } });
+    expect(deps.resolveIdentity).not.toHaveBeenCalled();
+    expect(deps.checkGate).not.toHaveBeenCalled();
+  });
+
+  it("rejects a wrong embedded agentId rather than attempting reverse lookup or fallback", async () => {
+    const envelope = detailEnvelope("8");
+    const record = { ...detailRecord(), envelopeDigest: hashCanonical(envelope) };
+    const deps = detailDependencies({ downloadEvidence: vi.fn().mockResolvedValue(
+      new TextEncoder().encode(canonicalizeEvidence(envelope))),
+    });
+    const result = await enrichProofLockDetail(record, deps, new AbortController().signal);
+    expect(result).toMatchObject({ status: "UNAVAILABLE", code: "EVIDENCE_INVALID",
+      gate: { status: "UNKNOWN", allowed: false, reason: null } });
+    expect(deps.resolveIdentity).not.toHaveBeenCalled();
+    expect(deps.checkGate).not.toHaveBeenCalled();
+  });
+
+  it("returns unavailable when Storage cannot produce the exact envelope", async () => {
+    const deps = detailDependencies({ downloadEvidence: vi.fn().mockRejectedValue(new Error("private indexer detail")) });
+    await expect(enrichProofLockDetail(detailRecord(), deps, new AbortController().signal)).resolves.toEqual({
+      status: "UNAVAILABLE", code: "EVIDENCE_UNAVAILABLE", identity: null, resolution: null,
+      gate: { status: "UNKNOWN", allowed: false, reason: null },
+    });
+    expect(deps.resolveIdentity).not.toHaveBeenCalled();
+  });
+
+  it("rejects a current ERC-8004 wallet that no longer binds the sealed subject", async () => {
+    const deps = detailDependencies({ resolveIdentity: vi.fn().mockResolvedValue({
+      ...detailResolution(), agentWallet: hex("cc", 20),
+    }) });
+    const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
+    expect(result).toMatchObject({ status: "UNAVAILABLE", code: "IDENTITY_INVALID",
+      gate: { status: "UNKNOWN", allowed: false, reason: null } });
+    expect(deps.checkGate).not.toHaveBeenCalled();
+  });
+
+  it("preserves a verified Gate denial as its exact stable reason", async () => {
+    const deps = detailDependencies({ checkGate: vi.fn().mockResolvedValue({
+      allowed: false, reason: 3, subject: hex("bb", 20), version: 1n,
+    }) });
+    const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
+    expect(result).toMatchObject({ status: "VERIFIED",
+      gate: { status: "VERIFIED", allowed: false, reason: 3 } });
+  });
+
+  it("returns a fail-closed UNKNOWN Gate result when the Gate read reverts", async () => {
+    const deps = detailDependencies({ checkGate: vi.fn().mockRejectedValue(new Error("private RPC revert")) });
+    const result = await enrichProofLockDetail(detailRecord(), deps, new AbortController().signal);
+    expect(result).toMatchObject({ status: "VERIFIED",
+      gate: { status: "UNKNOWN", allowed: false, reason: null } });
+    expect(JSON.stringify(result)).not.toContain("private RPC revert");
   });
 });
 

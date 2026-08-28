@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { RegistryProofLockRecord } from "./chain";
 import { IdentityError } from "./errors";
-import type { ResolvedAgentIdentity } from "./types";
+import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
 import { ProofLockStageError, type RunnerInput, type RunnerResult, type RunnerStage } from "./runner";
 import { authenticateOperator } from "./auth";
 
@@ -25,12 +25,26 @@ export type ApiErrorOptions = Readonly<{
 export type ProofLockReadDependencies = Readonly<{
   resolveIdentity(agentId: string, signal: AbortSignal): Promise<ResolvedAgentIdentity>;
   readProofLock(identityKey: string, signal: AbortSignal): Promise<RegistryProofLockRecord>;
+  readProofLockDetail(record: RegistryProofLockRecord, signal: AbortSignal): Promise<ProofLockDetail>;
   computeProofId(registryAddress: string, record: RegistryProofLockRecord): string;
   verifyStoredEvidence(record: RegistryProofLockRecord, signal: AbortSignal): Promise<Readonly<{
     envelope: unknown; retrievalVerified: true; networkProofVerified: false;
   }>>;
   registryAddress?: string;
 }>;
+
+export type ProofLockDetail =
+  | Readonly<{ status: "VERIFIED"; identity: ProofLockIdentitySummary;
+    resolution: ProofLockResolutionSummary; gate: GateDetail }>
+  | Readonly<{ status: "UNAVAILABLE"; code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID";
+    identity: null; resolution: null; gate: UnknownGateDetail }>;
+export type GateDetail = Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number }> | UnknownGateDetail;
+type UnknownGateDetail = Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
+export type ProofLockIdentitySummary = AgentIdentity & Readonly<{ identityKey: Bytes32; owner: HexAddress;
+  agentWallet: HexAddress; registrationUri: string; registrationDigest: Bytes32;
+  sourceBlockNumber: string; sourceBlockHash: Bytes32 }>;
+export type ProofLockResolutionSummary = Readonly<{ owner: HexAddress; agentWallet: HexAddress;
+  agentURI: string; registrationDigest: Bytes32; sourceBlockNumber: string; sourceBlockHash: Bytes32 }>;
 
 export type StreamRunner = Readonly<{
   run(input: RunnerInput, report?: (stage: RunnerStage) => void, signal?: AbortSignal): Promise<RunnerResult | unknown>;
@@ -124,9 +138,11 @@ async function readProofLock(key: string, request: Request, deps: ProofLockReadD
   const requestId = createRequestId();
   try {
     const identityKey = bytes32(key);
-    const proofLock = await deps.readProofLock(identityKey, deadline(request.signal));
+    const signal = deadline(request.signal);
+    const proofLock = await deps.readProofLock(identityKey, signal);
     assertRecord(identityKey, proofLock);
-    return json({ identityKey, proofLock }, 200, PUBLIC_CACHE);
+    const detail = await deps.readProofLockDetail(proofLock, signal);
+    return json({ identityKey, proofLock, detail }, 200, PUBLIC_CACHE);
   } catch (error) { return mapApiError(error, "READING_PROOF", requestId); }
 }
 

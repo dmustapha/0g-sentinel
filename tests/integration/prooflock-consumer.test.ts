@@ -13,7 +13,8 @@ const HASHES = ["a", "b", "c", "d"].map((value) => `0x${value.repeat(64)}`);
 
 function input(validForSeconds = 7 * DAY) {
   return { envelopeDigest: HASHES[0], storageRoot: HASHES[1], computeRoot: HASHES[2], artifactHash: HASHES[3],
-    validForSeconds, policyVersion: 1, behavioralScore: 10, codeRisk: 0, coverage: COVERAGE };
+    expectedRuntimeCodeHash: ethers.ZeroHash, validForSeconds,
+    policyVersion: 1, behavioralScore: 10, codeRisk: 0, coverage: COVERAGE };
 }
 
 async function deployFixture(validForSeconds = 7 * DAY) {
@@ -67,7 +68,7 @@ describe("ProofLockConsumerDemo", () => {
     const { registry, consumer, scanner, guardian, agent, identityKey } = await deployFixture();
     await registry.connect(guardian).markDrift(identityKey, 3, 1);
     await expect(consumer.connect(agent).acceptAgent(7)).to.be.reverted;
-    await registry.connect(scanner).reseal(identityKey, agent.address, input());
+    await registry.connect(scanner).reseal(identityKey, agent.address, 1, input());
     await consumer.connect(agent).acceptAgent(7);
     expect(await consumer.acceptedCount()).to.equal(1n);
     expect(await consumer.lastAcceptedVersion()).to.equal(2n);

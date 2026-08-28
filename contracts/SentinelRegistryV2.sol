@@ -38,6 +38,7 @@ contract SentinelRegistryV2 is AccessControl {
         bytes32 storageRoot;
         bytes32 computeRoot;
         bytes32 artifactHash;
+        bytes32 expectedRuntimeCodeHash;
         uint48 validForSeconds;
         uint32 policyVersion;
         uint8 behavioralScore;
@@ -60,6 +61,7 @@ contract SentinelRegistryV2 is AccessControl {
     error InvalidState(uint8 currentState);
     error InvalidReason();
     error PageLimitExceeded();
+    error RuntimeCodeHashMismatch(bytes32 expected, bytes32 actual);
 
     event ProofLocked(
         bytes32 indexed identityKey,
@@ -95,22 +97,23 @@ contract SentinelRegistryV2 is AccessControl {
         onlyRole(SCANNER_ROLE)
     {
         if (proofLocks[identityKey].version != 0) revert ProofAlreadyExists();
-        _validate(identityKey, subject, input);
-        proofLocks[identityKey] = _createProof(identityKey, subject, input, 1);
+        bytes32 runtimeCodeHash = _validate(identityKey, subject, input);
+        proofLocks[identityKey] = _createProof(identityKey, subject, input, runtimeCodeHash, 1);
         identityKeys.push(identityKey);
         _emitLocked(proofLocks[identityKey]);
     }
 
-    function reseal(bytes32 identityKey, address subject, LockInput calldata input)
+    function reseal(bytes32 identityKey, address subject, uint64 expectedPriorVersion, LockInput calldata input)
         external
         onlyRole(SCANNER_ROLE)
     {
         uint64 oldVersion = proofLocks[identityKey].version;
         if (oldVersion == 0) revert ProofNotFound();
+        if (oldVersion != expectedPriorVersion) revert StaleVersion(expectedPriorVersion, oldVersion);
         _requireResealable(proofLocks[identityKey].state);
-        _validate(identityKey, subject, input);
+        bytes32 runtimeCodeHash = _validate(identityKey, subject, input);
         uint64 newVersion = oldVersion + 1;
-        proofLocks[identityKey] = _createProof(identityKey, subject, input, newVersion);
+        proofLocks[identityKey] = _createProof(identityKey, subject, input, runtimeCodeHash, newVersion);
         emit ProofSuperseded(identityKey, oldVersion, newVersion);
         _emitLocked(proofLocks[identityKey]);
     }
@@ -160,7 +163,11 @@ contract SentinelRegistryV2 is AccessControl {
         return identityKeys.length;
     }
 
-    function _validate(bytes32 identityKey, address subject, LockInput calldata input) private pure {
+    function _validate(bytes32 identityKey, address subject, LockInput calldata input)
+        private
+        view
+        returns (bytes32 runtimeCodeHash)
+    {
         if (identityKey == bytes32(0) || input.envelopeDigest == bytes32(0)) revert ZeroCommitment();
         if (subject == address(0)) revert ZeroCommitment();
         if (input.storageRoot == bytes32(0) || input.computeRoot == bytes32(0)) revert ZeroCommitment();
@@ -169,16 +176,26 @@ contract SentinelRegistryV2 is AccessControl {
         if (input.behavioralScore > 100) revert InvalidBehavioralScore();
         if (input.codeRisk > 2) revert InvalidCodeRisk();
         if ((input.coverage & REQUIRED_COVERAGE) != REQUIRED_COVERAGE) revert IncompleteCoverage();
+        runtimeCodeHash = _runtimeCodeHash(subject);
+        if (runtimeCodeHash != input.expectedRuntimeCodeHash) {
+            revert RuntimeCodeHashMismatch(input.expectedRuntimeCodeHash, runtimeCodeHash);
+        }
     }
 
-    function _createProof(bytes32 identityKey, address subject, LockInput calldata input, uint64 version)
+    function _createProof(
+        bytes32 identityKey,
+        address subject,
+        LockInput calldata input,
+        bytes32 runtimeCodeHash,
+        uint64 version
+    )
         private
         view
         returns (ProofLock memory)
     {
         uint48 issuedAt = uint48(block.timestamp);
         return ProofLock(identityKey, subject, input.envelopeDigest, input.storageRoot, input.computeRoot,
-            input.artifactHash, _runtimeCodeHash(subject), version, issuedAt,
+            input.artifactHash, runtimeCodeHash, version, issuedAt,
             issuedAt + input.validForSeconds, input.policyVersion, input.behavioralScore,
             input.codeRisk, input.coverage, STATE_ACTIVE, 0);
     }

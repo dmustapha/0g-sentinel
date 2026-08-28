@@ -14,10 +14,12 @@ const HASH_A = `0x${"a".repeat(64)}`;
 const HASH_B = `0x${"b".repeat(64)}`;
 const HASH_C = `0x${"c".repeat(64)}`;
 const HASH_D = `0x${"d".repeat(64)}`;
+const ZERO = ethers.ZeroHash;
 
 function input(overrides: Record<string, unknown> = {}) {
   return { envelopeDigest: HASH_A, storageRoot: HASH_B, computeRoot: HASH_C, artifactHash: HASH_D,
-    validForSeconds: 7 * DAY, policyVersion: 2, behavioralScore: 10, codeRisk: 0, coverage: COVERAGE, ...overrides };
+    expectedRuntimeCodeHash: ZERO, validForSeconds: 7 * DAY, policyVersion: 2,
+    behavioralScore: 10, codeRisk: 0, coverage: COVERAGE, ...overrides };
 }
 
 async function deployGateFixture(subjectKind: "eoa" | "contract" = "eoa") {
@@ -40,7 +42,11 @@ async function deployGateFixture(subjectKind: "eoa" | "contract" = "eoa") {
 }
 
 async function sealValid(fixture: Awaited<ReturnType<typeof deployGateFixture>>, overrides = {}) {
-  await fixture.registry.connect(fixture.scanner).seal(fixture.identityKey, fixture.subjectAddress, input(overrides));
+  const code = await ethers.provider.getCode(fixture.subjectAddress);
+  const expectedRuntimeCodeHash = code === "0x" ? ZERO : ethers.keccak256(code);
+  await fixture.registry.connect(fixture.scanner).seal(
+    fixture.identityKey, fixture.subjectAddress, input({ expectedRuntimeCodeHash, ...overrides }),
+  );
 }
 
 describe("AgentGateV2", () => {

@@ -22,6 +22,7 @@ export type ProofClass =
   | "SEALED";
 export type CheckStatus = "PASS" | "WARN" | "FAIL" | "NOT_APPLICABLE";
 export type ProofLifecycle =
+  | "NONE"
   | "ACTIVE"
   | "REVOKED"
   | "DRIFTED"
@@ -51,13 +52,13 @@ export const GATE_REASON = {
 export type GateReason = (typeof GATE_REASON)[keyof typeof GATE_REASON];
 
 export const COVERAGE = {
-  IDENTITY: 0x01,
-  SUBJECT: 0x02,
-  DETERMINISTIC: 0x04,
-  COMPUTE: 0x08,
-  STORAGE: 0x10,
-  POLICY: 0x20,
-  DRIFT: 0x40,
+  IDENTITY_VALIDATED: 0x01,
+  SUBJECT_CLASSIFIED: 0x02,
+  DETERMINISTIC_CHECKS_RUN: 0x04,
+  BEHAVIORAL_COMPUTE_VERIFIED: 0x08,
+  CODE_COMPUTE_VERIFIED_OR_NOT_APPLICABLE: 0x10,
+  EVIDENCE_STORAGE_VERIFIED: 0x20,
+  POLICY_EVALUATED: 0x40,
 } as const;
 
 export const REQUIRED_COVERAGE = 0x7f as const;
@@ -73,7 +74,7 @@ export type DeterministicCheck = Readonly<{
 
 export type ComputeProof = Readonly<{
   purpose: "behavioral-risk" | "contract-risk";
-  provider: string;
+  provider: HexAddress;
   model: string;
   chatId: string;
   receiptDigest: Bytes32;
@@ -92,6 +93,19 @@ export type EvidenceEnvelopeV1 = Readonly<{
   proofClass: "COMPUTE_VERIFIED";
   schemaVersion: number;
   policyVersion: number;
+  coverage: Readonly<{
+    preStorageMask: 0x5f;
+    requiredSealMask: 0x7f;
+    identityValidated: true;
+    subjectClassified: true;
+    deterministicChecksRun: true;
+    behavioralComputeVerified: true;
+    codeCompute:
+      | Readonly<{ status: "VERIFIED" }>
+      | Readonly<{ status: "NOT_APPLICABLE"; reason: string }>;
+    evidenceStorage: "PENDING_EXTERNAL_COMMITMENT";
+    policyEvaluated: true;
+  }>;
   identity: AgentIdentity &
     Readonly<{
       owner: HexAddress;
@@ -104,7 +118,9 @@ export type EvidenceEnvelopeV1 = Readonly<{
     address: HexAddress;
     kind: SubjectKind;
     runtimeCodeHash: Bytes32;
+    delegationTarget?: HexAddress;
     delegationCodeHash?: Bytes32;
+    proxyImplementation?: HexAddress;
     proxyImplementationCodeHash?: Bytes32;
   }>;
   deterministicChecks: readonly DeterministicCheck[];

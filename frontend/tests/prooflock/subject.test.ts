@@ -132,7 +132,7 @@ describe("corroborated proxy checks", () => {
     });
     const subject = await classifySubject(adapterValue, SUBJECT, SOURCE_BLOCK);
     const report = await inspectContract(adapterValue, subject, { sourceBlock: SOURCE_BLOCK });
-    expect(report.proxy).toEqual({
+    expect(report.proxyCandidate).toEqual({
       kind: "EIP1967_IMPLEMENTATION",
       implementationAddress: getAddress(TARGET),
       implementationCodeHash: keccak256("0x6002"),
@@ -153,7 +153,7 @@ describe("corroborated proxy checks", () => {
     });
     const subject = await classifySubject(adapterValue, SUBJECT, SOURCE_BLOCK);
     const report = await inspectContract(adapterValue, subject, { sourceBlock: SOURCE_BLOCK });
-    expect(report.proxy).toEqual({
+    expect(report.proxyCandidate).toEqual({
       kind: "EIP1967_BEACON",
       beaconAddress: getAddress(BEACON),
       beaconCodeHash: keccak256("0x6003"),

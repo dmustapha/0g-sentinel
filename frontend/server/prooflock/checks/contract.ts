@@ -35,6 +35,37 @@ type BeaconProxy = Readonly<{
 }>;
 
 export type CorroboratedProxy = ImplementationProxy | BeaconProxy;
+export type ProxyCandidate = ImplementationProxy | BeaconProxy;
+
+export type ProxyMetadataRequest = Readonly<{
+  chainId: 16661;
+  subjectAddress: HexAddress;
+  subjectRuntimeCodeHash: Bytes32;
+  sourceBlock: ExpectedSourceBlock;
+  proxyCandidate: ProxyCandidate;
+}>;
+
+export interface BoundProxyMetadataResolver {
+  resolve(request: ProxyMetadataRequest): Promise<unknown>;
+}
+
+export type BoundProxyMetadata = Readonly<{
+  chainId: 16661;
+  subjectAddress: HexAddress;
+  sourceBlockNumber: string;
+  sourceBlockHash: Bytes32;
+  subjectRuntimeCodeHash: Bytes32;
+  kind: ProxyCandidate["kind"];
+  implementationAddress: HexAddress;
+  implementationCodeHash: Bytes32;
+  beaconAddress?: HexAddress;
+  beaconCodeHash?: Bytes32;
+  provider: string;
+  uri: string;
+  rawResponseDigest: Bytes32;
+  verifiedProxyMatch: true;
+  verificationMethod: "INDEPENDENT_PROVIDER_PROXY_MATCH";
+}>;
 
 export type SourceResolutionRequest = Readonly<{
   chainId: 16661;
@@ -67,7 +98,9 @@ export type ContractCheckReport = Readonly<{
   sourceBlockNumber: string;
   sourceBlockHash: Bytes32;
   runtimeCodeHash: Bytes32;
+  proxyCandidate?: ProxyCandidate;
   proxy?: CorroboratedProxy;
+  boundProxyMetadata?: BoundProxyMetadata;
   resolvedSource?: ResolvedVerifiedSource;
   sourcePatternSignals?: SourcePatternAnalysis;
   deterministicFindings: readonly string[];
@@ -77,6 +110,7 @@ export type ContractCheckReport = Readonly<{
 export type ContractCheckOptions = Readonly<{
   sourceBlock: ExpectedSourceBlock;
   sourceResolver?: VerifiedSourceResolver;
+  proxyMetadataResolver?: BoundProxyMetadataResolver;
 }>;
 
 function normalizeAddress(value: unknown, label: string): HexAddress {
@@ -148,6 +182,71 @@ export async function resolveVerifiedSource(
     source: raw.source,
     verifiedRuntimeMatch: true,
     verificationMethod: "PROVIDER_ASSERTED_RUNTIME_MATCH",
+  });
+}
+
+function assertProxyMetadataBindings(
+  raw: Record<string, unknown>,
+  request: ProxyMetadataRequest,
+): void {
+  const candidate = request.proxyCandidate;
+  const commonMatches = raw.chainId === 16661
+    && normalizeAddress(raw.subjectAddress, "proxy subject address") === request.subjectAddress
+    && raw.sourceBlockNumber === request.sourceBlock.number.toString()
+    && normalizeNonZeroBytes32(raw.sourceBlockHash, "proxy block hash") === request.sourceBlock.hash
+    && normalizeNonZeroBytes32(raw.subjectRuntimeCodeHash, "proxy subject runtime hash")
+      === request.subjectRuntimeCodeHash
+    && raw.kind === candidate.kind
+    && normalizeAddress(raw.implementationAddress, "proxy implementation")
+      === candidate.implementationAddress
+    && normalizeNonZeroBytes32(raw.implementationCodeHash, "proxy implementation code hash")
+      === candidate.implementationCodeHash
+    && raw.verifiedProxyMatch === true;
+  if (!commonMatches) throw new Error("Bound proxy metadata mismatch");
+  if (candidate.kind !== "EIP1967_BEACON") return;
+  if (
+    normalizeAddress(raw.beaconAddress, "proxy beacon") !== candidate.beaconAddress
+    || normalizeNonZeroBytes32(raw.beaconCodeHash, "proxy beacon code hash")
+      !== candidate.beaconCodeHash
+  ) {
+    throw new Error("Bound beacon metadata mismatch");
+  }
+}
+
+export async function resolveBoundProxyMetadata(
+  resolver: BoundProxyMetadataResolver,
+  subject: Readonly<{ address: HexAddress; runtimeCodeHash: Bytes32 }>,
+  candidate: ProxyCandidate,
+  sourceBlockInput: ExpectedSourceBlock,
+): Promise<BoundProxyMetadata> {
+  const sourceBlock = validateExpectedSourceBlock(sourceBlockInput);
+  const request = {
+    chainId: 16661 as const,
+    subjectAddress: subject.address,
+    subjectRuntimeCodeHash: subject.runtimeCodeHash,
+    sourceBlock,
+    proxyCandidate: candidate,
+  };
+  const raw = sourceResponse(await resolver.resolve(request));
+  assertProxyMetadataBindings(raw, request);
+  return deepFreeze({
+    chainId: 16661,
+    subjectAddress: subject.address,
+    sourceBlockNumber: sourceBlock.number.toString(),
+    sourceBlockHash: sourceBlock.hash,
+    subjectRuntimeCodeHash: subject.runtimeCodeHash,
+    kind: candidate.kind,
+    implementationAddress: candidate.implementationAddress,
+    implementationCodeHash: candidate.implementationCodeHash,
+    ...(candidate.kind === "EIP1967_BEACON" ? {
+      beaconAddress: candidate.beaconAddress,
+      beaconCodeHash: candidate.beaconCodeHash,
+    } : {}),
+    provider: boundedText(raw.provider, "proxy metadata provider"),
+    uri: boundedText(raw.uri, "proxy metadata URI"),
+    rawResponseDigest: normalizeNonZeroBytes32(raw.rawResponseDigest, "proxy raw response digest"),
+    verifiedProxyMatch: true,
+    verificationMethod: "INDEPENDENT_PROVIDER_PROXY_MATCH",
   });
 }
 
@@ -230,24 +329,30 @@ function minimalProxyTarget(runtimeCode: string): HexAddress | undefined {
   return match ? normalizeAddress(`0x${match[1]}`, "minimal proxy target") : undefined;
 }
 
+type ProxyObservation = Readonly<{
+  proxyCandidate?: ProxyCandidate;
+  confirmedProxy?: CorroboratedProxy;
+}>;
+
 async function detectProxy(
   adapter: SubjectChainAdapter,
   subject: ClassifiedSubject,
   blockTag: bigint,
-): Promise<CorroboratedProxy | undefined> {
+): Promise<ProxyObservation> {
+  const minimalImplementation = minimalProxyTarget(subject.runtimeCode);
+  if (minimalImplementation) {
+    return { confirmedProxy: {
+      kind: "EIP1167_MINIMAL",
+      implementationAddress: minimalImplementation,
+      implementationCodeHash: await liveCodeHash(
+        adapter, minimalImplementation, subject.address, blockTag, "EIP-1167 implementation",
+      ),
+    } };
+  }
   const implementation = await implementationProxy(adapter, subject, blockTag);
-  if (implementation) return implementation;
+  if (implementation) return { proxyCandidate: implementation };
   const beacon = await beaconProxy(adapter, subject, blockTag);
-  if (beacon) return beacon;
-  const implementationAddress = minimalProxyTarget(subject.runtimeCode);
-  if (!implementationAddress) return undefined;
-  return {
-    kind: "EIP1167_MINIMAL",
-    implementationAddress,
-    implementationCodeHash: await liveCodeHash(
-      adapter, implementationAddress, subject.address, blockTag, "EIP-1167 implementation",
-    ),
-  };
+  return beacon ? { proxyCandidate: beacon } : {};
 }
 
 function sourceTarget(subject: ClassifiedSubject, proxy?: CorroboratedProxy) {
@@ -269,7 +374,17 @@ export async function inspectContract(
   ) {
     throw new Error("Contract check block does not match classification block");
   }
-  const proxy = await detectProxy(adapter, subject, sourceBlock.number);
+  const observation = await detectProxy(adapter, subject, sourceBlock.number);
+  const boundProxyMetadata = observation.proxyCandidate && options.proxyMetadataResolver
+    ? await resolveBoundProxyMetadata(
+      options.proxyMetadataResolver,
+      subject,
+      observation.proxyCandidate,
+      sourceBlock,
+    )
+    : undefined;
+  const proxy = observation.confirmedProxy
+    ?? (boundProxyMetadata ? observation.proxyCandidate : undefined);
   const resolvedSource = options.sourceResolver
     ? await resolveVerifiedSource(options.sourceResolver, sourceTarget(subject, proxy), sourceBlock)
     : undefined;
@@ -283,7 +398,9 @@ export async function inspectContract(
     sourceBlockNumber: sourceBlock.number.toString(),
     sourceBlockHash: sourceBlock.hash,
     runtimeCodeHash: subject.runtimeCodeHash,
+    ...(observation.proxyCandidate ? { proxyCandidate: observation.proxyCandidate } : {}),
     ...(proxy ? { proxy } : {}),
+    ...(boundProxyMetadata ? { boundProxyMetadata } : {}),
     ...(resolvedSource ? { resolvedSource, sourcePatternSignals } : {}),
     deterministicFindings: [],
     informationalFindings: sourcePatternSignals?.findings

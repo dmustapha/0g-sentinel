@@ -3,6 +3,7 @@ import { canonicalize } from "json-canonicalize";
 import { z } from "zod";
 
 import { EvidenceValidationError } from "./errors";
+import { ERC8004_IDENTITY_REGISTRY } from "./types";
 import type {
   Bytes32,
   EvidenceEnvelopeV1,
@@ -11,8 +12,9 @@ import type {
 
 const UINT64_MAX = (1n << 64n) - 1n;
 const UINT256_MAX = (1n << 256n) - 1n;
+const UINT32_MAX = 4_294_967_295;
+const MAX_NODES = 10_000;
 const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
-const IDENTITY_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
 const decimalPattern = /^(0|[1-9]\d*)$/;
 const safeInteger = z
   .number()
@@ -20,7 +22,10 @@ const safeInteger = z
   .nonnegative()
   .refine(Number.isSafeInteger)
   .refine((value) => !Object.is(value, -0), "negative zero is not canonical");
-const positiveInteger = safeInteger.refine((value) => value > 0);
+const policyVersion = safeInteger.refine(
+  (value) => value >= 1 && value <= UINT32_MAX,
+  "policyVersion must fit uint32",
+);
 // Hex values are normalized to lowercase before JCS so casing cannot alter proof bytes.
 const address = z
   .string()
@@ -41,7 +46,7 @@ const nonZeroBytes32 = bytes32.refine(
 const uint64String = boundedDecimal(UINT64_MAX, "uint64 block number");
 const uint256String = boundedDecimal(UINT256_MAX, "uint256 agent ID");
 const identityRegistry = address.refine(
-  (value) => value === IDENTITY_REGISTRY,
+  (value) => value === ERC8004_IDENTITY_REGISTRY,
   "identity registry mismatch",
 );
 
@@ -93,7 +98,7 @@ const evidenceEnvelopeSchema = z
     schema: z.literal("sentinel.prooflock/evidence-v1"),
     proofClass: z.literal("COMPUTE_VERIFIED"),
     schemaVersion: z.literal(1),
-    policyVersion: positiveInteger,
+    policyVersion,
     coverage: z
       .object({
         preStorageMask: z.literal(0x5f),
@@ -196,6 +201,8 @@ export function hashCanonical(value: unknown): Bytes32 {
 
 export function receiptDigest(chatId: string): Bytes32 {
   if (chatId.trim().length === 0) throw new EvidenceValidationError("empty chat ID");
+  if (chatId.length > 512) throw new EvidenceValidationError("chat ID exceeds 512 characters");
+  assertWellFormedUnicode(chatId);
   return keccak256(toUtf8Bytes(chatId)) as Bytes32;
 }
 
@@ -333,7 +340,7 @@ function rejectNonCanonicalValues(value: unknown): void {
 function visitCanonicalValue(value: unknown, depth: number, state: TraversalState): void {
   if (depth > 16) throw new EvidenceValidationError("evidence exceeds maximum depth");
   state.nodes += 1;
-  if (state.nodes > 10_000) throw new EvidenceValidationError("evidence node limit exceeded");
+  if (state.nodes > MAX_NODES) throw new EvidenceValidationError("evidence node limit exceeded");
   if (value === undefined) throw new EvidenceValidationError("undefined evidence value");
   if (typeof value === "string") return visitString(value, state);
   if (
@@ -343,6 +350,9 @@ function visitCanonicalValue(value: unknown, depth: number, state: TraversalStat
     throw new EvidenceValidationError("non-canonical numeric value");
   }
   if (!value || typeof value !== "object") return;
+  if (Array.isArray(value) && value.length > MAX_NODES) {
+    throw new EvidenceValidationError("evidence array length exceeds node limit");
+  }
   if (state.stack.has(value)) throw new EvidenceValidationError("cyclic evidence");
   state.stack.add(value);
   for (const [key, child] of Object.entries(value)) {

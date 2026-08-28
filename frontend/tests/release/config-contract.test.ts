@@ -5,16 +5,30 @@ import { describe, expect, it } from "vitest";
 const PUBLIC_V2 = [
   "NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_RPC_URL", "NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS",
   "NEXT_PUBLIC_AGENT_GATE_V2_ADDRESS", "NEXT_PUBLIC_PROOFLOCK_CONSUMER_ADDRESS",
+  "NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS", "NEXT_PUBLIC_PROOFLOCK_SCANNER_ADDRESS",
+  "NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS", "NEXT_PUBLIC_PROOFLOCK_CUSTODY_CONSTRAINT",
   "NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS", "NEXT_PUBLIC_PROOFLOCK_VALIDATOR_VERSION",
   "NEXT_PUBLIC_PROOFLOCK_POLICY_VERSION", "NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID",
 ];
 const SERVER_V2 = ["PROOFLOCK_REGISTRY_V2_FROM_BLOCK", "PROOFLOCK_CONSUMER_ADDRESS"];
+const DEPLOY_V2 = [
+  "PROOFLOCK_ADMIN_ADDRESS", "PROOFLOCK_SCANNER_ADDRESS", "PROOFLOCK_GUARDIAN_ADDRESS",
+  "PROOFLOCK_MAX_BEHAVIORAL_SCORE", "PROOFLOCK_MAX_CODE_RISK", "PROOFLOCK_REQUIRED_COVERAGE",
+  "PROOFLOCK_MINIMUM_POLICY_VERSION", "PROOFLOCK_MAXIMUM_AGE_SECONDS", "PROOFLOCK_DEPLOY_CONFIRMATIONS",
+];
 
 describe("release configuration and legacy boundary", () => {
   it.each([".env.example", "../.env.example"])("documents every active public V2 variable in %s", (path) => {
     const text = readFileSync(resolve(process.cwd(), path), "utf8");
     for (const name of PUBLIC_V2) expect(text).toMatch(new RegExp(`^${name}=`, "m"));
     for (const name of SERVER_V2) expect(text).toMatch(new RegExp(`^${name}=`, "m"));
+  });
+
+  it.each([".env.example", "../.env.example"])("documents all nine V2 deployment inputs in %s", (path) => {
+    const text = readFileSync(resolve(process.cwd(), path), "utf8");
+    expect(DEPLOY_V2).toHaveLength(9);
+    for (const name of DEPLOY_V2) expect(text).toMatch(new RegExp(`^${name}=`, "m"));
+    expect(text).not.toMatch(/^PROOFLOCK_ERC8004_IDENTITY_REGISTRY_ADDRESS=/m);
   });
 
   it("never falls back from AgentGateV2 to a legacy gate", () => {

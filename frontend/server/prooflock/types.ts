@@ -11,6 +11,27 @@ export type AgentIdentity = Readonly<{
   agentId: string;
 }>;
 
+export type RegistrationCard = Readonly<Record<string, unknown>> &
+  Readonly<{
+    type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1";
+    registrations: readonly Readonly<{
+      agentId: number;
+      agentRegistry: string;
+    }>[];
+    active?: boolean;
+  }>;
+
+export type ResolvedAgentIdentity = Readonly<{
+  identity: AgentIdentity;
+  owner: HexAddress;
+  agentWallet: HexAddress;
+  agentURI: string;
+  registrationDigest: Bytes32;
+  sourceBlockNumber: string;
+  sourceBlockHash: Bytes32;
+  card: RegistrationCard;
+}>;
+
 export type SubjectKind = "EOA" | "EIP7702_DELEGATED_EOA" | "CONTRACT";
 export type ProofStage =
   | "IDENTITY_VERIFIED"

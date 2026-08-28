@@ -23,7 +23,10 @@ const lockSchema = z.object({
   state: z.number().int().min(0).max(255), stateReason: z.number().int().min(0).max(255),
 });
 const unknownGateSchema = z.object({ status: z.literal("UNKNOWN"), allowed: z.literal(false), reason: z.null() });
-const verifiedGateSchema = z.object({ status: z.literal("VERIFIED"), allowed: z.boolean(), reason: z.number().int().min(0).max(255) });
+const verifiedGateSchema = z.object({ status: z.literal("VERIFIED"), allowed: z.boolean(), reason: z.number().int().min(0).max(255),
+  subject: hex20, version: decimal });
+const unknownConsumerSchema = z.object({ status: z.literal("UNKNOWN"), accepted: z.literal(false) });
+const verifiedConsumerSchema = z.object({ status: z.literal("VERIFIED"), accepted: z.boolean(), address: hex20, subject: hex20, version: decimal });
 const identitySummarySchema = z.object({ identityKey: hex32, namespace: z.literal("eip155"), chainId: z.literal(16661),
   registryAddress: hex20, agentId: decimal, owner: hex20, agentWallet: hex20, registrationUri: z.string(),
   registrationDigest: hex32, sourceBlockNumber: decimal, sourceBlockHash: hex32 });
@@ -31,9 +34,9 @@ const resolutionSummarySchema = z.object({ owner: hex20, agentWallet: hex20, age
   registrationDigest: hex32, sourceBlockNumber: decimal, sourceBlockHash: hex32 });
 const detailSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("VERIFIED"), identity: identitySummarySchema, resolution: resolutionSummarySchema,
-    gate: z.union([verifiedGateSchema, unknownGateSchema]) }),
+    gate: z.union([verifiedGateSchema, unknownGateSchema]), consumer: z.union([verifiedConsumerSchema, unknownConsumerSchema]) }),
   z.object({ status: z.literal("UNAVAILABLE"), code: z.enum(["EVIDENCE_UNAVAILABLE", "EVIDENCE_INVALID", "IDENTITY_UNAVAILABLE", "IDENTITY_INVALID"]),
-    identity: z.null(), resolution: z.null(), gate: unknownGateSchema }),
+    identity: z.null(), resolution: z.null(), gate: unknownGateSchema, consumer: unknownConsumerSchema }),
 ]);
 const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string(), stage: z.string(),
   retryable: z.boolean(), requestId: z.string() }) });
@@ -76,6 +79,7 @@ export async function readHealth(signal?: AbortSignal): Promise<HealthSnapshot> 
   const response = await fetch("/api/health", { signal, cache: "no-store" });
   const raw = await response.json().catch(() => null);
   const probe = z.object({ status: z.enum(["HEALTHY", "UNHEALTHY", "UNKNOWN"]), latencyMs: z.number().nonnegative(),
+    observedAt: z.string().datetime(),
     detail: z.record(z.string(), z.unknown()).optional() });
   return z.object({ status: z.enum(["HEALTHY", "DEGRADED"]), dependencies: z.object({
     rpc: probe, identity: probe, registry: probe, gate: probe, compute: probe, storage: probe,

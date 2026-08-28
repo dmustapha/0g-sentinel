@@ -21,11 +21,12 @@ describe("public proof verification", () => {
 
 describe("independent subsystem health", () => {
   it("renders all six probes with independent states, latency, and observation time", () => {
-    const probe = (status: "HEALTHY" | "UNHEALTHY" | "UNKNOWN", latencyMs: number) => ({ status, latencyMs });
+    const probe = (status: "HEALTHY" | "UNHEALTHY" | "UNKNOWN", latencyMs: number) => ({ status, latencyMs, observedAt: "2026-08-28T08:00:00.000Z" });
     const snapshot: HealthSnapshot = { status: "DEGRADED", dependencies: { rpc: probe("HEALTHY", 10), identity: probe("UNHEALTHY", 20),
-      registry: probe("HEALTHY", 30), gate: probe("UNKNOWN", 40), compute: probe("HEALTHY", 50), storage: probe("UNHEALTHY", 60) } };
-    const html = renderToStaticMarkup(React.createElement(SubsystemHealthGrid, { snapshot, observedAt: "2026-08-28T08:00:00Z" }));
+      registry: probe("HEALTHY", 30), gate: probe("UNKNOWN", 40), compute: { ...probe("HEALTHY", 50), detail: { observation: "SERVICE_DISCOVERY", inferenceExecuted: false } }, storage: probe("UNHEALTHY", 60) } };
+    const html = renderToStaticMarkup(React.createElement(SubsystemHealthGrid, { snapshot }));
     for (const label of ["RPC", "ERC-8004", "RegistryV2", "AgentGateV2", "0G Compute", "0G Storage"]) expect(html).toContain(label);
-    expect(html).toContain("60 ms"); expect(html).toContain("2026-08-28T08:00:00Z");
+    expect(html).toContain("60 ms"); expect(html).toContain("2026-08-28T08:00:00.000Z");
+    expect(html).toContain("Service discovery only"); expect(html).toContain("inferenceExecuted: false");
   });
 });

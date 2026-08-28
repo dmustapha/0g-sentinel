@@ -25,6 +25,7 @@ describe("ProofLock health", () => {
     for (const probe of Object.values(pulse.dependencies)) {
       expect(probe.status).toBe("HEALTHY");
       expect(probe.latencyMs).toBeGreaterThanOrEqual(0);
+      expect(new Date(probe.observedAt).toISOString()).toBe(probe.observedAt);
     }
     expect(compute).toHaveBeenCalledTimes(1);
   });
@@ -94,7 +95,8 @@ describe("read-only Compute health policy", () => {
   it("accepts only an acknowledged decentralized separated model TEE without spend methods", async () => {
     const readOnly = broker(service({ ProviderType: "decentralized", TargetSeparated: true, TargetTeeAddress: signer }));
     const result = await probeComputeService(readOnly, provider, "model-tee", new AbortController().signal);
-    expect(result).toMatchObject({ proofClass: "DECENTRALIZED_MODEL_TEE", expectedSigner: signer, paidInference: false });
+    expect(result).toMatchObject({ proofClass: "DECENTRALIZED_MODEL_TEE", expectedSigner: signer,
+      observation: "SERVICE_DISCOVERY", paidInference: false, inferenceExecuted: false });
     expect(Object.keys(readOnly)).toEqual(["listService"]);
   });
 

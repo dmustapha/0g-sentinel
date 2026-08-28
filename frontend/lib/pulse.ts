@@ -2,7 +2,7 @@
 export type ProbeStatus = "HEALTHY" | "UNHEALTHY" | "UNKNOWN";
 export type ProbeName = "rpc" | "identity" | "registry" | "gate" | "compute" | "storage";
 export type ProbeResult = Readonly<{
-  status: ProbeStatus; latencyMs: number; detail?: Readonly<Record<string, unknown>>;
+  status: ProbeStatus; latencyMs: number; observedAt: string; detail?: Readonly<Record<string, unknown>>;
 }>;
 export type HealthProbe = (signal: AbortSignal) => Promise<Readonly<Record<string, unknown>> | null>;
 export type HealthProbeDependencies = Readonly<Record<ProbeName, HealthProbe>>;
@@ -45,9 +45,9 @@ async function probe(operation: HealthProbe, signal: AbortSignal): Promise<Probe
     signal.throwIfAborted();
     const detail = await operation(signal);
     signal.throwIfAborted();
-    return Object.freeze({ status: detail ? "HEALTHY" : "UNKNOWN", latencyMs: elapsed(started), ...(detail ? { detail } : {}) });
+    return Object.freeze({ status: detail ? "HEALTHY" : "UNKNOWN", latencyMs: elapsed(started), observedAt: new Date().toISOString(), ...(detail ? { detail } : {}) });
   } catch {
-    return Object.freeze({ status: "UNHEALTHY", latencyMs: elapsed(started) });
+    return Object.freeze({ status: "UNHEALTHY", latencyMs: elapsed(started), observedAt: new Date().toISOString() });
   }
 }
 
@@ -59,6 +59,7 @@ async function productionDependencies(): Promise<HealthProbeDependencies> {
 function elapsed(started: number): number { return Math.max(0, Math.round((performance.now() - started) * 100) / 100); }
 
 function degradedPulse(): PulseStatus {
-  const unknown = Object.fromEntries(names.map((name) => [name, { status: "UNKNOWN", latencyMs: 0 }])) as Record<ProbeName, ProbeResult>;
+  const observedAt = new Date().toISOString();
+  const unknown = Object.fromEntries(names.map((name) => [name, { status: "UNKNOWN", latencyMs: 0, observedAt }])) as Record<ProbeName, ProbeResult>;
   return { status: "DEGRADED", dependencies: unknown, chain: false, compute: false, storage: false, gate: false };
 }

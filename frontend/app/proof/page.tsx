@@ -8,8 +8,8 @@ import type { HealthSnapshot } from "@/lib/prooflock-types";
 
 export default function ProofPage() {
   const router = useRouter(); const [proofId, setProofId] = useState(""); const [identityKey, setIdentityKey] = useState("");
-  const [health, setHealth] = useState<HealthSnapshot>(); const [observedAt, setObservedAt] = useState(""); const [healthError, setHealthError] = useState(false); const [retry, setRetry] = useState(0);
-  useEffect(() => { const controller = new AbortController(); setHealthError(false); void readHealth(controller.signal).then((value) => { setHealth(value); setObservedAt(new Date().toISOString()); })
+  const [health, setHealth] = useState<HealthSnapshot>(); const [healthError, setHealthError] = useState(false); const [retry, setRetry] = useState(0);
+  useEffect(() => { const controller = new AbortController(); setHealthError(false); void readHealth(controller.signal).then(setHealth)
     .catch(() => { if (!controller.signal.aborted) setHealthError(true); }); return () => controller.abort(); }, [retry]);
   const valid = /^0x[0-9a-fA-F]{64}$/.test(proofId) && /^0x[0-9a-fA-F]{64}$/.test(identityKey);
   return <section className="workspace-section proof-page"><div className="wrap"><div className="page-heading"><span className="eyebrow">Public offline verifier</span><h1>Verify a ProofLock</h1>
@@ -21,7 +21,7 @@ export default function ProofPage() {
     <div className="section-heading health-heading"><span className="eyebrow">Independent live probes</span><h2>Subsystem health</h2><p>Each cell is probed independently. Chain health never implies Storage or Compute health.</p></div>
     {!health && !healthError && <div className="loading-ledger"><i /><i /><i /><span>Probing six dependencies…</span></div>}
     {healthError && <div className="empty-ledger state-bad"><h2>Health response unavailable</h2><button className="button" onClick={() => setRetry((value) => value + 1)}>Retry probes</button></div>}
-    {health && <SubsystemHealthGrid snapshot={health} observedAt={observedAt} />}
+    {health && <SubsystemHealthGrid snapshot={health} />}
     <aside className="trust-disclosure"><h2>Verification scope</h2><p>“Retrieved and root-matched” describes this observation time. The current SDK path reports <code>networkProofVerified: false</code>; it does not claim an independently verified network Merkle proof.</p></aside>
   </div></section>;
 }

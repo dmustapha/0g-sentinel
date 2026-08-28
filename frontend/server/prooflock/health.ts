@@ -92,7 +92,7 @@ export async function probeComputeService(
   const service = await resolveService(broker, provider.toLowerCase(), model, signal);
   validateBaseUrl(service.url);
   const expectedSigner = resolveExpectedSigner(service);
-  return { proofClass: "DECENTRALIZED_MODEL_TEE", provider: provider.toLowerCase(), model,
+  return { observation: "SERVICE_DISCOVERY", proofClass: "DECENTRALIZED_MODEL_TEE", provider: provider.toLowerCase(), model,
     expectedSigner, signerAcknowledged: true, paidInference: false, inferenceExecuted: false };
 }
 
@@ -107,7 +107,8 @@ async function probeStorage(indexerUrl: string | undefined, root: string | undef
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const layout = await computeZeroGLayout(bytes, "0x0000000000000000000000000000000000000001");
   if (layout.storageRoot.toLowerCase() !== root.toLowerCase()) throw new Error("canary root mismatch");
-  return { root: root.toLowerCase(), retrievalVerified: true, networkProofVerified: STORAGE_VERIFICATION_CAPABILITY.networkProofVerified };
+  return { observation: "RETRIEVAL_CANARY", root: root.toLowerCase(), retrievalVerified: true,
+    networkProofVerified: STORAGE_VERIFICATION_CAPABILITY.networkProofVerified };
 }
 
 async function requireCode(provider: JsonRpcProvider, address: string, signal: AbortSignal): Promise<string> {

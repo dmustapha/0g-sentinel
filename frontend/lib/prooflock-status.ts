@@ -1,4 +1,14 @@
-import type { GateReasonCode, LeaseStatus, ProofLockRecord } from "./prooflock-types";
+import type { GateReasonCode, LeaseStatus, ProofLockDetail, ProofLockRecord } from "./prooflock-types";
+
+export function admittedConsumerState(record: Pick<ProofLockRecord, "subject" | "version">,
+  gate: ProofLockDetail["gate"], consumer: ProofLockDetail["consumer"], expectedSubject: string): boolean {
+  return gate.status === "VERIFIED" && gate.allowed && gate.reason === 0 &&
+    consumer.status === "VERIFIED" && consumer.accepted &&
+    same(record.subject, expectedSubject, gate.subject, consumer.subject) &&
+    gate.version === record.version && consumer.version === record.version;
+}
+
+function same(...values: readonly string[]): boolean { return values.every((value) => value.toLowerCase() === values[0]?.toLowerCase()); }
 
 const EXPIRING_WINDOW_SECONDS = 24 * 60 * 60;
 
@@ -68,4 +78,3 @@ function safeSeconds(value: string): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : 0;
 }
-

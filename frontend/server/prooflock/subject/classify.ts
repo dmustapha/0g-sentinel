@@ -6,6 +6,7 @@ export const EIP1967_IMPLEMENTATION_SLOT =
   "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
 export const EIP1967_BEACON_SLOT =
   "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50" as const;
+const ZERO_BYTES32 = `0x${"00".repeat(32)}` as Bytes32;
 
 export type AccountHistory = Readonly<{
   complete: boolean;
@@ -68,7 +69,13 @@ export async function classifySubject(
     runtimeCodeHash: keccak256(runtimeCode) as Bytes32,
   };
 
-  if (runtimeCode === "0x") return Object.freeze({ ...base, kind: "EOA" as const });
+  if (runtimeCode === "0x") {
+    return Object.freeze({
+      ...base,
+      kind: "EOA" as const,
+      runtimeCodeHash: ZERO_BYTES32,
+    });
+  }
   if (!target) return Object.freeze({ ...base, kind: "CONTRACT" as const });
 
   const delegationCode = normalizeRuntimeCode(await adapter.getCode(target, blockTag));

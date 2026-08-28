@@ -12,13 +12,19 @@ import { inspectDelegatedEoa } from "../../server/prooflock/checks/delegated-eoa
 import { inspectEoa } from "../../server/prooflock/checks/eoa";
 import { runSubjectChecks } from "../../server/prooflock/checks";
 import { analyzeSolidityPatterns } from "../../server/prooflock/checks/static-analysis";
-import type { Bytes32, HexAddress } from "../../server/prooflock/types";
+import { validateEvidenceEnvelope } from "../../server/prooflock/canonical";
+import {
+  ERC8004_IDENTITY_REGISTRY,
+  type Bytes32,
+  type HexAddress,
+} from "../../server/prooflock/types";
 
 const SUBJECT = "0x1111111111111111111111111111111111111111";
 const TARGET = "0x2222222222222222222222222222222222222222";
 const BEACON = "0x3333333333333333333333333333333333333333";
 const BLOCK = 1234n;
-const EMPTY_HASH = keccak256("0x");
+const ZERO_BYTES32 = `0x${"00".repeat(32)}` as Bytes32;
+const EMPTY_CODE_HASH = keccak256("0x") as Bytes32;
 
 type AdapterOverrides = Partial<SubjectChainAdapter>;
 
@@ -53,8 +59,73 @@ describe("ProofLock subject classification", () => {
       kind: "EOA",
       sourceBlockNumber: BLOCK.toString(),
       runtimeCode: "0x",
-      runtimeCodeHash: EMPTY_HASH as Bytes32,
+      runtimeCodeHash: ZERO_BYTES32,
     });
+  });
+
+  it("feeds an EOA classification into canonical evidence without hash translation", async () => {
+    const subject = await classifySubject(adapter(), SUBJECT, BLOCK);
+    const chatId = "behavioral-eoa-1";
+    const envelope = {
+      schema: "sentinel.prooflock/evidence-v1",
+      proofClass: "COMPUTE_VERIFIED",
+      schemaVersion: 1,
+      policyVersion: 1,
+      coverage: {
+        preStorageMask: 0x5f,
+        requiredSealMask: 0x7f,
+        identityValidated: true,
+        subjectClassified: true,
+        deterministicChecksRun: true,
+        behavioralComputeVerified: true,
+        codeCompute: { status: "NOT_APPLICABLE", reason: "EOA has no runtime bytecode" },
+        evidenceStorage: "PENDING_EXTERNAL_COMMITMENT",
+        policyEvaluated: true,
+      },
+      identity: {
+        namespace: "eip155",
+        chainId: 16661,
+        registryAddress: ERC8004_IDENTITY_REGISTRY,
+        agentId: "7",
+        owner: "0x9999999999999999999999999999999999999999",
+        agentWallet: subject.address,
+        registrationUri: "data:application/json,%7B%7D",
+        registrationDigest: `0x${"aa".repeat(32)}`,
+      },
+      source: { blockNumber: subject.sourceBlockNumber, blockHash: `0x${"bb".repeat(32)}` },
+      subject: {
+        address: subject.address,
+        kind: subject.kind,
+        runtimeCodeHash: subject.runtimeCodeHash,
+      },
+      deterministicChecks: [{
+        id: "eoa-account-snapshot",
+        version: "1.0.0",
+        status: "WARN",
+        inputDigest: `0x${"cc".repeat(32)}`,
+        outputDigest: `0x${"dd".repeat(32)}`,
+        findings: ["HISTORY_SOURCE_UNAVAILABLE"],
+      }],
+      computeProofs: [{
+        purpose: "behavioral-risk",
+        provider: "0x5555555555555555555555555555555555555555",
+        model: "test-model",
+        chatId,
+        receiptDigest: keccak256(toUtf8Bytes(chatId)),
+        requestDigest: `0x${"ee".repeat(32)}`,
+        responseDigest: `0x${"ff".repeat(32)}`,
+        usage: { promptTokens: 2, completionTokens: 1, totalTokens: 3 },
+        processResponseVerified: true,
+      }],
+      verdict: { riskScore: 25, label: "CAUTION" },
+      omissions: ["contract code analysis not applicable to EOA"],
+      scanner: {
+        address: "0x4444444444444444444444444444444444444444",
+        softwareVersion: "2.0.0",
+      },
+    };
+
+    expect(validateEvidenceEnvelope(envelope).subject).toEqual(envelope.subject);
   });
 
   it("classifies only the exact EIP-7702 designator shape as delegated", async () => {
@@ -294,7 +365,7 @@ describe("EOA and delegated-EOA checks", () => {
       kind: "EOA",
       sourceBlockNumber: BLOCK.toString(),
       runtimeCode: "0x",
-      runtimeCodeHash: EMPTY_HASH as Bytes32,
+      runtimeCodeHash: ZERO_BYTES32,
     }, BLOCK);
     const empty = await inspectEoa(adapter({
       getHistory: vi.fn(async () => ({ complete: true as const, observedTransactions: 0 })),
@@ -303,7 +374,7 @@ describe("EOA and delegated-EOA checks", () => {
       kind: "EOA",
       sourceBlockNumber: BLOCK.toString(),
       runtimeCode: "0x",
-      runtimeCodeHash: EMPTY_HASH as Bytes32,
+      runtimeCodeHash: ZERO_BYTES32,
     }, BLOCK);
 
     expect(noSource).toMatchObject({ status: "WARN", assessment: "CAUTION", history: { status: "UNKNOWN" } });
@@ -340,6 +411,7 @@ describe("EOA and delegated-EOA checks", () => {
       ),
     });
     const subject = await classifySubject(chain, SUBJECT, BLOCK);
+    expect(subject.delegationCodeHash).toBe(EMPTY_CODE_HASH);
     const result = await inspectDelegatedEoa(chain, subject, { blockTag: BLOCK });
     expect(result.status).toBe("WARN");
     expect(result.findings).toContain("DELEGATION_TARGET_CODE_EMPTY");

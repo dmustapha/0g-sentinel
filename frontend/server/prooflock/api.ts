@@ -1,13 +1,12 @@
 import { randomUUID } from "node:crypto";
 
+import { isCanonicalAgentId, parseNonZeroBytes32 } from "@/lib/prooflock-validation";
 import type { RegistryProofLockRecord } from "./chain";
 import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
 import { ProofLockStageError, type RunnerResult, type RunnerStage } from "./runner";
 import { authenticateOperator } from "./auth";
 
-const BYTES32 = /^0x[0-9a-fA-F]{64}$/;
-const DECIMAL = /^(0|[1-9]\d*)$/;
 const MAX_BODY_BYTES = 16_384;
 const READ_CACHE = "no-store";
 
@@ -82,6 +81,30 @@ export function createProofLockReadHandlers(dependencies: ProofLockReadDependenc
   });
 }
 
+export function createLazyProofLockReadHandlers(loadDependencies: () => ProofLockReadDependencies) {
+  return Object.freeze({
+    resolve: async (request: Request) => {
+      const agentId = new URL(request.url).searchParams.get("agentId") ?? "";
+      if (!isCanonicalAgentId(agentId)) return invalidReadInput("RESOLVING_IDENTITY");
+      return createProofLockReadHandlers(loadDependencies()).resolve(request);
+    },
+    proofLock: async (identityKey: string, request: Request) => {
+      if (!parseNonZeroBytes32(identityKey)) return invalidReadInput("READING_PROOF");
+      return createProofLockReadHandlers(loadDependencies()).proofLock(identityKey, request);
+    },
+    verifyProof: async (proofId: string, request: Request) => {
+      const url = new URL(request.url);
+      const identityKey = url.searchParams.get("identityKey") ?? "";
+      const sourceTxHash = url.searchParams.get("sourceTxHash");
+      if (!parseNonZeroBytes32(proofId) || !parseNonZeroBytes32(identityKey)
+        || (sourceTxHash !== null && !parseNonZeroBytes32(sourceTxHash))) {
+        return invalidReadInput("VERIFYING_PROOF");
+      }
+      return createProofLockReadHandlers(loadDependencies()).verifyProof(proofId, request);
+    },
+  });
+}
+
 export function createProofLockStreamHandler(config: Readonly<{
   operatorToken: string | undefined;
   loadRunner(): Promise<StreamRunner>;
@@ -142,7 +165,7 @@ async function resolveIdentity(request: Request, deps: ProofLockReadDependencies
   const requestId = createRequestId();
   try {
     const agentId = new URL(request.url).searchParams.get("agentId") ?? "";
-    if (!DECIMAL.test(agentId) || BigInt(agentId) >= 1n << 256n) invalid();
+    if (!isCanonicalAgentId(agentId)) invalid();
     const identity = await deps.resolveIdentity(agentId, deadline(request.signal));
     return json({ identity }, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "RESOLVING_IDENTITY", requestId); }
@@ -244,7 +267,7 @@ function parseOperatorIdentity(value: unknown): AgentIdentity {
   if (Object.keys(raw).some((key) => !["namespace", "chainId", "registryAddress", "agentId"].includes(key))
     || raw.namespace !== "eip155" || raw.chainId !== 16661 || typeof raw.registryAddress !== "string"
     || !/^0x[0-9a-fA-F]{40}$/.test(raw.registryAddress) || /^0x0{40}$/i.test(raw.registryAddress)
-    || typeof raw.agentId !== "string" || !DECIMAL.test(raw.agentId) || BigInt(raw.agentId) >= 1n << 256n) invalid();
+    || typeof raw.agentId !== "string" || !isCanonicalAgentId(raw.agentId)) invalid();
   return Object.freeze({ namespace: "eip155", chainId: 16661,
     registryAddress: raw.registryAddress.toLowerCase() as HexAddress, agentId: raw.agentId });
 }
@@ -317,8 +340,9 @@ function notFound(): never { throw new ApiInputError("NOT_FOUND", "Proof was not
 function assertRecord(identityKey: string, record: RegistryProofLockRecord): void {
   if (!record || record.identityKey.toLowerCase() !== identityKey || record.version < 1n) notFound();
 }
-function bytes32(value: string): string { if (!BYTES32.test(value) || /^0x0{64}$/i.test(value)) invalid(); return value.toLowerCase(); }
+function bytes32(value: string): Bytes32 { const parsed = parseNonZeroBytes32(value); if (!parsed) invalid(); return parsed; }
 function optionalBytes32(value: string | null): string | undefined { return value === null ? undefined : bytes32(value); }
+function invalidReadInput(stage: ApiStage): Response { return apiErrorResponse(null, { code: "INVALID_INPUT", message: "Request input is invalid", stage, retryable: false, status: 400 }); }
 function requiredRegistry(deps: ProofLockReadDependencies): string { if (!deps.registryAddress) throw new Error("Registry is unavailable"); return deps.registryAddress; }
 function unauthorized(requestId: string): ApiErrorOptions { return { code: "UNAUTHORIZED", message: "Operator authorization required", stage: "AUTHENTICATING", retryable: false, status: 401, requestId }; }
 function createRequestId(): string { return `req_${randomUUID()}`; }

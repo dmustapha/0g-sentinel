@@ -1,11 +1,12 @@
-import { apiErrorResponse, createProofLockReadHandlers, methodNotAllowedResponse } from "@/server/prooflock/api";
+import { apiErrorResponse, createLazyProofLockReadHandlers, methodNotAllowedResponse } from "@/server/prooflock/api";
 import { createProductionReadDependencies } from "@/server/prooflock/read-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+const handlers = createLazyProofLockReadHandlers(createProductionReadDependencies);
 
 export async function GET(request: Request): Promise<Response> {
-  try { return await createProofLockReadHandlers(createProductionReadDependencies()).resolve(request); }
+  try { return await handlers.resolve(request); }
   catch (error) { return unavailable(error, "RESOLVING_IDENTITY"); }
 }
 export const POST = () => methodNotAllowedResponse("RESOLVING_IDENTITY");

@@ -170,6 +170,19 @@ describe("public read handlers", () => {
     expect(response.headers.get("cache-control")).toBe("no-store");
   });
 
+  it.each(["", "00", "01", "+1", "-1", (1n << 256n).toString()])(
+    "rejects non-canonical agent ID %j before identity resolution",
+    async (agentId) => {
+      const deps = dependencies();
+      const response = await createProofLockReadHandlers(deps).resolve(
+        new Request(`https://sentinel.test/api/v1/identities/resolve?agentId=${encodeURIComponent(agentId)}`),
+      );
+      expect(response.status).toBe(400);
+      expect(deps.resolveIdentity).not.toHaveBeenCalled();
+      expect((await response.json()).error.code).toBe("INVALID_INPUT");
+    },
+  );
+
   it("maps a missing ERC-8004 token to a stable not-found error", async () => {
     const deps = dependencies({ resolveIdentity: vi.fn().mockRejectedValue(new IdentityError("AGENT_NOT_FOUND", "registry", false)) });
     const response = await createProofLockReadHandlers(deps).resolve(
@@ -185,6 +198,13 @@ describe("public read handlers", () => {
     expect(response.status).toBe(400);
     expect(deps.readProofLock).not.toHaveBeenCalled();
     expect((await response.json()).error.code).toBe("INVALID_INPUT");
+  });
+
+  it("rejects the zero bytes32 identity key before a chain read", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).proofLock(hex("00", 32), new Request("https://sentinel.test"));
+    expect(response.status).toBe(400);
+    expect(deps.readProofLock).not.toHaveBeenCalled();
   });
 
   it("treats a zero or mismatched onchain record as not found", async () => {

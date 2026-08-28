@@ -45,3 +45,11 @@ A contract, a plain EOA, and an EIP-7702 delegated EOA do not have the same secu
 ### What Storage verification really proves
 
 The current 0G Storage TypeScript SDK accepts `proof=true` on download but does not yet validate the network Merkle proof internally. ProofLock states that limitation explicitly. It still verifies a strong chain of facts: the exact canonical bytes produce a locally computed 0G root; the mainnet Flow transaction and `Submit` event bind that submission; the retrieved bytes are identical; and recomputing the 0G root after retrieval yields the same value. The evidence records network-proof validation as unavailable instead of upgrading an SDK capability that does not exist.
+
+### What verified Compute means
+
+ProofLock accepts only the decentralized model-TEE proof class. It does not turn an ordinary hosted-model response into a convincing-looking receipt. The verifier binds the exact raw request and response to the provider's onchain signer, model, service metadata, usage record, signature, and the two SHA-256 transcript halves signed by that provider. The official 0G SDK must independently return `true` before the result is eligible for sealing.
+
+Some SDK operations cannot be cancelled from inside the library. ProofLock therefore runs them in disposable child processes. A deadline kills and reaps the child, so a hung SDK cannot freeze the application or leave a process-wide networking override behind.
+
+Paid inference also creates a replay risk: the same valid receipt must not be reused for a different lease. ProofLock stores claims in a transactional SQLite ledger. The replay check, expiry cleanup, capacity check, and state change happen in one serialized transaction, eliminating the stale-lock races that a hand-rolled file lease would create. This operator path requires Node 24 and a persistent writable volume; the public read-only frontend does not need that authority.

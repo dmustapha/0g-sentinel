@@ -15,9 +15,14 @@ export interface StaticAnalysisResult {
   summary: string;
 }
 
-export interface SourcePatternAnalysis extends StaticAnalysisResult {
+export interface SourcePatternAnalysis {
   engine: "solidity-source-pattern-analysis-v1";
   method: "REGEX_AND_BRACE_MATCHING";
+  admissionImpact: "INFORMATIONAL_ONLY";
+  signalLevel: 0 | 1 | 2;
+  findings: StaticFinding[];
+  checksRun: string[];
+  summary: string;
 }
 
 const LEGACY_CHECKS = [
@@ -231,12 +236,15 @@ function proofLockSignals(source: string): StaticFinding[] {
 }
 
 export function analyzeSolidityPatterns(source: string): SourcePatternAnalysis {
-  const findings = proofLockSignals(source);
+  const findings = proofLockSignals(source).slice(0, 100);
+  const summary = summarize(findings);
   return {
     engine: "solidity-source-pattern-analysis-v1",
     method: "REGEX_AND_BRACE_MATCHING",
-    ...summarize(findings),
+    admissionImpact: "INFORMATIONAL_ONLY",
+    signalLevel: summary.risk,
     findings,
     checksRun: [...PROOFLOCK_CHECKS],
+    summary: summary.summary,
   };
 }

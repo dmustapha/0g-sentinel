@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "server/prooflock/**/*.ts",
+    "../scripts/prooflock/**/*.ts"
+  ],
+  "exclude": ["node_modules"]
+}

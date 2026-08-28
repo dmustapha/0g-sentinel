@@ -1,42 +1,10 @@
-import { lstatSync } from "node:fs";
-import { isAbsolute } from "node:path";
-import { pathToFileURL } from "node:url";
-
-import {
-  runOnDemandDriftCheck,
-  type DriftFingerprint,
-} from "../../frontend/server/prooflock/drift";
 import type { Bytes32 } from "../../frontend/server/prooflock/types";
-import {
-  markProofLockDrift,
-  type RegistryChainAdapter,
-} from "../../frontend/server/prooflock/chain";
-
-type DriftOperator = Readonly<{
-  chainAdapter: RegistryChainAdapter;
-  registryAddress: `0x${string}`;
-  confirmations: number;
-  timeoutMs: number;
-  readSealedSnapshot(identityKey: Bytes32): Promise<Readonly<{
-    identityKey: Bytes32; version: bigint; fingerprint: DriftFingerprint;
-  }>>;
-  resolveCurrentFingerprint(identityKey: Bytes32): Promise<DriftFingerprint>;
-}>;
-type OperatorModule = Readonly<{
-  createProofLockDriftOperator(): Promise<DriftOperator> | DriftOperator;
-}>;
 
 async function main(): Promise<void> {
   const identityKey = parseIdentityKey(process.argv[2]);
   const mark = process.argv.slice(3).includes("--mark");
-  const operator = await loadOperator();
-  const result = await runOnDemandDriftCheck({
-    readSealedSnapshot: operator.readSealedSnapshot,
-    resolveCurrentFingerprint: operator.resolveCurrentFingerprint,
-    markDrift: (request) => markProofLockDrift(operator.chainAdapter, {
-      registryAddress: operator.registryAddress, ...request,
-    }, { confirmations: operator.confirmations, timeoutMs: operator.timeoutMs }),
-  }, identityKey, mark);
+  const { loadProofLockDrift } = await import("../../frontend/server/prooflock/operator.js");
+  const result = await (await loadProofLockDrift()).run(identityKey, mark);
   print(result, bigintReplacer);
 }
 
@@ -45,18 +13,6 @@ function parseIdentityKey(value: string | undefined): Bytes32 {
     throw new Error("Usage: ts-node scripts/prooflock/check-drift.ts <identity-key> [--mark]");
   }
   return value.toLowerCase() as Bytes32;
-}
-
-async function loadOperator(): Promise<DriftOperator> {
-  const path = process.env.PROOFLOCK_OPERATOR_MODULE;
-  if (!path || !isAbsolute(path)) throw new Error("PROOFLOCK_OPERATOR_MODULE must be an absolute path");
-  const metadata = lstatSync(path);
-  if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("Operator module must be a regular file");
-  const loaded = await import(pathToFileURL(path).href) as Partial<OperatorModule>;
-  if (typeof loaded.createProofLockDriftOperator !== "function") {
-    throw new Error("Operator module must export createProofLockDriftOperator()");
-  }
-  return await loaded.createProofLockDriftOperator();
 }
 
 function print(value: unknown, replacer?: (_key: string, value: unknown) => unknown): void {

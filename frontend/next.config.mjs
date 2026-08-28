@@ -6,6 +6,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  experimental: {
+    outputFileTracingIncludes: {
+      "/*": ["./server/prooflock/compute/sdk-worker.mjs"],
+    },
+  },
   async headers() {
     return [
       {

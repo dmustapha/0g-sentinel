@@ -127,7 +127,7 @@ function assertReadback(
     codeRisk: input.codeRisk, coverage: input.coverage, state: 1, stateReason: 0,
   };
   const mismatch = Object.entries(expected).some(([key, value]) => !sameValue(record[key as keyof typeof record], value));
-  if (chain.expectedVersion !== expectedVersion || mismatch
+  if (chain.expectedVersion !== expectedVersion || chain.signer.toLowerCase() !== input.scanner.toLowerCase() || mismatch
     || record.validUntil - record.issuedAt !== BigInt(input.validForSeconds)) {
     throw new ProofLockStageError("READING_CHAIN_BACK", "Injected chain readback is not exact");
   }
@@ -267,7 +267,8 @@ function createChainInput(
 ): RunnerChainInput {
   const artifactHash = keccak256(toUtf8Bytes(canonicalizeStorageCommitment(storage))) as Bytes32;
   return Object.freeze({
-    registryAddress: context.input.registryAddress.toLowerCase() as HexAddress, mode: context.input.mode,
+    registryAddress: context.input.registryAddress.toLowerCase() as HexAddress,
+    scanner: context.input.scanner.toLowerCase() as HexAddress, mode: context.input.mode,
     expectedPriorVersion: context.input.expectedPriorVersion, previousProofId: context.input.previousProofId,
     identityKey: computeIdentityKey(context.identity.identity), subject: context.subject.address,
     envelopeDigest: canonical.envelopeDigest, storageRoot: storage.storageRoot,

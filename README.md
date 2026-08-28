@@ -60,6 +60,24 @@ NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS
 
 See the example files for the complete server, health-canary, version, policy, and optional labeled-demo configuration.
 
+### Run the production operator
+
+ProofLock ships its production operator in the application bundle; it never loads executable code from a
+runtime filesystem path. Configure the scanner and guardian keys, their matching RegistryV2 role addresses,
+the acknowledged Compute provider/model, and an absolute durable state directory. Set
+`PROOFLOCK_SPEND_AUTHORIZED=true` only after accepting paid 0G Compute and Storage operations.
+
+The API accepts only identity, mode, expected prior version, and prior proof ID. Registry address, scanner,
+software version, policy version, and seven-day TTL are injected by the server. The same boundary applies to:
+
+```bash
+npx ts-node scripts/prooflock/run.ts /absolute/path/to/operator-input.json
+npx ts-node scripts/prooflock/check-drift.ts 0x<identity-key> [--mark]
+```
+
+The scanner private key signs Compute, Storage, and Registry writes; the guardian key is distinct and only
+marks drift. Startup verifies both configured addresses against their keys and their onchain RegistryV2 roles.
+
 ### Deploy ProofLock V2 to 0G mainnet
 
 Set the nine `PROOFLOCK_*` deployment values documented in both environment examples, keep the admin,

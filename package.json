@@ -11,7 +11,7 @@
     "deploy:prooflock-v2:mainnet": "npx hardhat run scripts/deploy/04_deploy_prooflock_v2.ts --network zerogMainnet",
     "seed-demo": "npx ts-node scripts/seed-demo.ts",
     "generate-proof": "npx ts-node scripts/generate-proof.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -p tsconfig.root-check.json --noEmit && npm --prefix frontend exec tsc -- -p frontend/tsconfig.cli.json --noEmit"
   },
   "dependencies": {
     "@0gfoundation/0g-compute-ts-sdk": "^0.9.0",

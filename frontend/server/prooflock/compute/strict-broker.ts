@@ -34,10 +34,7 @@ export type { ComputeHttpRequest, ComputeHttpResponse, ComputeHttpTransport };
 export { StrictComputeError } from "./strict-error";
 export type { StrictComputeErrorCode } from "./strict-error";
 import { computeFailure as failure, StrictComputeError } from "./strict-error";
-import {
-  createPinnedSdkProcessResponseVerifier,
-  type ProcessResponseVerifier,
-} from "./process-response";
+import { SubprocessComputeSdk, type ComputeSdk } from "./process-response";
 import {
   FileReceiptClaimStore,
   MIN_COMMITTED_RETENTION_MS,
@@ -46,8 +43,8 @@ import {
 } from "./receipt-store";
 export { FileReceiptClaimStore, MemoryReceiptClaimStore } from "./receipt-store";
 export type { ReceiptClaimMetadata, ReceiptClaimStore } from "./receipt-store";
-export { createPinnedSdkProcessResponseVerifier } from "./process-response";
-export type { ProcessResponseVerification, ProcessResponseVerifier } from "./process-response";
+export { SubprocessComputeSdk } from "./process-response";
+export type { ComputeSdk, ProcessResponseVerification } from "./process-response";
 
 export type StrictComputeBroker = Readonly<{
   inference: Readonly<{
@@ -96,15 +93,15 @@ export type StrictComputeResult = Readonly<{
 }>;
 
 export type StrictComputeDependencies = Readonly<{
-  broker: StrictComputeBroker;
+  sdk: ComputeSdk;
   receiptStore: ReceiptClaimStore;
-  processResponseVerifier: ProcessResponseVerifier;
   transport?: ComputeHttpTransport;
   signatureVerifier?: SignatureVerifier;
 }>;
 
 export type ProductionStrictComputeOptions = Readonly<{
-  broker: StrictComputeBroker;
+  privateKey: string;
+  rpcUrl: string;
   stateDirectory: string;
   transport?: ComputeHttpTransport;
   signatureVerifier?: StrictComputeDependencies["signatureVerifier"];
@@ -179,11 +176,10 @@ export function createProductionStrictComputeDependencies(
   options: ProductionStrictComputeOptions,
 ): StrictComputeDependencies {
   return {
-    broker: options.broker,
+    sdk: new SubprocessComputeSdk({ privateKey: options.privateKey, rpcUrl: options.rpcUrl }),
     receiptStore: new FileReceiptClaimStore({
       stateDirectory: options.stateDirectory,
     }),
-    processResponseVerifier: createPinnedSdkProcessResponseVerifier(options.broker),
     transport: options.transport ?? safeComputeTransport,
     signatureVerifier: options.signatureVerifier,
   };
@@ -221,17 +217,17 @@ async function execute(
 ): Promise<StrictComputeResult> {
   const metadata = parseMetadata(
     await nonCancelableStage(
-      dependencies.broker.inference.getServiceMetadata(input.provider, input.model),
+      dependencies.sdk.getServiceMetadata(input.provider, input.model, signal),
       signal,
     ),
     input.model,
   );
-  const service = await resolveService(dependencies.broker, input.provider, input.model, signal);
+  const service = await resolveService(dependencies.sdk, input.provider, input.model, signal);
   assertServiceEndpoint(metadata.endpoint, service.url);
   const expectedSigner = resolveExpectedSigner(service);
   const requestBytes = buildRequestBytes(input);
   const signedHeaders = await nonCancelableStage(
-    dependencies.broker.inference.getRequestHeaders(input.provider, input.userMessage),
+    dependencies.sdk.getRequestHeaders(input.provider, input.userMessage, signal),
     signal,
   );
   const response = await requestInference(
@@ -397,7 +393,7 @@ async function withReceiptClaim(
     responseSha256: binding.responseSha256,
   };
   const token = await nonCancelableStage(
-    dependencies.receiptStore.claim(key, Object.freeze(metadata), Date.now() + 120_000),
+    dependencies.receiptStore.claim(key, Object.freeze(metadata), 120_000),
     signal,
   );
   if (!token) throw failure("COMPUTE_RECEIPT_REPLAY", "0G Compute receipt was already processed");
@@ -407,11 +403,11 @@ async function withReceiptClaim(
   signal.addEventListener("abort", onAbort, { once: true });
   try {
     await nonCancelableStage(
-      dependencies.receiptStore.renew(key, token, Date.now() + 120_000),
+      dependencies.receiptStore.renew(key, token, 120_000),
       signal,
     );
     await requireSdkVerification(
-      dependencies.processResponseVerifier,
+      dependencies.sdk,
       input.provider,
       receipt.chatId,
       response.usage,
@@ -419,7 +415,7 @@ async function withReceiptClaim(
       signal,
     );
     const confirmedService = await resolveService(
-      dependencies.broker,
+      dependencies.sdk,
       input.provider,
       input.model,
       signal,
@@ -427,7 +423,7 @@ async function withReceiptClaim(
     assertSameServiceSnapshot(service, confirmedService);
     signal.throwIfAborted();
     await nonCancelableStage(
-      dependencies.receiptStore.commit(key, token, Date.now() + MIN_COMMITTED_RETENTION_MS),
+      dependencies.receiptStore.commit(key, token, MIN_COMMITTED_RETENTION_MS),
       signal,
     );
     return buildResult(input, response, receipt, rawResponse, binding);
@@ -452,25 +448,24 @@ async function boundedRelease(store: ReceiptClaimStore, key: string, token: stri
 }
 
 async function requireSdkVerification(
-  verifier: ProcessResponseVerifier,
+  sdk: ComputeSdk,
   provider: string,
   chatId: string,
   usage: ResponseBody["usage"],
   signature: FetchedSignature,
   signal: AbortSignal,
 ): Promise<void> {
-  // SDK 0.9 does not accept AbortSignal and may finish its internal fee-cache update late.
-  // The post-await abort check prevents that late completion from accepting our receipt/proof.
+  // The disposable SDK worker is terminated before an abort settles in this process.
   let result: boolean | null;
   try {
     result = await nonCancelableStage(
-      verifier.verify({
+      sdk.processResponse({
         provider,
         chatId,
         usage: JSON.stringify(usage),
         signatureUrl: signature.url,
         signatureBody: signature.rawBody,
-      }),
+      }, signal),
       signal,
     );
   } catch (error) {

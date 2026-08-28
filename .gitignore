@@ -34,6 +34,8 @@ Thumbs.db
 
 # Testing
 coverage/
+.playwright-cli/
+output/playwright/
 
 # Pipeline state (local only)
 .build-state.json

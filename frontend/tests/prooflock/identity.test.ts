@@ -3,8 +3,10 @@ import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  bindAbortToTransport,
   collectBoundedBody,
   createPinnedLookup,
+  createPinnedRequestOptions,
   loadRegistrationCard,
   REGISTRATION_V1_TYPE,
   validateRegistrationCard,
@@ -103,6 +105,18 @@ describe("ERC-8004 identity resolution", () => {
       keccak256(toUtf8Bytes(JSON.stringify(card()))),
     );
     expect(Object.isFrozen(result)).toBe(true);
+  });
+
+  it("rejects a reorg when the selected block hash changes after card resolution", async () => {
+    let reads = 0;
+    const getBlock = vi.fn(async (blockNumber: bigint) => ({
+      number: blockNumber,
+      hash: reads++ === 0 ? BLOCK_HASH : `0x${"cd".repeat(32)}`,
+    }));
+    await expect(
+      resolveAgentIdentity(IDENTITY, { adapter: adapter({ getBlock }).value }),
+    ).rejects.toMatchObject({ code: "REGISTRY_UNAVAILABLE", retryable: true });
+    expect(getBlock).toHaveBeenCalledTimes(2);
   });
 
   it.each([
@@ -282,7 +296,7 @@ describe("lossless uint256 registration backlinks", () => {
 
   it("accepts a numeric MAX_SAFE+1 backlink without precision loss", async () => {
     const result = await loadRegistrationCard(cardUri(rawLarge(largeId)), largeIdentity);
-    expect(result.card.registrations).toHaveLength(1);
+    expect(result.card.registrations[0].agentId).toBe(largeId);
   });
 
   it.each([
@@ -310,8 +324,10 @@ describe("registration card URI loader", () => {
     const base64 = Buffer.from(json).toString("base64");
     const one = await loadRegistrationCard(`data:application/json;base64,${base64}`, IDENTITY);
     const two = await loadRegistrationCard(`data:application/json,${encodeURIComponent(json)}`, IDENTITY);
-    expect(Buffer.from(one.bytes).toString()).toBe(json);
+    expect(one.registrationDigest).toBe(keccak256(toUtf8Bytes(json)));
+    expect("bytes" in one).toBe(false);
     expect(two.card.name).toBe("Sentinel Canary");
+    expect(two.card.registrations[0].agentId).toBe("7");
   });
 
   it("maps IPFS through the configured HTTPS gateway", async () => {
@@ -357,6 +373,10 @@ describe("registration card URI loader", () => {
     ["decoded slash", `ipfs://Qm${"a".repeat(44)}/bad%2Fsegment`],
     ["decoded backslash", `ipfs://Qm${"a".repeat(44)}/bad%5Csegment`],
     ["decoded NUL", `ipfs://Qm${"a".repeat(44)}/bad%00segment`],
+    ["double dotdot", `ipfs://Qm${"a".repeat(44)}/%252e%252e/card.json`],
+    ["double slash", `ipfs://Qm${"a".repeat(44)}/bad%252fsegment`],
+    ["double backslash", `ipfs://Qm${"a".repeat(44)}/bad%255csegment`],
+    ["double NUL", `ipfs://Qm${"a".repeat(44)}/bad%2500segment`],
     ["invalid CID", "ipfs://not-a-cid/card.json"],
   ])("rejects malicious IPFS %s", async (_name, uri) => {
     await expectCode(loadRegistrationCard(uri, IDENTITY), "CARD_URI_UNSUPPORTED");
@@ -435,6 +455,53 @@ describe("registration card URI loader", () => {
     expect(result).toEqual({ address: "2606:4700:4700::1111", family: 6 });
   });
 
+  it("disables connection pooling while preserving pinned lookup and abort signal", async () => {
+    const controller = new AbortController();
+    const options = createPinnedRequestOptions({
+      url: new URL("https://example.com/card"),
+      pinnedAddress: "93.184.216.34",
+      family: 4,
+      timeoutMs: 100,
+      maxBytes: 1024,
+      signal: controller.signal,
+    });
+    expect(options.agent).toBe(false);
+    expect(options.signal).toBe(controller.signal);
+    const result = await new Promise<{ address: unknown; family: unknown }>((resolve, reject) => {
+      options.lookup!("different.example", {}, (error, address, family) => {
+        if (error) reject(error);
+        else resolve({ address, family });
+      });
+    });
+    expect(result).toEqual({ address: "93.184.216.34", family: 4 });
+  });
+
+  it("destroys both request and active response when the absolute signal aborts", () => {
+    const controller = new AbortController();
+    const request = { destroy: vi.fn() };
+    const response = { destroy: vi.fn() };
+    const cleanup = bindAbortToTransport(controller.signal, request, () => response);
+    controller.abort(new IdentityError("CARD_TIMEOUT", "card", true));
+    expect(request.destroy).toHaveBeenCalledOnce();
+    expect(response.destroy).toHaveBeenCalledOnce();
+    cleanup();
+  });
+
+  it("propagates the absolute abort signal into a never-ending transport", async () => {
+    let aborted = false;
+    await expectCode(loadRegistrationCard("https://example.com/card", IDENTITY, {
+      timeoutMs: 5,
+      resolveDns: async () => ["93.184.216.34"],
+      requestHttps: ({ signal }) => new Promise((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          aborted = true;
+          reject(signal.reason);
+        }, { once: true });
+      }),
+    }), "CARD_TIMEOUT");
+    expect(aborted).toBe(true);
+  });
+
   it.each(["localhost", "api.localhost", "foo.local", "foo.internal"])(
     "blocks localhost-style name %s",
     async (host) => expectCode(loadRegistrationCard(`https://${host}/card`, IDENTITY), "CARD_PRIVATE_NETWORK"),
@@ -461,8 +528,34 @@ describe("registration card URI loader", () => {
         headers: { location: `https://example.com/${++hop}` },
         body: new Uint8Array(),
       }),
-    }), "CARD_REDIRECT_LOOP");
+    }), "CARD_REDIRECT_LIMIT");
     expect(hop).toBe(3);
+  });
+
+  it("classifies an exact loop before redirect-limit exhaustion", async () => {
+    await expectCode(loadRegistrationCard("https://example.com/a", IDENTITY, {
+      maxRedirects: 0,
+      resolveDns: async () => ["93.184.216.34"],
+      requestHttps: async ({ url }) => ({
+        status: 302,
+        headers: { location: url.href },
+        body: new Uint8Array(),
+      }),
+    }), "CARD_REDIRECT_LOOP");
+  });
+
+  it.each([
+    ["missing", undefined],
+    ["malformed", "http://["],
+  ])("classifies %s redirect locations as invalid", async (_name, location) => {
+    await expectCode(loadRegistrationCard("https://example.com/a", IDENTITY, {
+      resolveDns: async () => ["93.184.216.34"],
+      requestHttps: async () => ({
+        status: 302,
+        headers: { location },
+        body: new Uint8Array(),
+      }),
+    }), "CARD_REDIRECT_INVALID");
   });
 
   it("uses one cumulative timeout budget across redirects", async () => {
@@ -507,6 +600,19 @@ describe("registration card URI loader", () => {
     }), "CARD_TIMEOUT");
     await expectCode(loadRegistrationCard("data:application/json;base64,/w==", IDENTITY), "CARD_MALFORMED");
     await expectCode(loadRegistrationCard("data:application/json,%7B", IDENTITY), "CARD_MALFORMED");
+  });
+
+  it.each([
+    [408, true], [429, true], [500, true], [503, true], [400, false], [404, false],
+  ])("classifies HTTP %i retryability", async (status, retryable) => {
+    await expect(loadRegistrationCard("https://example.com/a", IDENTITY, {
+      resolveDns: async () => ["93.184.216.34"],
+      requestHttps: async () => ({
+        status,
+        headers: { "content-type": "application/json" },
+        body: new Uint8Array(),
+      }),
+    })).rejects.toMatchObject({ code: "AGENT_URI_UNAVAILABLE", retryable });
   });
 
   it("surfaces transport byte-cap failures as CARD_TOO_LARGE", async () => {

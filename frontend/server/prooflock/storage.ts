@@ -531,8 +531,9 @@ function makeCommitment(
     storageRoot,
     uploadTxHash,
     retrievedDigest,
-    finalizedAtBlock: receipt.finalizedAtBlock,
+    finalizedAtBlock: (BigInt(receipt.blockNumber) + BigInt(receipt.confirmations) - 1n).toString(),
     retrievalVerified: true,
+    networkProofVerified: false,
   });
 }
 

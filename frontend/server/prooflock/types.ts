@@ -86,6 +86,15 @@ export type DeterministicCheck = Readonly<{
   findings: readonly string[];
 }>;
 
+export type ComputeServiceSnapshot = Readonly<{
+  provider: HexAddress;
+  url: string;
+  model: string;
+  additionalInfo: string;
+  teeSignerAddress: HexAddress;
+  teeSignerAcknowledged: boolean;
+}>;
+
 export type ComputeProof = Readonly<{
   proofClass: "DECENTRALIZED_MODEL_TEE";
   purpose: "behavioral-risk" | "contract-risk";
@@ -109,6 +118,11 @@ export type ComputeProof = Readonly<{
     totalTokens: number;
   }>;
   processResponseVerified: true;
+  requestBodyBase64?: string;
+  rawResponseBodyBase64?: string;
+  signedText?: string;
+  normalizedResponseHeaders?: readonly (readonly [string, string])[];
+  serviceSnapshot?: ComputeServiceSnapshot;
 }>;
 
 export type EvidenceEnvelopeV1 = Readonly<{
@@ -164,4 +178,5 @@ export type StorageCommitment = Readonly<{
   retrievedDigest: Bytes32;
   finalizedAtBlock: string;
   retrievalVerified: true;
+  networkProofVerified: false;
 }>;

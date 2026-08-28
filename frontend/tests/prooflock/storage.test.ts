@@ -164,6 +164,7 @@ describe("strict 0G Storage evidence", () => {
     expect(result).toEqual({
       envelopeDigest: DIGEST, storageRoot: ROOT, uploadTxHash: TX_HASH,
       retrievedDigest: DIGEST, finalizedAtBlock: "102", retrievalVerified: true,
+      networkProofVerified: false,
     });
     expect(fake.journal.writes.map((entry) => entry.status)).toEqual([
       "PREPARED", "SUBMITTED", "SUBMITTED", "FINALIZED",

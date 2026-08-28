@@ -2,6 +2,7 @@ import { JsonRpcProvider } from "ethers";
 
 import { apiErrorResponse, methodNotAllowedResponse } from "@/server/prooflock/api";
 import { REGISTRY_V2_INTERFACE } from "@/server/prooflock/chain";
+import { assertZeroGMainnetRpc } from "@/server/prooflock/rpc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +15,10 @@ export async function GET(request: Request): Promise<Response> {
     const rpc = process.env.ZERO_G_RPC || process.env.NEXT_PUBLIC_RPC_URL;
     const registry = process.env.PROOFLOCK_REGISTRY_V2_ADDRESS;
     if (!rpc || !registry || !/^0x[0-9a-fA-F]{40}$/.test(registry)) throw new Error();
-    const provider = new JsonRpcProvider(rpc, CHAIN_ID, { staticNetwork: true });
-    request.signal.throwIfAborted();
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]);
+    await assertZeroGMainnetRpc(rpc, signal);
+    const provider = new JsonRpcProvider(rpc);
+    signal.throwIfAborted();
     const latestBlock = await provider.getBlockNumber();
     const logs = await provider.getLogs({
       address: registry, topics: [REGISTRY_V2_INTERFACE.getEvent("ProofLocked")!.topicHash],

@@ -1,6 +1,8 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
 const BEARER = "Bearer ";
+const MIN_TOKEN_BYTES = 32;
+const MAX_TOKEN_BYTES = 256;
 
 export function authenticateOperator(
   authorization: string | null | undefined,
@@ -11,7 +13,9 @@ export function authenticateOperator(
     : "";
   const expected = configuredToken ?? "";
   const matches = timingSafeEqual(digest(supplied), digest(expected));
-  return supplied.length > 0 && expected.length > 0 && matches;
+  const size = Buffer.byteLength(expected, "utf8");
+  const validConfiguration = size >= MIN_TOKEN_BYTES && size <= MAX_TOKEN_BYTES;
+  return validConfiguration && supplied.length > 0 && matches;
 }
 
 function digest(value: string): Buffer {

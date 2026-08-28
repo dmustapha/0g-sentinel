@@ -659,6 +659,7 @@ describe("Storage commitment separation", () => {
     retrievedDigest: "0xe545f1558f7c3179e601d7eefdec874698b31ab2bfac88dccc980b069083a91b",
     finalizedAtBlock: "12350",
     retrievalVerified: true,
+    networkProofVerified: false,
   };
 
   it("validates and canonicalizes storage independently", () => {

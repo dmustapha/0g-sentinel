@@ -35,3 +35,7 @@ export const THREAT_COLORS = ["text-green-500", "text-yellow-500", "text-red-500
 export const CODE_RISK_COLORS = ["text-green-500", "text-yellow-500", "text-red-500"] as const;
 export const THREAT_BG = ["bg-green-100", "bg-yellow-100", "bg-red-100"] as const;
 export const CODE_RISK_BG = ["bg-green-100", "bg-yellow-100", "bg-red-100"] as const;
+
+// Active ProofLock UI types live in prooflock-types. These legacy attestation shapes remain
+// only for archived V1 routes during the cutover and must never be shown as V2 evidence.
+export type { CanonicalIdentity, GateDecision, ProofLockRecord } from "./prooflock-types";

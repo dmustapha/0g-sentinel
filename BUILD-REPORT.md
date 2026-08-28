@@ -21,7 +21,7 @@ In progress on `feature/sentinel-prooflock`.
 | ERC-8004 identity | Complete | 116 focused and 222 full ProofLock tests; spec and code-quality reviews approved |
 | Subject analysis | Complete | 67 focused tests; spec and code-quality reviews approved |
 | Strict Storage | Complete | 42 focused tests; corrective security review approved |
-| Strict Compute | In review | Signed-transcript and durable-replay hardening in progress |
+| Strict Compute | Complete | 53 focused tests; transactional replay store; corrective security review approved |
 | Runner and APIs | Pending | Pending |
 | Frontend | Pending | Pending |
 | Mainnet and package | Pending | Pending |
@@ -67,3 +67,15 @@ In progress on `feature/sentinel-prooflock`.
 - Persists upload state before broadcast and reconciles submitted transactions after interruption; no SHA/content-hash fallback exists.
 - The SDK's `proof=true` path does not yet validate network Merkle proofs, so evidence records `networkProofVerified: false` and never claims otherwise. `retrievalVerified` means exact bytes, digest, and independently recomputed 0G root all match.
 - Final GREEN: 42 focused tests; independent review found no open Critical or Important issues.
+
+## Strict Compute Phase
+
+- Commits: `f494f5c`, `3c42d79`, `134a727`, `347b8b8`, `a446518`, `8bbba41`, `1499a2c`.
+- Accepts only decentralized model-TEE proofs and rejects hosted-router or unsupported proof classes; no receipt-like fallback can become ProofLock evidence.
+- Binds provider, model, signer, signature, raw request, raw response, usage, response headers, and the provider-signed SHA-256 transcript before the official SDK result is accepted.
+- Runs non-cancellable official SDK operations in disposable child processes. Deadline expiry kills and reaps the child; main-process `fetch` is never replaced.
+- Prevents replay and equivocation with a Node 24 transactional SQLite ledger. Claim, renewal, commit, release, expiry GC, and byte/record capacity checks serialize under `BEGIN IMMEDIATE` with WAL and `synchronous=FULL`.
+- RED cycles exposed wrong SDK response arguments, response replay, global-fetch mutation, unbounded SDK work, a retention clock race, unfenced filesystem locks, and capacity bypasses before the transactional design replaced the lease-file store.
+- Final GREEN: 53 focused Compute tests, 394 full ProofLock tests, 134 Hardhat tests, both TypeScript checks, and the Next production build.
+- Reviews: independent corrective security review found no open Critical or Important issues.
+- Runtime constraint: paid mutation paths require Node 24 and persistent writable storage for the SQLite replay ledger. Public read-only surfaces may be deployed separately.

@@ -10,7 +10,7 @@ const DECIMAL = /^(0|[1-9]\d*)$/;
 
 async function main(): Promise<void> {
   const inputPath = process.argv[2];
-  if (!inputPath) throw new Error("Usage: ts-node scripts/prooflock/run.ts <operator-input.json>");
+  if (!inputPath) throw new Error("Usage: npm run prooflock:run -- <operator-input.json>");
   const input = parseInput(readFileSync(inputPath, "utf8"));
   const { loadProofLockRunner } = await import("../../frontend/server/prooflock/operator.js");
   const result = await (await loadProofLockRunner()).run(input, reportStage);

@@ -57,6 +57,7 @@ Local release candidate complete on `feature/sentinel-prooflock`. Mainnet deploy
 - Commits: `2a076cf`, `7b87bef`, `422e60e`, `03ba0e7`.
 - Classifies plain EOAs, exact EIP-7702 delegated EOAs, and contracts at one block number and hash; the source block is rechecked after analysis.
 - Uses subject-appropriate checks: bounded EOA history snapshots, live delegation targets, exact EIP-1167 clones, candidate-only EIP-1967 slots, and resolver-bound proxy/source metadata.
+- Nested executables are analyzed but are not lease-eligible in V2 because AgentGateV2 cannot recheck their target code on every consumer action.
 - Converts analysis into the exact canonical evidence shape through one tested adapter; dead targets, malformed RPC values, unbound sources, and reorg splits fail closed.
 - Final GREEN: 67 focused tests; independent review found no open Critical or Important issues.
 
@@ -127,9 +128,13 @@ Local release candidate complete on `feature/sentinel-prooflock`. Mainnet deploy
 - Startup enforces Node 24, 0G mainnet chain `16661`, canonical Chain/Storage dependencies, explicit paid-operation
   consent, durable absolute state, key-to-address equality, distinct scanner/guardian custody, and live RegistryV2 roles.
 - The scanner transaction sender is checked on submission, finalized transaction recovery, and runner readback.
-- The exact ESM Compute worker is output-traced into the standalone artifact without being transformed into a browser asset.
-- Final local evidence: 618/618 frontend tests, 151/151 Hardhat contract/deployment tests, root and frontend
+- A separate Compute payer key has no Registry authority; the separated admin/scanner/guardian role matrix is rechecked before every mutation.
+- The Compute worker and its runtime dependencies are bundled into one isolated Node artifact and output-traced into the standalone release.
+- Final local evidence: 620/620 frontend tests, 151/151 Hardhat contract/deployment tests, root and frontend
   TypeScript checks, clean Next production build, standalone home `200`, independent health `503 DEGRADED` without
   canaries, unauthenticated operator `401`, and authenticated operator fail-closed dependency response without secrets.
 - Not yet provable locally: paid mainnet Compute, Storage upload/retrieval, V2 deployment receipts, restart replay,
   and seal → consumer → drift → reseal. These require the real funded deployment profile and cannot be fabricated.
+- Production dependency audit still reports upstream advisories in the pinned official 0G Compute/Storage SDK trees
+  and in the Next 14 line. Compatible fixes were applied and Next moved to 14.2.35; clearing the remainder requires
+  upstream SDK releases and a separately tested Next major migration, not an unreviewed forced upgrade.

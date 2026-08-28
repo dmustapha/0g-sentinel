@@ -8,7 +8,7 @@ const nextConfig = {
   output: "standalone",
   experimental: {
     outputFileTracingIncludes: {
-      "/*": ["./server/prooflock/compute/sdk-worker.mjs"],
+      "/*": ["./.prooflock-build/sdk-worker.cjs"],
     },
   },
   async headers() {

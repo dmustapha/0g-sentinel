@@ -74,3 +74,5 @@ PULSE.md
 
 # Design proposals (local only)
 frontend/proposals/
+.prooflock-build/
+frontend/.prooflock-build/

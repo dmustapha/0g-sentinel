@@ -28,6 +28,23 @@ const AGENT_REGISTRY_ABI = [
   "function getAgentCount() view returns (uint256)",
 ];
 
+export const PROOFLOCK_REGISTRY_V2_ABI = [
+  "function getProofLock(bytes32 identityKey) view returns ((bytes32 identityKey,address subject,bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,bytes32 runtimeCodeHash,uint64 version,uint48 issuedAt,uint48 validUntil,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage,uint8 state,uint8 stateReason))",
+] as const;
+
+export const AGENT_GATE_V2_ABI = [
+  "function checkAgent(uint256 agentId) view returns (bool allowed,uint8 reason,address subject,uint64 version)",
+] as const;
+
+export async function readGateDecision(agentId: string) {
+  if (!/^(0|[1-9]\d*)$/.test(agentId)) throw new Error("Invalid ERC-8004 agent ID");
+  const address = process.env.NEXT_PUBLIC_AGENT_GATE_V2_ADDRESS ?? process.env.NEXT_PUBLIC_AGENT_GATE_ADDRESS;
+  if (!address || !ethers.isAddress(address)) throw new Error("AgentGateV2 is not configured");
+  const result = await new ethers.Contract(address, AGENT_GATE_V2_ABI, getProvider()).checkAgent(BigInt(agentId));
+  return Object.freeze({ allowed: result.allowed === true, reason: Number(result.reason),
+    subject: String(result.subject).toLowerCase(), version: BigInt(result.version).toString() });
+}
+
 // Module-level singleton — avoids creating a new HTTP connection per RPC call
 // (previously a new JsonRpcProvider was created on every getAttestationRegistry() call).
 let _provider: ethers.JsonRpcProvider | null = null;

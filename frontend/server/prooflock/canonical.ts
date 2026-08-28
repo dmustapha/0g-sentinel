@@ -11,12 +11,21 @@ import type {
 
 const nonEmpty = z.string().refine((value) => value.trim().length > 0);
 const decimalString = z.string().regex(/^(0|[1-9]\d*)$/);
-const safeInteger = z.number().int().nonnegative().refine(Number.isSafeInteger);
+const safeInteger = z
+  .number()
+  .int()
+  .nonnegative()
+  .refine(Number.isSafeInteger)
+  .refine((value) => !Object.is(value, -0), "negative zero is not canonical");
 const positiveInteger = safeInteger.refine((value) => value > 0);
 // Hex values are normalized to lowercase before JCS so casing cannot alter proof bytes.
 const address = z
   .string()
   .regex(/^0x[0-9a-fA-F]{40}$/)
+  .refine(
+    (value) => !/^0x0{40}$/i.test(value),
+    "zero address is not allowed",
+  )
   .transform((value) => value.toLowerCase() as `0x${string}`);
 const bytes32 = z
   .string()
@@ -37,7 +46,7 @@ const deterministicCheckSchema = z
 const computeProofSchema = z
   .object({
     purpose: z.enum(["behavioral-risk", "contract-risk"]),
-    provider: nonEmpty,
+    provider: address,
     model: nonEmpty,
     chatId: nonEmpty,
     receiptDigest: bytes32,
@@ -65,6 +74,24 @@ const evidenceEnvelopeSchema = z
     proofClass: z.literal("COMPUTE_VERIFIED"),
     schemaVersion: positiveInteger,
     policyVersion: positiveInteger,
+    coverage: z
+      .object({
+        preStorageMask: z.literal(0x5f),
+        requiredSealMask: z.literal(0x7f),
+        identityValidated: z.literal(true),
+        subjectClassified: z.literal(true),
+        deterministicChecksRun: z.literal(true),
+        behavioralComputeVerified: z.literal(true),
+        codeCompute: z.discriminatedUnion("status", [
+          z.object({ status: z.literal("VERIFIED") }).strict(),
+          z
+            .object({ status: z.literal("NOT_APPLICABLE"), reason: nonEmpty })
+            .strict(),
+        ]),
+        evidenceStorage: z.literal("PENDING_EXTERNAL_COMMITMENT"),
+        policyEvaluated: z.literal(true),
+      })
+      .strict(),
     identity: z
       .object({
         namespace: z.literal("eip155"),
@@ -85,7 +112,9 @@ const evidenceEnvelopeSchema = z
         address,
         kind: z.enum(["EOA", "EIP7702_DELEGATED_EOA", "CONTRACT"]),
         runtimeCodeHash: bytes32,
+        delegationTarget: address.optional(),
         delegationCodeHash: bytes32.optional(),
+        proxyImplementation: address.optional(),
         proxyImplementationCodeHash: bytes32.optional(),
       })
       .strict(),
@@ -105,6 +134,9 @@ const evidenceEnvelopeSchema = z
   .superRefine((value, context) => {
     addDuplicateIssue(value.deterministicChecks.map((check) => check.id), "check", context);
     addDuplicateIssue(value.computeProofs.map((proof) => proof.receiptDigest), "receipt", context);
+    addDuplicateIssue(value.computeProofs.map((proof) => proof.purpose), "purpose", context);
+    addComputeIssues(value, context);
+    addSubjectIssues(value.subject, context);
   });
 
 const storageCommitmentSchema = z
@@ -166,8 +198,74 @@ function addDuplicateIssue(values: readonly string[], label: string, context: z.
   }
 }
 
+type ComputeInvariantInput = {
+  coverage: { codeCompute: { status: "VERIFIED" | "NOT_APPLICABLE" } };
+  subject: { kind: "EOA" | "EIP7702_DELEGATED_EOA" | "CONTRACT" };
+  computeProofs: readonly { purpose: "behavioral-risk" | "contract-risk" }[];
+};
+
+function addComputeIssues(value: ComputeInvariantInput, context: z.RefinementCtx) {
+  const behavioral = countPurpose(value, "behavioral-risk");
+  const contract = countPurpose(value, "contract-risk");
+  if (behavioral !== 1) addIssue(context, "exactly one behavioral-risk proof required");
+  if (value.coverage.codeCompute.status === "VERIFIED" && contract !== 1) {
+    addIssue(
+      context,
+      "exactly one contract-risk proof required when code Compute is verified",
+    );
+  }
+  if (value.coverage.codeCompute.status === "NOT_APPLICABLE") {
+    if (value.subject.kind !== "EOA") {
+      addIssue(context, "code Compute is not applicable only to EOA subjects");
+    }
+    if (contract !== 0) {
+      addIssue(context, "contract-risk proof forbidden when code Compute is not applicable");
+    }
+  }
+}
+
+function countPurpose(value: ComputeInvariantInput, purpose: string): number {
+  return value.computeProofs.filter((proof) => proof.purpose === purpose).length;
+}
+
+type SubjectInvariantInput = {
+  kind: "EOA" | "EIP7702_DELEGATED_EOA" | "CONTRACT";
+  delegationTarget?: string;
+  delegationCodeHash?: string;
+  proxyImplementation?: string;
+  proxyImplementationCodeHash?: string;
+};
+
+function addSubjectIssues(subject: SubjectInvariantInput, context: z.RefinementCtx) {
+  const delegation = Boolean(subject.delegationTarget || subject.delegationCodeHash);
+  const proxyAddress = Boolean(subject.proxyImplementation);
+  const proxyHash = Boolean(subject.proxyImplementationCodeHash);
+  if (subject.kind === "EOA" && (delegation || proxyAddress || proxyHash)) {
+    addIssue(context, "EOA subject cannot carry delegation or proxy provenance");
+  }
+  if (subject.kind === "EIP7702_DELEGATED_EOA") {
+    if (!subject.delegationTarget || !subject.delegationCodeHash) {
+      addIssue(context, "EIP-7702 subject requires delegation target and code hash");
+    }
+    if (proxyAddress || proxyHash) addIssue(context, "EIP-7702 subject cannot carry proxy provenance");
+  }
+  if (subject.kind === "CONTRACT") {
+    if (delegation) addIssue(context, "contract subject cannot carry delegation provenance");
+    if (proxyAddress !== proxyHash) {
+      addIssue(context, "contract proxy address and hash must occur together");
+    }
+  }
+}
+
+function addIssue(context: z.RefinementCtx, message: string) {
+  context.addIssue({ code: "custom", message });
+}
+
 function rejectNonCanonicalValues(value: unknown, seen = new WeakSet<object>()): void {
-  if (typeof value === "bigint" || (typeof value === "number" && !Number.isFinite(value))) {
+  if (
+    typeof value === "bigint" ||
+    (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))
+  ) {
     throw new EvidenceValidationError("non-canonical numeric value");
   }
   if (!value || typeof value !== "object") return;

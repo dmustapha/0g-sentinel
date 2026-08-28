@@ -4,6 +4,7 @@ import { canonicalize } from "json-canonicalize";
 import { GATE_REASON, type Bytes32, type HexAddress, type SubjectKind } from "./types";
 
 const ZERO_BYTES32 = `0x${"00".repeat(32)}` as Bytes32;
+const UINT64_MAX = (1n << 64n) - 1n;
 
 export type DriftFingerprint = Readonly<{
   owner: HexAddress;
@@ -26,6 +27,31 @@ export type DriftComparison = Readonly<{
   expectedDigest: Bytes32;
   currentDigest: Bytes32;
   reason: typeof GATE_REASON.ALLOWED | typeof GATE_REASON.DRIFTED | typeof GATE_REASON.SUBJECT_CHANGED | typeof GATE_REASON.RUNTIME_CODE_DRIFT;
+}>;
+
+export type SealedDriftSnapshot = Readonly<{
+  identityKey: Bytes32;
+  version: bigint;
+  fingerprint: DriftFingerprint;
+}>;
+
+export type VerifiedDriftWrite = Readonly<{
+  transactionHash: Bytes32;
+  version: bigint;
+  reason: number;
+}>;
+
+export type OnDemandDriftDependencies = Readonly<{
+  readSealedSnapshot(identityKey: Bytes32): Promise<SealedDriftSnapshot>;
+  resolveCurrentFingerprint(identityKey: Bytes32): Promise<DriftFingerprint>;
+  markDrift(request: Readonly<{ identityKey: Bytes32; expectedVersion: bigint; reason: number }>): Promise<VerifiedDriftWrite>;
+}>;
+
+export type OnDemandDriftResult = DriftComparison & Readonly<{
+  mode: "ON_DEMAND";
+  marked: boolean;
+  transactionHash?: Bytes32;
+  version: bigint;
 }>;
 
 const fields: readonly DriftField[] = [
@@ -69,6 +95,42 @@ export function compareDriftFingerprints(
     currentDigest: hashFingerprint(current),
     reason: driftReason(changedFields),
   });
+}
+
+export async function runOnDemandDriftCheck(
+  dependencies: OnDemandDriftDependencies,
+  identityKeyInput: Bytes32,
+  mark: boolean,
+): Promise<OnDemandDriftResult> {
+  const identityKey = bytes32(identityKeyInput, false, "identity key");
+  const snapshot = await dependencies.readSealedSnapshot(identityKey);
+  assertSnapshot(snapshot, identityKey);
+  const current = await dependencies.resolveCurrentFingerprint(identityKey);
+  const comparison = compareDriftFingerprints(snapshot.fingerprint, current);
+  if (!comparison.drifted || !mark) {
+    return Object.freeze({ mode: "ON_DEMAND", marked: false, version: snapshot.version, ...comparison });
+  }
+  const write = await dependencies.markDrift({
+    identityKey, expectedVersion: snapshot.version, reason: comparison.reason,
+  });
+  assertVerifiedWrite(write, snapshot.version, comparison.reason);
+  return Object.freeze({ mode: "ON_DEMAND", marked: true, version: write.version,
+    transactionHash: write.transactionHash, ...comparison });
+}
+
+function assertSnapshot(snapshot: SealedDriftSnapshot, identityKey: Bytes32): void {
+  if (!snapshot || bytes32(snapshot.identityKey, false, "snapshot identity key") !== identityKey
+    || typeof snapshot.version !== "bigint" || snapshot.version < 1n || snapshot.version > UINT64_MAX) {
+    throw new Error("Invalid sealed drift snapshot");
+  }
+  buildDriftFingerprint(snapshot.fingerprint);
+}
+
+function assertVerifiedWrite(write: VerifiedDriftWrite, version: bigint, reason: number): void {
+  if (!write || bytes32(write.transactionHash, false, "drift transaction hash") === ZERO_BYTES32
+    || write.version !== version || write.reason !== reason) {
+    throw new Error("Drift chain result was not verified against the sealed snapshot");
+  }
 }
 
 export function hashFingerprint(value: DriftFingerprint): Bytes32 {

@@ -3,15 +3,24 @@ import { isAbsolute } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
-  compareDriftFingerprints,
+  runOnDemandDriftCheck,
   type DriftFingerprint,
 } from "../../frontend/server/prooflock/drift";
 import type { Bytes32 } from "../../frontend/server/prooflock/types";
+import {
+  markProofLockDrift,
+  type RegistryChainAdapter,
+} from "../../frontend/server/prooflock/chain";
 
 type DriftOperator = Readonly<{
-  readSealedFingerprint(identityKey: Bytes32): Promise<DriftFingerprint>;
+  chainAdapter: RegistryChainAdapter;
+  registryAddress: `0x${string}`;
+  confirmations: number;
+  timeoutMs: number;
+  readSealedSnapshot(identityKey: Bytes32): Promise<Readonly<{
+    identityKey: Bytes32; version: bigint; fingerprint: DriftFingerprint;
+  }>>;
   resolveCurrentFingerprint(identityKey: Bytes32): Promise<DriftFingerprint>;
-  markDrift(identityKey: Bytes32, reason: number): Promise<Readonly<{ transactionHash: Bytes32 }>>;
 }>;
 type OperatorModule = Readonly<{
   createProofLockDriftOperator(): Promise<DriftOperator> | DriftOperator;
@@ -21,14 +30,14 @@ async function main(): Promise<void> {
   const identityKey = parseIdentityKey(process.argv[2]);
   const mark = process.argv.slice(3).includes("--mark");
   const operator = await loadOperator();
-  const [expected, current] = await Promise.all([
-    operator.readSealedFingerprint(identityKey),
-    operator.resolveCurrentFingerprint(identityKey),
-  ]);
-  const comparison = compareDriftFingerprints(expected, current);
-  if (!comparison.drifted || !mark) return print({ mode: "ON_DEMAND", marked: false, ...comparison });
-  const receipt = await operator.markDrift(identityKey, comparison.reason);
-  print({ mode: "ON_DEMAND", marked: true, ...comparison, transactionHash: receipt.transactionHash });
+  const result = await runOnDemandDriftCheck({
+    readSealedSnapshot: operator.readSealedSnapshot,
+    resolveCurrentFingerprint: operator.resolveCurrentFingerprint,
+    markDrift: (request) => markProofLockDrift(operator.chainAdapter, {
+      registryAddress: operator.registryAddress, ...request,
+    }, { confirmations: operator.confirmations, timeoutMs: operator.timeoutMs }),
+  }, identityKey, mark);
+  print(result, bigintReplacer);
 }
 
 function parseIdentityKey(value: string | undefined): Bytes32 {
@@ -50,8 +59,12 @@ async function loadOperator(): Promise<DriftOperator> {
   return await loaded.createProofLockDriftOperator();
 }
 
-function print(value: unknown): void {
-  process.stdout.write(`${JSON.stringify(value)}\n`);
+function print(value: unknown, replacer?: (_key: string, value: unknown) => unknown): void {
+  process.stdout.write(`${JSON.stringify(value, replacer)}\n`);
+}
+
+function bigintReplacer(_key: string, value: unknown): unknown {
+  return typeof value === "bigint" ? value.toString() : value;
 }
 
 main().catch((error: unknown) => {

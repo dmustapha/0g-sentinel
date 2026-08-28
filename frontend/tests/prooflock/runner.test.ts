@@ -12,6 +12,8 @@ import {
   REGISTRY_V2_INTERFACE,
   ChainProofError,
   computeIdentityKey,
+  computeProofLockId,
+  markProofLockDrift,
   readProofLockBack,
   writeProofLock,
   type RegistryChainAdapter,
@@ -20,6 +22,7 @@ import {
 import {
   buildDriftFingerprint,
   compareDriftFingerprints,
+  runOnDemandDriftCheck,
   type DriftFingerprint,
 } from "../../server/prooflock/drift";
 import type { Bytes32, ResolvedAgentIdentity } from "../../server/prooflock/types";
@@ -247,6 +250,22 @@ describe("controlled ProofLock runner", () => {
     expect(deps.buildEvidenceEnvelope).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["fractional score", { behavioralScore: 12.5, verdict: { riskScore: 12.5, label: "SAFE" as const } }],
+    ["score mismatch", { behavioralScore: 12, verdict: { riskScore: 13, label: "SAFE" as const } }],
+    ["label mismatch", { behavioralScore: 60, verdict: { riskScore: 60, label: "SAFE" as const } }],
+  ])("rejects policy-inconsistent Compute output: %s", async (_name, output) => {
+    const deps = dependencies([]);
+    vi.mocked(deps.runCompute).mockResolvedValueOnce({ proofs: [computeProof()], ...output });
+    await expect(createProofLockRunner(deps).run({
+      identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
+      scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800, mode: "SEAL",
+    })).rejects.toMatchObject({ stage: "RUNNING_COMPUTE" });
+    expect(deps.buildEvidenceEnvelope).not.toHaveBeenCalled();
+    expect(deps.uploadStorage).not.toHaveBeenCalled();
+    expect(deps.writeChain).not.toHaveBeenCalled();
+  });
+
   it("stops before the Registry when retrieved evidence is not bound", async () => {
     const calls: RunnerStage[] = [];
     const deps = dependencies(calls);
@@ -277,6 +296,45 @@ describe("controlled ProofLock runner", () => {
       expectedPriorVersion: 1n,
     })).rejects.toMatchObject({ stage: "VALIDATING_IDENTITY" });
     expect(calls).toEqual([]);
+  });
+
+  it("does not report SEALED when the finalized contract rejects the runtime hash", async () => {
+    const deps = dependencies([]);
+    const stages: RunnerStage[] = [];
+    vi.mocked(deps.writeChain).mockRejectedValueOnce(new Error("RuntimeCodeHashMismatch"));
+    await expect(createProofLockRunner(deps).run({
+      identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
+      scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800, mode: "SEAL",
+    }, (stage) => stages.push(stage))).rejects.toMatchObject({ stage: "WRITING_CHAIN" });
+    expect(stages).not.toContain("SEALED");
+    expect(deps.readChainBack).not.toHaveBeenCalled();
+  });
+
+  it("passes the classified runtime hash and predecessor linkage to the chain writer", async () => {
+    const deps = dependencies([]);
+    const envelope = { ...runnerEnvelope(), previousProofId: H6 };
+    const envelopeDigest = hashCanonical(envelope);
+    vi.mocked(deps.buildEvidenceEnvelope).mockResolvedValueOnce(envelope);
+    vi.mocked(deps.verifyStorage).mockResolvedValueOnce({
+      envelopeDigest, storageRoot: H5, uploadTxHash: H6, retrievedDigest: envelopeDigest,
+      finalizedAtBlock: "456", retrievalVerified: true,
+    });
+    vi.mocked(deps.writeChain).mockResolvedValueOnce({ transactionHash: H6, expectedVersion: 2n });
+    vi.mocked(deps.readChainBack).mockImplementationOnce(async (input) => ({
+      identityKey: input.identityKey, subject: input.subject, envelopeDigest: input.envelopeDigest,
+      storageRoot: input.storageRoot, computeRoot: input.computeRoot, artifactHash: input.artifactHash,
+      runtimeCodeHash: input.runtimeCodeHash, version: 2n, issuedAt: 1n, validUntil: 604801n,
+      policyVersion: input.policyVersion, behavioralScore: input.behavioralScore, codeRisk: input.codeRisk,
+      coverage: input.coverage, state: 1, stateReason: 0,
+    }));
+    await createProofLockRunner(deps).run({
+      identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
+      scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800,
+      mode: "RESEAL", expectedPriorVersion: 1n, previousProofId: H6,
+    });
+    expect(deps.writeChain).toHaveBeenCalledWith(expect.objectContaining({
+      runtimeCodeHash: ZERO_BYTES32, expectedPriorVersion: 1n, previousProofId: H6,
+    }));
   });
 });
 
@@ -367,8 +425,9 @@ describe("strict registry chain writer", () => {
   });
 
   it("encodes the analyzed runtime hash and atomic prior version in reseal calldata", async () => {
-    const request = { ...chainRequest, mode: "RESEAL" as const, expectedPriorVersion: 4n };
     const proof = record({ version: 4n });
+    const previousProofId = computeProofLockId(REGISTRY, proof);
+    const request = { ...chainRequest, mode: "RESEAL" as const, expectedPriorVersion: 4n, previousProofId };
     const event = REGISTRY_V2_INTERFACE.encodeEventLog(
       REGISTRY_V2_INTERFACE.getEvent("ProofLocked")!,
       [H1, B, 5n, 100n, 604900n, H2, H3, H4, H5, ZERO_BYTES32, 1, 10, 0, 0x7f],
@@ -386,6 +445,55 @@ describe("strict registry chain writer", () => {
     });
     await writeProofLock(adapter, request, { confirmations: 3, timeoutMs: 10_000 });
     expect(adapter.sendTransaction).toHaveBeenCalledWith({ to: REGISTRY, data: expectedData });
+  });
+
+  it("derives a lifecycle-stable, content-sensitive prior proof ID", () => {
+    const proof = record({ version: 4n });
+    expect(computeProofLockId(REGISTRY, proof)).toBe(computeProofLockId(REGISTRY.toUpperCase().replace("0X", "0x"), {
+      ...proof, state: 3, stateReason: 6,
+    }));
+    expect(computeProofLockId(REGISTRY, { ...proof, artifactHash: H6 }))
+      .not.toBe(computeProofLockId(REGISTRY, proof));
+  });
+
+  it("rejects an arbitrary previous proof ID before sending a reseal", async () => {
+    const adapter = chainAdapter({ getProofLock: vi.fn(async () => record({ version: 4n })) });
+    const request = { ...chainRequest, mode: "RESEAL" as const, expectedPriorVersion: 4n, previousProofId: H6 };
+    await expect(writeProofLock(adapter, request, { confirmations: 3, timeoutMs: 10_000 }))
+      .rejects.toMatchObject({ code: "LOCK_STATE_MISMATCH" });
+    expect(adapter.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["zero", 0n],
+    ["uint64 overflow", 1n << 64n],
+  ])("rejects %s prior version before ABI encoding", async (_name, expectedPriorVersion) => {
+    const adapter = chainAdapter();
+    await expect(writeProofLock(adapter, {
+      ...chainRequest, mode: "RESEAL", expectedPriorVersion, previousProofId: H6,
+    }, { confirmations: 3, timeoutMs: 10_000 })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    expect(adapter.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("forbids predecessor fields on an initial seal", async () => {
+    await expect(writeProofLock(chainAdapter(), {
+      ...chainRequest, expectedPriorVersion: 1n, previousProofId: H6,
+    }, { confirmations: 3, timeoutMs: 10_000 })).rejects.toMatchObject({ code: "INVALID_INPUT" });
+  });
+
+  it("snapshots request and finality options before the first await", async () => {
+    const mutableRequest = { ...chainRequest, registryAddress: REGISTRY as `0x${string}` };
+    const mutableOptions = { confirmations: 3, timeoutMs: 10_000 };
+    const adapter = chainAdapter({
+      getChainId: vi.fn(async () => {
+        mutableRequest.registryAddress = A;
+        mutableOptions.confirmations = 1;
+        return 16661n;
+      }),
+    });
+    await writeProofLock(adapter, mutableRequest, mutableOptions);
+    expect(adapter.waitForReceipt).toHaveBeenCalledWith(H6, 3, 10_000);
+    expect(adapter.sendTransaction).toHaveBeenCalledWith(expect.objectContaining({ to: REGISTRY }));
   });
 
   it.each([
@@ -478,5 +586,88 @@ describe("on-demand drift detection", () => {
       owner: A, agentWallet: B, registrationDigest: H1,
       subjectKind: "EOA", runtimeCodeHash: H2, policyVersion: 1,
     })).toThrow(/EOA runtime/i);
+  });
+
+  it("marks drift with the sealed version and returns only a verified chain result", async () => {
+    const marked = vi.fn(async (request: { expectedVersion: bigint; reason: number }) => ({
+      transactionHash: H6, version: request.expectedVersion, reason: request.reason,
+    }));
+    const result = await runOnDemandDriftCheck({
+      readSealedSnapshot: vi.fn(async () => ({ identityKey: H1, version: 1n, fingerprint: fingerprint() })),
+      resolveCurrentFingerprint: vi.fn(async () => fingerprint({ policyVersion: 2 })),
+      markDrift: marked,
+    }, H1, true);
+    expect(marked).toHaveBeenCalledWith({ identityKey: H1, expectedVersion: 1n, reason: 3 });
+    expect(result).toMatchObject({ mode: "ON_DEMAND", marked: true, transactionHash: H6, version: 1n });
+  });
+});
+
+describe("strict drift lifecycle write", () => {
+  function driftAdapter(overrides: Partial<RegistryChainAdapter> = {}): RegistryChainAdapter {
+    const event = REGISTRY_V2_INTERFACE.encodeEventLog(
+      REGISTRY_V2_INTERFACE.getEvent("DriftMarked")!, [H1, 1n, 3],
+    );
+    const data = REGISTRY_V2_INTERFACE.encodeFunctionData("markDrift", [H1, 3, 1n]);
+    return chainAdapter({
+      getProofLock: vi.fn()
+        .mockResolvedValueOnce(record())
+        .mockResolvedValueOnce(record({ state: 3, stateReason: 3 })),
+      waitForReceipt: vi.fn(async () => ({
+        transactionHash: H6, status: 1, blockNumber: 456n, blockHash: BLOCK,
+        confirmations: 3, logs: [{ address: REGISTRY, topics: event.topics, data: event.data }],
+      })),
+      getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data })),
+      ...overrides,
+    });
+  }
+
+  it("verifies chain, calldata, finality, one event, and drifted readback", async () => {
+    const adapter = driftAdapter();
+    const result = await markProofLockDrift(adapter, {
+      registryAddress: REGISTRY, identityKey: H1, expectedVersion: 1n, reason: 3,
+    }, { confirmations: 3, timeoutMs: 10_000 });
+    expect(result).toEqual({ transactionHash: H6, version: 1n, reason: 3 });
+  });
+
+  it("fails closed when a concurrent reseal makes the expected version stale", async () => {
+    const adapter = driftAdapter({ sendTransaction: vi.fn(async () => { throw new Error("StaleVersion"); }) });
+    await expect(markProofLockDrift(adapter, {
+      registryAddress: REGISTRY, identityKey: H1, expectedVersion: 1n, reason: 3,
+    }, { confirmations: 3, timeoutMs: 10_000 })).rejects.toMatchObject({ code: "TRANSACTION_FAILED" });
+  });
+
+  it("rejects duplicate events and mismatched drift readback", async () => {
+    const event = REGISTRY_V2_INTERFACE.encodeEventLog(
+      REGISTRY_V2_INTERFACE.getEvent("DriftMarked")!, [H1, 1n, 3],
+    );
+    const duplicate = driftAdapter({ waitForReceipt: vi.fn(async () => ({
+      transactionHash: H6, status: 1, blockNumber: 456n, blockHash: BLOCK,
+      confirmations: 3, logs: [
+        { address: REGISTRY, topics: event.topics, data: event.data },
+        { address: REGISTRY, topics: event.topics, data: event.data },
+      ],
+    })) });
+    await expect(markProofLockDrift(duplicate, {
+      registryAddress: REGISTRY, identityKey: H1, expectedVersion: 1n, reason: 3,
+    }, { confirmations: 3, timeoutMs: 10_000 })).rejects.toMatchObject({ code: "LOCK_EVENT_MISMATCH" });
+
+    const badReadback = driftAdapter({
+      getProofLock: vi.fn().mockResolvedValueOnce(record()).mockResolvedValueOnce(record({ state: 1 })),
+    });
+    await expect(markProofLockDrift(badReadback, {
+      registryAddress: REGISTRY, identityKey: H1, expectedVersion: 1n, reason: 3,
+    }, { confirmations: 3, timeoutMs: 10_000 })).rejects.toMatchObject({ code: "READBACK_MISMATCH" });
+  });
+
+  it.each([
+    ["WRONG_CHAIN", { getChainId: vi.fn(async () => 1n) }],
+    ["REGISTRY_UNAVAILABLE", { getCode: vi.fn(async () => "0x") }],
+    ["TRANSACTION_REVERTED", { waitForReceipt: vi.fn(async () => ({ transactionHash: H6, status: 0, blockNumber: 1n, blockHash: BLOCK, confirmations: 3, logs: [] })) }],
+    ["FINALITY_INCOMPLETE", { waitForReceipt: vi.fn(async () => ({ transactionHash: H6, status: 1, blockNumber: 1n, blockHash: BLOCK, confirmations: 2, logs: [] })) }],
+    ["TRANSACTION_MISMATCH", { getTransaction: vi.fn(async () => ({ hash: H6, to: A, data: "0x" })) }],
+  ])("fails closed on drift lifecycle dependency error %s", async (code, overrides) => {
+    await expect(markProofLockDrift(driftAdapter(overrides), {
+      registryAddress: REGISTRY, identityKey: H1, expectedVersion: 1n, reason: 3,
+    }, { confirmations: 3, timeoutMs: 10_000 })).rejects.toMatchObject({ code });
   });
 });

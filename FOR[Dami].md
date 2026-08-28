@@ -91,3 +91,15 @@ with the Registry record, so an authorized writer cannot present valid evidence 
 The Compute SDK worker is a self-contained file inside the production standalone artifact. The ESM source and its
 runtime dependencies are bundled into a Node CommonJS child so transitive dynamic requires remain valid without a
 development `node_modules` tree. Deadline cancellation still kills the process.
+
+## What the browser audit taught us
+
+A successful `next build` does not prove a standalone Next.js server is deployable. Next intentionally leaves
+`public/` and `.next/static/` outside the standalone folder. Starting only `server.js` therefore returned HTML but
+404ed every stylesheet, browser chunk, and bundled font. The postbuild packaging step now copies those two asset
+trees, and the release test prevents that contract from disappearing.
+
+The audit also separated historical truth from current operational truth. A historical proof can match even when
+the current Gate read is unavailable. Those observations need independent UI state. Combining them in one
+`Promise.all` makes a current outage erase a valid historical result and can leave stale evidence after a later
+mismatch. That is a provenance bug, not merely a presentation issue.

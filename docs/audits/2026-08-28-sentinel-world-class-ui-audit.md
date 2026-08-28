@@ -179,6 +179,9 @@ Measured against the actual declared colors:
 | Paper body `#625d61` on paper | 5.43:1 | Pass |
 | Runtime violet `#ad72ff` on paper | 2.67:1 | Fails normal-text AA |
 | Paper violet `#7950ae` on paper | 4.95:1 | Pass |
+| Runtime success `#39b982` on paper | 2.10:1 | Fails text and non-text contrast |
+| Runtime warning `#d79a36` on paper | 2.07:1 | Fails text and non-text contrast |
+| Runtime failure `#e45d5d` on paper | 2.94:1 | Fails normal-text AA and narrowly misses 3:1 UI contrast |
 | Paper success `#177e56` on paper | 4.26:1 | Fails normal-text AA |
 | Paper warning `#b96918` on paper | 3.47:1 | Fails normal-text AA |
 | Paper unknown `#8d8890` on paper | 2.92:1 | Fails normal-text AA |
@@ -252,19 +255,179 @@ The design system is complete only when drift is difficult:
 1. Preserve the existing visual DNA and declare it in `DESIGN_SYSTEM.md`.
 2. Choose canonical CSS tokens; generate or narrow `brand.json`; remove or integrate Tailwind.
 3. Add primitive, semantic, and component token layers with accessible surface-aware colors.
-4. Introduce the six typed primitives and migrate active routes without changing product behavior.
+4. Introduce the seven typed primitives and migrate active routes without changing product behavior.
 5. Replace inherited state coloring with explicit component-state mappings.
 6. Remove the legacy token namespace and obsolete components/design notes.
 7. Apply the Proof Ledger information-architecture redesign using only the governed primitives.
 8. Add visual, accessibility, interaction, and token-governance gates before release.
 
-## Recommended direction: Proof Ledger
+## Deep-audit addendum
 
-Preserve the identity, but turn the dossier into a live six-stage proof ribbon:
+### Depth assessment
 
-`Identity → Checks → Compute → Storage → Lease → Gate`
+The first audit was deep enough to choose a direction and expose the dominant visual/correctness problems. It was not yet the deepest practical implementation audit. It did not fully model sequential state transitions, uncertain writes, hostile onchain content, the public/operator boundary, CSS cascade behavior, screen-reader announcement behavior, forced colors, route hydration, performance budgets, rollout/rollback, or the differing freshness of every proposed proof stage.
 
-Place the Agent ID resolver and compact dependency disclosure in the hero. On detail, replace the card stack with one continuous evidence ledger: decision and lease first, provenance second, lifecycle third, operator controls last. On mobile, action comes before explanation.
+This addendum closes those gaps through:
+
+- Full active route, component, API, state, selector, token, and test inventory.
+- Nielsen heuristic scoring using severity × frequency × impact.
+- Sequential-state analysis, not only isolated rendered states.
+- WCAG 2.2 AA, screen-reader, forced-colors, zoom, pointer, and long-content review.
+- Provenance/claim review of every stage in the proposed proof ribbon.
+- Operator-token, uncertain-write, URL, Unicode, and hostile-content threat review.
+- Client/server boundary, bundle, hydration, metadata, release, and rollback review.
+
+The UI-revamp syntax checker scanned 47 app/component files and reported only the unguarded hover selector. That result is explicitly insufficient: the checker detects a narrow list of syntax patterns and did not detect the proven contrast, stale-state, touch, semantic, provenance, or architecture failures.
+
+### Active surface inventory
+
+| Surface | States and dependencies | Deep-audit result |
+|---|---|---|
+| Global shell | static network label, active navigation, metadata, error, 404 | No skip link or `aria-current`; static “0G MAINNET” resembles health; root OG image is missing; error/404 use `h2`; all routes share one title |
+| `/` | hero, architecture sheet, public resolution, operator mutation | Primary action is below fold; public and privileged journeys are conflated; token entry appears in a public judge path |
+| `/agents` | loading, error, empty, populated; discovery + row enrichment | Bounded 2,000-block/100-row set can look complete; one row failure kills all rows; sorting ignores Gate denial |
+| `/agents/[agentId]` | loading, error, verified, unavailable enrichment, fixture, Gate/lease/consumer/coverage/evidence/lifecycle/operator | Valid proof recovery omits source transaction; historical proof failure is silently collapsed; long equal-weight stack; operator mutation mixed into public detail; state can age without a refresh timer |
+| `/proof` | form validity; health loading/error/ready with six probes | Zero bytes32 accepted despite copy; not a semantic form; “offline” is false; field errors are unassociated |
+| `/proof/[proofId]` | invalid; verify idle/verifying/match/mismatch/unavailable/timeout/retry; current admitted/blocked | Historical/current requests are coupled; stale success survives later failure; source hint affects selection but is hidden |
+| Seal/reseal stream | ten stages, terminal success/error, abort | Generic error loses write certainty; “No lease issued” can be false after broadcast/finality; no restart-safe recovery or visible cancel |
+| Health | healthy/unhealthy/unknown per dependency | Independent model is good; raw timestamps and static shell label weaken comprehension |
+
+### Nielsen heuristic score
+
+Priority uses severity × frequency × impact, each scored 1–4.
+
+| Heuristic | S | F | I | Priority | Principal evidence |
+|---|---:|---:|---:|---:|---|
+| H1 Visibility of status | 4 | 3 | 4 | 48 | Stale verifier result, static network label, uncertain write state, silent detail proof failure |
+| H2 Match with real world | 3 | 3 | 4 | 36 | “Offline,” “live,” and one completed proof chain collapse distinct capabilities/freshness |
+| H3 User control | 3 | 3 | 4 | 36 | Long operations have abort controllers but no Cancel; recovery after disconnect is undefined |
+| H4 Consistency | 4 | 4 | 4 | 64 | Competing design sources, global inherited state colors, broken unknown mapping, stale design documentation |
+| H5 Error prevention | 4 | 3 | 4 | 48 | Zero bytes32, validation-after-composition, public operator-token path, duplicate-write risk |
+| H6 Recognition over recall | 3 | 3 | 3 | 27 | Hidden source hint, truncated values without copy, dense hashes/jargon, no canonical share contract |
+| H7 Flexibility/efficiency | 2 | 2 | 3 | 12 | No public/operator split, no copy primitives, no durable recovery path |
+| H8 Aesthetic minimalism | 3 | 4 | 3 | 36 | Long equal-weight card stack and excessive bordered surfaces obscure the decision story |
+| H9 Error recovery | 4 | 3 | 4 | 48 | Generic reseal errors, whole-list failure, historical proof hidden by current outage, uncertain write |
+| H10 Help/documentation | 3 | 3 | 4 | 36 | Documentation states false guarantees and no current system/claim contract exists |
+
+### New P0 findings
+
+#### 1. The proposed six-stage ribbon mixed incompatible truth classes
+
+Identity/lease can be historical chain records, checks/Compute are production-time evidence, Storage verification is a retrieval-time observation with `networkProofVerified:false`, and Gate/consumer are current mutable reads. One completed “live” ribbon would overclaim shared freshness.
+
+**Required design correction:** use two independent planes:
+
+```text
+Sealed evidence: identity-at-block → checks → Compute → Storage → Registry event
+Current access: current identity → lease → Gate → guarded consumer
+```
+
+Every stage needs typed scope, status, observation time/block, source, capability, and allowed copy. “Live” is banned unless that stage was probed in the current request.
+
+#### 2. Public and privileged journeys are conflated
+
+The public landing and detail surfaces expose a one-time bearer-token field and paid mutation as part of the primary journey. This makes a judge hit an authority wall and increases secret-handling risk.
+
+**Required correction:** make a real public proof the primary judge action. Move seal/reseal/drift to a clearly named `/operator` workbench. The token must never enter URL, storage, analytics, logs, screenshots, response bodies, or errors and must clear on every terminal/unmount path.
+
+#### 3. Post-broadcast failure has no truthful recovery model
+
+Renaming the error is insufficient. After Registry broadcast or finality, a readback failure cannot truthfully say “No lease issued,” and immediately retrying may duplicate paid work or the write.
+
+**Required correction:** reserve `NOT_BROADCAST` for failure before submission is attempted; otherwise model submission-outcome-unknown, finalized-readback-unavailable, and sealed. Before paid work, persist a token-free journal phase binding recovery/idempotency IDs to the canonical input digest and reserved budget; append verified Compute and Storage commitments as those stages complete; durably persist the full chain-input commitment before Registry submission. Recovery must compare transaction target/sender/calldata, event, receipt/finality, and all record fields; identity/version alone can misattribute a competing authorized scanner's write. Recovery never reruns Compute, Storage, or Chain writes.
+
+#### 4. Untrusted evidence rendering is under-specified
+
+Provider/model strings, URIs, errors, onchain display data, hashes, and external bases can contain long text, bidi controls, confusables, unsafe schemes, or layout/announcement denial inputs. React escaping prevents HTML injection but not visual spoofing or resource exhaustion.
+
+**Required correction:** bound display schemas; use LTR isolation for canonical technical values and bidi isolation for natural text; strip/mark control characters; build links from an allowlisted HTTPS origin; never render untrusted active SVG/HTML/data URLs; fuzz maximum lengths and hostile Unicode.
+
+#### 5. Current design-system state colors fail on their most important surface
+
+The global `.state-*` utilities are inherited into warm paper cards. Actual `--good`, `--warn`, and `--bad` contrast on paper is 2.10:1, 2.07:1, and 2.94:1. This affects the ALLOWED/BLOCKED heading, state mark, chip border/text, and dossier rail—the central decision artifact.
+
+**Required correction:** surface-aware tokens and component-owned state mapping. Global state classes set semantic properties, never blanket inherited color.
+
+#### 6. “Current access” is not independently or atomically observed
+
+The detail read pipeline must complete Storage/evidence retrieval before returning identity, lease, Gate, and consumer facts, and those facts are not pinned to one explicit finalized block. A Storage outage can therefore hide a valid Gate denial, while unpinned sequential reads can combine facts from different chain states.
+
+**Required correction:** pin one finalized block per refresh; read current identity, lease, Gate, and guarded-consumer facts independently at that block; return a discriminated partial-observation set with server-issued block/time/TTL metadata. A failed plane never erases another plane or historical evidence.
+
+#### 7. Paid operator work lacks an abuse and idempotency boundary
+
+Double-clicks, multiple tabs, reconnects, or concurrent operators can start duplicate Compute/Storage/write ceremonies. A bearer token authenticates the caller but does not make the operation idempotent or affordable.
+
+**Required correction:** require a unique idempotency key, one active ceremony per identity, bounded operator/global concurrency, rate and daily budget ceilings, and token-free audit events. Test duplicate clicks, tabs, reconnects, process restart, and a racing authorized scanner.
+
+#### 8. Bounded discovery lacks finality and reorg semantics
+
+Disclosing a 2,000-block/100-row window is honest about completeness but does not state whether the upper bound is finalized or how removed/reorganized events affect rows.
+
+**Required correction:** scan only through an explicit finalized upper bound, disclose the confirmation policy, reject or mark removed/provisional rows, and test reorg-shaped event changes. A complete inventory remains an explicit deferred indexer/backfill decision.
+
+### Additional systemic findings
+
+1. **Sequential state leakage:** changing the Agent ID clears identity/error but can leave the prior lock, Gate, coverage, stages, and failure visible. `frontend/components/ScanInput.tsx:51-65`.
+2. **Unknown looks like provenance:** `.state-unknown` sets `--state` but not the card rail, so “Decision unavailable” retains the default violet rail. `GateDecisionCard.tsx:5`, `globals.css:96`, `globals.css:114`.
+3. **Cascade is implicit:** broad `p`, `dt`, `dd`, `input`, `.state-*`, `currentColor`, and one `!important` combine differently by surface. No cascade layers define ownership.
+4. **Control boundaries are too subtle:** `--line` produces roughly 1.4–1.5:1 contrast on dark surfaces; controls that depend on it miss 3:1 non-text contrast.
+5. **Mobile readability is not world-class:** `.58rem` navigation/network labels and `.62–.68rem` technical text pass overflow but not practical readability.
+6. **Live regions are noisy/incomplete:** the entire ten-stage rail is live, while several errors are neither alerts nor persistently announced status regions.
+7. **Focus recovery is undefined:** retry controls disappear during loading, potentially returning focus to the document body.
+8. **Trust roles can render blank:** an empty string is invalid but `address ?? "not configured"` renders it as empty.
+9. **Global wrapping is over-broad:** all `dd`, code, and mono content can break anywhere, including prose/provider names; wrapping belongs to a technical-value primitive.
+10. **Smooth scrolling violates the product's motion constraints:** `html { scroll-behavior:smooth }` animates navigation unless reduced motion is set.
+11. **Client-heavy read routes:** `/agents`, detail, and verifier routes ship as client pages and fetch after hydration. This delays public proof visibility and makes core reads JS-dependent.
+12. **Client cryptography:** agent detail and inventory import `ethers`, canonicalization, and validation code for display-time proof ID derivation; route payload and shared-chunk budgets should be measured before/after moving derivation server-side.
+13. **Font payload is unbudgeted:** nine declared weights and generated font assets have no performance budget or usage audit.
+14. **No content-security policy:** the operator-token surface has frame/MIME/referrer headers but no CSP, HSTS deployment gate, or Permissions Policy review.
+15. **No cross-browser/a11y harness:** current Vitest rendering is valuable but cannot prove computed styles, focus, target size, announcement order, WebKit input behavior, or forced colors.
+16. **No stale-current state:** current facts have observation timestamps but no enforced TTL, background-resume invalidation, or `STALE` presentation.
+17. **Authority terminology is inaccurate:** code uses `SCANNER_ROLE`; multiple wallets may write, and provenance must name the actual transaction sender rather than one universal validator.
+18. **Registry record history is overstated:** the current record is overwritten by version; `ProofLocked` events are append-preserved, not the record itself.
+
+### Component-state contract required before migration
+
+| Primitive/workflow | Required states |
+|---|---|
+| Button | primary/secondary/quiet/destructive × idle/hover/pressed/focus/disabled/pending |
+| Field | empty/valid/invalid/disabled/read-only × hint/error × dark/paper |
+| StatusBadge | verified/allowed/caution/blocked/mismatch/unavailable/stale/not-applicable × dark/paper |
+| EvidenceSheet | default/provenance/success/caution/failure/unknown × short/maximum content |
+| DataRow | text/hash/address/time/link/copy × present/missing/unavailable × long/bidi content |
+| StateMessage | loading/empty/error/unavailable/success × retry/action × polite/assertive |
+| ProofPlane | historical/current × all observation statuses × partial/unavailable/mismatch |
+| Verifier | seven request states plus independent current access and every sequential transition |
+| Operator | idle/resolving/running/cancelling/recovering/uncertain/finalized/failed |
+| Inventory | loading/error/empty/partial/populated × bounded scope × desktop/mobile parity |
+
+Impossible combinations should be prevented through discriminated unions or reducers rather than coordinated independent booleans.
+
+### Deep acceptance criteria
+
+- All surface-aware normal text passes 4.5:1; large text, focus, icons, rails, and actionable boundaries pass 3:1.
+- Informative captions never fall below 12px; data/secondary UI targets 14px; body/input remains at least 16px.
+- Every field has associated help/error semantics; progress is concise and announced once; errors are alerts; busy regions expose `aria-busy`.
+- Every standalone action has a 44×44px target and at least 8px separation.
+- Forced-colors preserves controls, links, focus, and all state meaning.
+- 320/390/1440, 200% text zoom, 400% page zoom, reduced motion, long content, and table/card parity pass.
+- Chromium, Firefox, and WebKit pass the public proof, verifier, and operator-recovery journeys.
+- VoiceOver or NVDA confirms landmark/heading order, form errors, verifier transitions, and streaming progress.
+- A route and primitive screenshot matrix covers every state; axe reports zero unwaived WCAG A/AA findings, with evidence-backed waivers only for confirmed tool false positives.
+- Deployed slow-4G budgets are LCP ≤2.5s, INP ≤200ms, CLS ≤0.1, with explicit JS/CSS/font budgets and 100-row/max-content fixtures.
+- A real funded mainnet seal → consumer allow → drift deny → reseal allow survives reload/process restart and every displayed link independently verifies.
+- No “world-class” or “submission-ready” claim is made until the deployed-URL, provenance, accessibility, performance, and claim-signoff gates pass.
+
+## Recommended direction: two-plane Proof Ledger
+
+Preserve the identity, but turn the dossier into two connected truth planes:
+
+`Sealed evidence: Identity-at-block → Checks → Compute → Storage → Registry event`
+
+`Current access: Current identity → Lease → Gate → Guarded consumer`
+
+Place a real public proof action and compact dependency disclosure in the hero. On detail, replace the card stack with one continuous evidence ledger: current decision first, sealed provenance second, current observations third, lifecycle and trust boundary last. Move privileged controls to a separate Operator workbench. On mobile, the public decision/action comes before explanation.
 
 Alternatives considered:
 
@@ -279,39 +442,41 @@ Proof Ledger has the best impact-to-risk ratio because it preserves the stronges
 
 1. Decouple historical match from current access and clear stale state.
 2. Share strict nonzero bytes32 validation across UI and API.
-3. Add `WRITE_CONFIRMED_READBACK_UNAVAILABLE`; never claim no lease after an uncertain read-back.
-4. Replace rolling discovery with deployment-from-block pagination/indexing and disclose completeness/freshness.
-5. Contain per-row failure and sort by lifecycle plus Gate urgency.
-6. Carry the exact source transaction into current detail verification.
-7. Preserve failed SSE stage/code in reseal ceremony.
-8. Display optional source transaction in proof identifiers.
-9. Validate request shape before dependency composition where safe.
-10. Generate a current OG image and quarantine obsolete V1 artifacts.
+3. Add typed write outcomes, durable idempotent operation journaling, abuse ceilings, and commitment-bound restart-safe recovery; never claim no lease or rerun paid work after an uncertain read-back.
+4. Return pinned, independent, partial current observations with server-owned freshness and a visible stale state.
+5. Make finalized bounded discovery explicit, partial-failure tolerant, and reorg-aware; defer a complete durable indexer until its operational architecture is approved.
+6. Contain per-row failure and sort by lifecycle plus Gate urgency.
+7. Carry the exact source transaction into current detail verification.
+8. Preserve failed SSE stage/code in reseal ceremony.
+9. Display optional source transaction in proof identifiers.
+10. Validate request shape before dependency composition.
+11. Generate a current OG image and quarantine obsolete V1 artifacts.
 
-### Phase B — design-system foundation
+### Phase B — design-system and accessibility foundation
 
 1. Write `DESIGN_SYSTEM.md` and declare the dossier signature, square geometry, single-shadow philosophy, type roles, and exception policy.
 2. Establish canonical primitive/semantic/component tokens; remove duplicate and unresolved token sources.
 3. Correct surface-aware contrast, establish type/spacing/control/motion/breakpoint scales, and encode accessibility defaults.
-4. Build the six typed primitives and migrate active surfaces without changing behavior.
+4. Build the seven typed primitives with accessibility in their first contract and migrate one pilot route without changing behavior.
 5. Delete or quarantine obsolete design-era components and stale documentation.
 6. Add token, primitive-state, contrast, axe, screenshot, and viewport governance tests.
 
-### Phase C — accessibility and interaction
+### Phase C — journey ergonomics
 
 1. Convert action areas to forms with Enter submission.
 2. Add skip link, `aria-current`, invalid/described fields, and live-region coverage.
 3. Set inputs to at least 16px and interactive targets to at least 44px.
 4. Restrict hover to hover-capable devices and add active/tap states.
 5. Raise muted/placeholder contrast and reduce typography to four roles.
-6. Add cancel controls and explicit retry/recovery copy.
-7. Give error/404 pages proper heading hierarchy.
+6. Add cancel controls and the typed recovery workflow.
+7. Separate the public judge journey from the privileged Operator workbench.
+8. Give error/404 pages proper heading hierarchy.
 
 ### Phase D — Proof Ledger redesign
 
-1. Move resolver/primary CTA into the hero.
-2. Make the six-stage proof ribbon the first-viewport signature interaction.
-3. Convert detail into one ledger with progressive disclosure for raw hashes.
+1. Make a configured real public proof the hero's primary action; keep paid mutation off the public path.
+2. Make the two-plane Proof Ledger the first-viewport signature interaction.
+3. Convert detail into one ledger with typed per-stage freshness and progressive disclosure for raw hashes.
 4. Add truthfully labeled network/dependency state instead of a static badge.
 5. Tighten spacing, status hierarchy, and mobile ordering.
 6. Rename to “Public evidence verifier” and simplify jargon-heavy copy.
@@ -325,4 +490,4 @@ Proof Ledger has the best impact-to-risk ratio because it preserves the stronges
 
 ## Decision gate
 
-Recommended approval: proceed with **Proof Ledger**, starting with Phase A before aesthetic work. No visual implementation was started during this audit.
+The **two-plane Proof Ledger** direction is approved from the user's earlier instruction to proceed with the recommendations. Begin with Phase A before aesthetic work, and review the verifier primitive pilot before migrating another route. No visual implementation was started during this audit/planning pass.

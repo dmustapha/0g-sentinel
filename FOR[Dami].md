@@ -73,3 +73,18 @@ Older Sentinel records remain visible as history, but they cannot pass this stri
 Public endpoints can resolve identities, read current ProofLocks, discover emitted locks, verify proofs, and inspect health. They cannot start inference, upload Storage, fund ledgers, write leases, or enqueue background scans. Operator mutations require a strong server-only bearer token, and disconnecting from the progress stream aborts the synchronous runner so paid work does not silently continue.
 
 Health is evidence, not theater. It independently checks 0G chain ID, ERC-8004, RegistryV2, AgentGateV2, strict Compute service metadata, and a previously sealed Storage canary. Missing configuration is `UNKNOWN`, required failures return `503`, and Compute health performs no paid inference.
+
+### Why the production operator is part of the trust model
+
+The server no longer loads an operator implementation from an environment-selected file. The production composition
+is compiled with the application, and both the HTTP path and maintenance CLIs use it. That matters because otherwise
+the public UI could look strict while an entirely different runtime module issued the real leases.
+
+The scanner key signs Compute, Storage, and Registry operations. ProofLock compares that configured scanner with the
+key-derived address, its live Registry role, the submitted transaction sender, and the finalized transaction sender.
+The guardian key is distinct and only marks drift. Browser callers cannot choose either role, the registry, the policy,
+the scanner software label, or lease duration.
+
+The Compute SDK worker is a real file inside the production standalone artifact. It is launched as a disposable ESM
+child from the deployed application directory, so deadline cancellation still kills the process and deployment does
+not depend on a source-tree file that vanished during bundling.

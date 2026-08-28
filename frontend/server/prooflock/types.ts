@@ -164,6 +164,7 @@ export type EvidenceEnvelopeV1 = Readonly<{
   computeProofs: readonly ComputeProof[];
   verdict: Readonly<{
     riskScore: number;
+    codeRisk: number;
     label: "SAFE" | "CAUTION" | "FLAGGED";
   }>;
   omissions: readonly string[];

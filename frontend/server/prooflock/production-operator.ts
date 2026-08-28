@@ -34,7 +34,8 @@ type Environment = Record<string, string | undefined>;
 
 export type ProductionOperatorConfig = Readonly<{
   rpcUrl: string; storageIndexer: string; flowAddress: HexAddress; registryAddress: HexAddress;
-  adminAddress: HexAddress; scannerAddress: HexAddress; guardianAddress: HexAddress; scannerPrivateKey: string;
+  adminAddress: HexAddress; scannerAddress: HexAddress; guardianAddress: HexAddress; computeAddress: HexAddress;
+  scannerPrivateKey: string;
   guardianPrivateKey: string; computePrivateKey: string; scannerSoftwareVersion: string; policyVersion: number;
   computeProvider: HexAddress; computeModel: string; stateDirectory: string;
   spendAuthorized: true; confirmations: number; timeoutMs: number;
@@ -70,11 +71,12 @@ export function readProductionOperatorConfig(
   const adminAddress = address(env, "PROOFLOCK_ADMIN_ADDRESS");
   bindKey(scannerPrivateKey, scannerAddress, "scanner signing key");
   bindKey(guardianPrivateKey, guardianAddress, "guardian signing key");
-  const computeAddress = keyAddress(computePrivateKey, "Compute payer signing key");
+  const computeAddress = keyAddress(computePrivateKey, "Compute payer signing key") as HexAddress;
   if (new Set([adminAddress, scannerAddress, guardianAddress].map((value) => value.toLowerCase())).size !== 3) {
     throw new Error("ProofLock admin, scanner, and guardian custody must remain distinct");
   }
-  if ([scannerAddress, guardianAddress].some((address) => address.toLowerCase() === computeAddress.toLowerCase())) {
+  if ([adminAddress, scannerAddress, guardianAddress]
+    .some((address) => address.toLowerCase() === computeAddress.toLowerCase())) {
     throw new Error("ProofLock Compute payer key must remain distinct from Registry role keys");
   }
   return Object.freeze({
@@ -82,7 +84,8 @@ export function readProductionOperatorConfig(
     storageIndexer: exactUrl(env, "ZERO_G_STORAGE_INDEXER", MAINNET_INDEXER, "mainnet Storage indexer"),
     flowAddress: exactAddress(env, "PROOFLOCK_STORAGE_FLOW_ADDRESS", MAINNET_FLOW),
     registryAddress: address(env, "PROOFLOCK_REGISTRY_V2_ADDRESS"),
-    adminAddress, scannerAddress, guardianAddress, scannerPrivateKey, guardianPrivateKey, computePrivateKey,
+    adminAddress, scannerAddress, guardianAddress, computeAddress,
+    scannerPrivateKey, guardianPrivateKey, computePrivateKey,
     scannerSoftwareVersion: boundedText(env, "PROOFLOCK_SCANNER_SOFTWARE_VERSION", 128),
     policyVersion: integer(env, "PROOFLOCK_POLICY_VERSION", 1, 4_294_967_295),
     computeProvider: address(env, "PROOFLOCK_COMPUTE_PROVIDER"),
@@ -261,15 +264,16 @@ async function computeResult(
   const behavioral = await runStrictCompute(computeInput(config, "behavioral-risk", context), dependencies);
   const score = parseRiskScore(behavioral.content);
   const proofs = [behavioral.proof];
-  let codeRisk: number | null = null;
+  let aiCodeRisk = 0;
   if (subject.kind !== "EOA") {
     const code = await runStrictCompute(computeInput(config, "contract-risk", context), dependencies);
-    codeRisk = parseContractCodeRisk(code.content);
+    aiCodeRisk = parseContractCodeRisk(code.content);
     proofs.push(code.proof);
   }
+  const codeRisk = Math.max(deterministic.codeRisk, aiCodeRisk);
   const label = score < 30 ? "SAFE" as const : score < 60 ? "CAUTION" as const : "FLAGGED" as const;
   return Object.freeze({ proofs: Object.freeze(proofs), behavioralScore: score, codeRisk,
-    verdict: Object.freeze({ riskScore: score, label }) });
+    verdict: Object.freeze({ riskScore: score, codeRisk, label }) });
 }
 
 function computeInput(
@@ -380,7 +384,9 @@ async function requireCustody(
     [adminRole, config.adminAddress]] as const;
   const forbidden = [[guardianRole, config.scannerAddress], [adminRole, config.scannerAddress],
     [scannerRole, config.guardianAddress], [adminRole, config.guardianAddress],
-    [scannerRole, config.adminAddress], [guardianRole, config.adminAddress]] as const;
+    [scannerRole, config.adminAddress], [guardianRole, config.adminAddress],
+    [scannerRole, config.computeAddress], [guardianRole, config.computeAddress],
+    [adminRole, config.computeAddress]] as const;
   if ((await Promise.all(expected.map(([role, account]) => hasRole(provider, config.registryAddress, role, account)))).includes(false)
     || (await Promise.all(forbidden.map(([role, account]) => hasRole(provider, config.registryAddress, role, account)))).includes(true)) {
     throw new Error("RegistryV2 role custody no longer matches the separated production policy");

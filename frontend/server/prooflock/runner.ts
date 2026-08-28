@@ -26,7 +26,7 @@ export type DeterministicStageResult = Readonly<{
   evidenceSubject: EvidenceEnvelopeV1["subject"]; codeRisk: number; omissions: readonly string[];
 }>;
 export type ComputeStageResult = Readonly<{
-  proofs: readonly ComputeProof[]; behavioralScore: number; codeRisk: number | null;
+  proofs: readonly ComputeProof[]; behavioralScore: number; codeRisk: number;
   verdict: EvidenceEnvelopeV1["verdict"];
 }>;
 export type CanonicalEvidenceResult = Readonly<{
@@ -87,7 +87,7 @@ async function run(
   assertDeterministic(subject, deterministic);
   const compute = await execute("RUNNING_COMPUTE", () => signal
     ? dependencies.runCompute(identity, subject, deterministic, signal) : dependencies.runCompute(identity, subject, deterministic));
-  assertCompute(subject, compute);
+  assertCompute(subject, deterministic, compute);
   const computeRoot = computeProofRoot(compute.proofs);
   const context = Object.freeze({ input, identity, subject, deterministic, compute, computeRoot });
   const canonical = await execute("CANONICALIZING_EVIDENCE", async () => {
@@ -214,13 +214,18 @@ function assertDeterministic(subject: ClassifiedSubject, result: DeterministicSt
   }
 }
 
-function assertCompute(subject: ClassifiedSubject, result: ComputeStageResult): void {
+function assertCompute(
+  subject: ClassifiedSubject,
+  deterministic: DeterministicStageResult,
+  result: ComputeStageResult,
+): void {
   const score = result.behavioralScore;
   const expectedLabel = score < 30 ? "SAFE" : score < 60 ? "CAUTION" : "FLAGGED";
   if (!Number.isSafeInteger(score) || score < 0 || score > 100
     || result.verdict.riskScore !== score || result.verdict.label !== expectedLabel
-    || (subject.kind === "EOA" ? result.codeRisk !== null
-      : !Number.isSafeInteger(result.codeRisk) || result.codeRisk! < 0 || result.codeRisk! > 2)) {
+    || !Number.isSafeInteger(result.codeRisk) || result.codeRisk < 0 || result.codeRisk > 2
+    || result.codeRisk < deterministic.codeRisk || result.verdict.codeRisk !== result.codeRisk
+    || (subject.kind === "EOA" && result.codeRisk !== 0)) {
     throw new ProofLockStageError("RUNNING_COMPUTE", "Compute verdict violates the fixed risk policy");
   }
 }
@@ -277,7 +282,7 @@ function createChainInput(
     computeRoot: context.computeRoot, artifactHash, runtimeCodeHash: context.subject.runtimeCodeHash,
     validForSeconds: context.input.validForSeconds, policyVersion: context.input.policyVersion,
     behavioralScore: context.compute.behavioralScore,
-    codeRisk: Math.max(context.deterministic.codeRisk, context.compute.codeRisk ?? 0), coverage: 0x7f,
+    codeRisk: context.compute.codeRisk, coverage: 0x7f,
   });
 }
 

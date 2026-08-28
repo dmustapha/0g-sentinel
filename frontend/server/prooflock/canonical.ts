@@ -166,6 +166,7 @@ const evidenceEnvelopeSchema = z
     verdict: z
       .object({
         riskScore: safeInteger.max(100),
+        codeRisk: safeInteger.max(2),
         label: z.enum(["SAFE", "CAUTION", "FLAGGED"]),
       })
       .strict(),

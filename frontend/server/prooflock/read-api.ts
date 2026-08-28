@@ -598,14 +598,24 @@ function parseCanonicalEvidence(bytes: Uint8Array): EvidenceEnvelopeV1 {
 function assertEnvelopeRecordBinding(envelope: EvidenceEnvelopeV1, record: Awaited<ReturnType<ProofLockReadDependencies["readProofLock"]>>): void {
   const identityKey = computeIdentityKey(envelope.identity);
   const computeRoot = computeProofRoot(envelope.computeProofs);
+  assertRiskRecordBinding(envelope, record);
   if (identityKey.toLowerCase() !== record.identityKey.toLowerCase()
     || envelope.subject.address.toLowerCase() !== record.subject.toLowerCase()
     || envelope.subject.runtimeCodeHash.toLowerCase() !== record.runtimeCodeHash.toLowerCase()
     || computeRoot.toLowerCase() !== record.computeRoot.toLowerCase()
     || envelope.policyVersion !== record.policyVersion
-    || envelope.verdict.riskScore !== record.behavioralScore
     || record.coverage !== 0x7f) {
     throw new Error("Evidence does not bind to ProofLock record");
+  }
+}
+
+export function assertRiskRecordBinding(
+  envelope: Pick<EvidenceEnvelopeV1, "verdict">,
+  record: Pick<RegistryProofLockRecord, "behavioralScore" | "codeRisk">,
+): void {
+  if (envelope.verdict.riskScore !== record.behavioralScore
+    || envelope.verdict.codeRisk !== record.codeRisk) {
+    throw new Error("Evidence risk verdict does not bind to ProofLock record");
   }
 }
 

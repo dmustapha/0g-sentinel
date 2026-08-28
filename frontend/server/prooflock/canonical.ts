@@ -9,8 +9,11 @@ import type {
   StorageCommitment,
 } from "./types";
 
-const nonEmpty = z.string().refine((value) => value.trim().length > 0);
-const decimalString = z.string().regex(/^(0|[1-9]\d*)$/);
+const UINT64_MAX = (1n << 64n) - 1n;
+const UINT256_MAX = (1n << 256n) - 1n;
+const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
+const IDENTITY_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
+const decimalPattern = /^(0|[1-9]\d*)$/;
 const safeInteger = z
   .number()
   .int()
@@ -31,34 +34,51 @@ const bytes32 = z
   .string()
   .regex(/^0x[0-9a-fA-F]{64}$/)
   .transform((value) => value.toLowerCase() as Bytes32);
+const nonZeroBytes32 = bytes32.refine(
+  (value) => value !== ZERO_BYTES32,
+  "zero bytes32 is not allowed",
+);
+const uint64String = boundedDecimal(UINT64_MAX, "uint64 block number");
+const uint256String = boundedDecimal(UINT256_MAX, "uint256 agent ID");
+const identityRegistry = address.refine(
+  (value) => value === IDENTITY_REGISTRY,
+  "identity registry mismatch",
+);
 
 const deterministicCheckSchema = z
   .object({
-    id: nonEmpty,
-    version: nonEmpty,
+    id: boundedString(128),
+    version: boundedString(128),
     status: z.enum(["PASS", "WARN", "FAIL", "NOT_APPLICABLE"]),
-    inputDigest: bytes32,
-    outputDigest: bytes32,
-    findings: z.array(nonEmpty),
+    inputDigest: nonZeroBytes32,
+    outputDigest: nonZeroBytes32,
+    findings: z.array(boundedString(2048)).max(100),
   })
   .strict();
+
+const usageSchema = z
+  .object({
+    promptTokens: safeInteger,
+    completionTokens: safeInteger,
+    totalTokens: safeInteger,
+  })
+  .strict()
+  .superRefine((usage, context) => {
+    const total = usage.promptTokens + usage.completionTokens;
+    if (!Number.isSafeInteger(total)) addIssue(context, "token count overflow");
+    else if (usage.totalTokens !== total) addIssue(context, "totalTokens mismatch");
+  });
 
 const computeProofSchema = z
   .object({
     purpose: z.enum(["behavioral-risk", "contract-risk"]),
     provider: address,
-    model: nonEmpty,
-    chatId: nonEmpty,
-    receiptDigest: bytes32,
-    requestDigest: bytes32,
-    responseDigest: bytes32,
-    usage: z
-      .object({
-        promptTokens: safeInteger,
-        completionTokens: safeInteger,
-        totalTokens: safeInteger,
-      })
-      .strict(),
+    model: boundedString(256),
+    chatId: boundedString(512),
+    receiptDigest: nonZeroBytes32,
+    requestDigest: nonZeroBytes32,
+    responseDigest: nonZeroBytes32,
+    usage: usageSchema,
     processResponseVerified: z.literal(true),
   })
   .strict()
@@ -72,7 +92,7 @@ const evidenceEnvelopeSchema = z
   .object({
     schema: z.literal("sentinel.prooflock/evidence-v1"),
     proofClass: z.literal("COMPUTE_VERIFIED"),
-    schemaVersion: positiveInteger,
+    schemaVersion: z.literal(1),
     policyVersion: positiveInteger,
     coverage: z
       .object({
@@ -85,7 +105,10 @@ const evidenceEnvelopeSchema = z
         codeCompute: z.discriminatedUnion("status", [
           z.object({ status: z.literal("VERIFIED") }).strict(),
           z
-            .object({ status: z.literal("NOT_APPLICABLE"), reason: nonEmpty })
+            .object({
+              status: z.literal("NOT_APPLICABLE"),
+              reason: boundedString(2048),
+            })
             .strict(),
         ]),
         evidenceStorage: z.literal("PENDING_EXTERNAL_COMMITMENT"),
@@ -96,16 +119,16 @@ const evidenceEnvelopeSchema = z
       .object({
         namespace: z.literal("eip155"),
         chainId: z.literal(16661),
-        registryAddress: address,
-        agentId: decimalString,
+        registryAddress: identityRegistry,
+        agentId: uint256String,
         owner: address,
         agentWallet: address,
-        registrationUri: nonEmpty,
-        registrationDigest: bytes32,
+        registrationUri: boundedString(4096),
+        registrationDigest: nonZeroBytes32,
       })
       .strict(),
     source: z
-      .object({ blockNumber: decimalString, blockHash: bytes32 })
+      .object({ blockNumber: uint64String, blockHash: nonZeroBytes32 })
       .strict(),
     subject: z
       .object({
@@ -113,22 +136,22 @@ const evidenceEnvelopeSchema = z
         kind: z.enum(["EOA", "EIP7702_DELEGATED_EOA", "CONTRACT"]),
         runtimeCodeHash: bytes32,
         delegationTarget: address.optional(),
-        delegationCodeHash: bytes32.optional(),
+        delegationCodeHash: nonZeroBytes32.optional(),
         proxyImplementation: address.optional(),
-        proxyImplementationCodeHash: bytes32.optional(),
+        proxyImplementationCodeHash: nonZeroBytes32.optional(),
       })
       .strict(),
-    deterministicChecks: z.array(deterministicCheckSchema).min(1),
-    computeProofs: z.array(computeProofSchema).min(1),
+    deterministicChecks: z.array(deterministicCheckSchema).min(1).max(64),
+    computeProofs: z.array(computeProofSchema).min(1).max(2),
     verdict: z
       .object({
         riskScore: safeInteger.max(100),
         label: z.enum(["SAFE", "CAUTION", "FLAGGED"]),
       })
       .strict(),
-    omissions: z.array(nonEmpty),
-    scanner: z.object({ address, softwareVersion: nonEmpty }).strict(),
-    previousProofId: bytes32.optional(),
+    omissions: z.array(boundedString(2048)).max(100),
+    scanner: z.object({ address, softwareVersion: boundedString(128) }).strict(),
+    previousProofId: nonZeroBytes32.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -137,22 +160,30 @@ const evidenceEnvelopeSchema = z
     addDuplicateIssue(value.computeProofs.map((proof) => proof.purpose), "purpose", context);
     addComputeIssues(value, context);
     addSubjectIssues(value.subject, context);
+    if (value.identity.agentWallet !== value.subject.address) {
+      addIssue(context, "identity agent wallet must equal subject address");
+    }
   });
 
 const storageCommitmentSchema = z
   .object({
-    envelopeDigest: bytes32,
-    rootHash: bytes32,
-    uploadTxHash: bytes32,
-    retrievedDigest: bytes32,
-    finalizedAtBlock: decimalString,
+    envelopeDigest: nonZeroBytes32,
+    storageRoot: nonZeroBytes32,
+    uploadTxHash: nonZeroBytes32,
+    retrievedDigest: nonZeroBytes32,
+    finalizedAtBlock: uint64String,
     retrievalVerified: z.literal(true),
   })
-  .strict();
+  .strict()
+  .superRefine((value, context) => {
+    if (value.retrievedDigest !== value.envelopeDigest) {
+      addIssue(context, "retrieved digest must equal envelope digest");
+    }
+  });
 
 export function validateEvidenceEnvelope(value: unknown): EvidenceEnvelopeV1 {
   rejectNonCanonicalValues(value);
-  return parse(evidenceEnvelopeSchema, value) as EvidenceEnvelopeV1;
+  return parse(evidenceEnvelopeSchema, value);
 }
 
 export function canonicalizeEvidence(value: unknown): string {
@@ -170,14 +201,14 @@ export function receiptDigest(chatId: string): Bytes32 {
 
 export function validateStorageCommitment(value: unknown): StorageCommitment {
   rejectNonCanonicalValues(value);
-  return parse(storageCommitmentSchema, value) as StorageCommitment;
+  return parse(storageCommitmentSchema, value);
 }
 
 export function canonicalizeStorageCommitment(value: unknown): string {
   return serialize(validateStorageCommitment(value));
 }
 
-function parse(schema: z.ZodType, value: unknown): unknown {
+function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
   if (!result.success) {
     const details = result.error.issues.map((issue) => issue.message).join("; ");
@@ -230,6 +261,7 @@ function countPurpose(value: ComputeInvariantInput, purpose: string): number {
 
 type SubjectInvariantInput = {
   kind: "EOA" | "EIP7702_DELEGATED_EOA" | "CONTRACT";
+  runtimeCodeHash: string;
   delegationTarget?: string;
   delegationCodeHash?: string;
   proxyImplementation?: string;
@@ -240,6 +272,12 @@ function addSubjectIssues(subject: SubjectInvariantInput, context: z.RefinementC
   const delegation = Boolean(subject.delegationTarget || subject.delegationCodeHash);
   const proxyAddress = Boolean(subject.proxyImplementation);
   const proxyHash = Boolean(subject.proxyImplementationCodeHash);
+  if (subject.kind === "EOA" && subject.runtimeCodeHash !== ZERO_BYTES32) {
+    addIssue(context, "EOA runtime code hash must be zero");
+  }
+  if (subject.kind !== "EOA" && subject.runtimeCodeHash === ZERO_BYTES32) {
+    addIssue(context, "contract and EIP-7702 runtime code hash must be nonzero");
+  }
   if (subject.kind === "EOA" && (delegation || proxyAddress || proxyHash)) {
     addIssue(context, "EOA subject cannot carry delegation or proxy provenance");
   }
@@ -261,7 +299,43 @@ function addIssue(context: z.RefinementCtx, message: string) {
   context.addIssue({ code: "custom", message });
 }
 
-function rejectNonCanonicalValues(value: unknown, seen = new WeakSet<object>()): void {
+function boundedString(maximum: number) {
+  return z
+    .string()
+    .max(maximum)
+    .refine((value) => value.trim().length > 0, "string must not be empty");
+}
+
+function boundedDecimal(maximum: bigint, label: string) {
+  return z
+    .string()
+    .regex(decimalPattern)
+    .refine(
+      (value) => decimalPattern.test(value) && BigInt(value) <= maximum,
+      `${label} overflow`,
+    );
+}
+
+type TraversalState = {
+  stack: WeakSet<object>;
+  nodes: number;
+  stringUnits: number;
+};
+
+function rejectNonCanonicalValues(value: unknown): void {
+  visitCanonicalValue(value, 0, {
+    stack: new WeakSet<object>(),
+    nodes: 0,
+    stringUnits: 0,
+  });
+}
+
+function visitCanonicalValue(value: unknown, depth: number, state: TraversalState): void {
+  if (depth > 16) throw new EvidenceValidationError("evidence exceeds maximum depth");
+  state.nodes += 1;
+  if (state.nodes > 10_000) throw new EvidenceValidationError("evidence node limit exceeded");
+  if (value === undefined) throw new EvidenceValidationError("undefined evidence value");
+  if (typeof value === "string") return visitString(value, state);
   if (
     typeof value === "bigint" ||
     (typeof value === "number" && (!Number.isFinite(value) || Object.is(value, -0)))
@@ -269,11 +343,38 @@ function rejectNonCanonicalValues(value: unknown, seen = new WeakSet<object>()):
     throw new EvidenceValidationError("non-canonical numeric value");
   }
   if (!value || typeof value !== "object") return;
-  if (seen.has(value)) throw new EvidenceValidationError("cyclic evidence");
-  seen.add(value);
+  if (state.stack.has(value)) throw new EvidenceValidationError("cyclic evidence");
+  state.stack.add(value);
   for (const [key, child] of Object.entries(value)) {
-    if (child === undefined) throw new EvidenceValidationError(`undefined value at ${key}`);
-    rejectNonCanonicalValues(child, seen);
+    visitString(key, state);
+    visitCanonicalValue(child, depth + 1, state);
   }
-  seen.delete(value);
+  state.stack.delete(value);
+}
+
+function visitString(value: string, state: TraversalState): void {
+  state.stringUnits += value.length;
+  if (state.stringUnits > 262_144) {
+    throw new EvidenceValidationError("evidence string payload limit exceeded");
+  }
+  assertWellFormedUnicode(value);
+}
+
+function assertWellFormedUnicode(value: string): void {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!Number.isFinite(next) || next < 0xdc00 || next > 0xdfff) {
+        throwInvalidSurrogate();
+      }
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) {
+      throwInvalidSurrogate();
+    }
+  }
+}
+
+function throwInvalidSurrogate(): never {
+  throw new EvidenceValidationError("invalid lone Unicode surrogate");
 }

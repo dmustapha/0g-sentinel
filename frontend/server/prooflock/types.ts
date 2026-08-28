@@ -91,7 +91,7 @@ export type ComputeProof = Readonly<{
 export type EvidenceEnvelopeV1 = Readonly<{
   schema: "sentinel.prooflock/evidence-v1";
   proofClass: "COMPUTE_VERIFIED";
-  schemaVersion: number;
+  schemaVersion: 1;
   policyVersion: number;
   coverage: Readonly<{
     preStorageMask: 0x5f;
@@ -136,7 +136,7 @@ export type EvidenceEnvelopeV1 = Readonly<{
 
 export type StorageCommitment = Readonly<{
   envelopeDigest: Bytes32;
-  rootHash: Bytes32;
+  storageRoot: Bytes32;
   uploadTxHash: Bytes32;
   retrievedDigest: Bytes32;
   finalizedAtBlock: string;

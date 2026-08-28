@@ -19,6 +19,8 @@ const CHAT_RECEIPT =
 const BEHAVIORAL_RECEIPT =
   "0x45d8b8bcf01461883d935bd4805523685842ab5246cf14d328a03f343c02ff6a";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
+const IDENTITY_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
 
 function validEnvelope() {
   return {
@@ -40,7 +42,7 @@ function validEnvelope() {
     identity: {
       namespace: "eip155",
       chainId: 16661,
-      registryAddress: "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432",
+      registryAddress: IDENTITY_REGISTRY,
       agentId: "7",
       owner: "0x1111111111111111111111111111111111111111",
       agentWallet: "0x2222222222222222222222222222222222222222",
@@ -54,7 +56,7 @@ function validEnvelope() {
         "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     },
     subject: {
-      address: "0x3333333333333333333333333333333333333333",
+      address: "0x2222222222222222222222222222222222222222",
       kind: "CONTRACT",
       runtimeCodeHash:
         "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
@@ -109,13 +111,13 @@ function validEnvelope() {
 }
 
 const EXPECTED_CANONICAL =
-  '{"computeProofs":[{"chatId":"chat-456","model":"llama-3.3","processResponseVerified":true,"provider":"0x5555555555555555555555555555555555555555","purpose":"behavioral-risk","receiptDigest":"0x45d8b8bcf01461883d935bd4805523685842ab5246cf14d328a03f343c02ff6a","requestDigest":"0x0202020202020202020202020202020202020202020202020202020202020202","responseDigest":"0x0303030303030303030303030303030303030303030303030303030303030303","usage":{"completionTokens":4,"promptTokens":8,"totalTokens":12}},{"chatId":"chat-123","model":"llama-3.3","processResponseVerified":true,"provider":"0x5555555555555555555555555555555555555555","purpose":"contract-risk","receiptDigest":"0xf6329dc5840c2ec545a5c8227b54976fb67dcc850ad41902bcbe78e8a8d7c4f2","requestDigest":"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","responseDigest":"0x0101010101010101010101010101010101010101010101010101010101010101","usage":{"completionTokens":5,"promptTokens":10,"totalTokens":15}}],"coverage":{"behavioralComputeVerified":true,"codeCompute":{"status":"VERIFIED"},"deterministicChecksRun":true,"evidenceStorage":"PENDING_EXTERNAL_COMMITMENT","identityValidated":true,"policyEvaluated":true,"preStorageMask":95,"requiredSealMask":127,"subjectClassified":true},"deterministicChecks":[{"findings":["owner disclosed"],"id":"permissions","inputDigest":"0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","outputDigest":"0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","status":"PASS","version":"1.0.0"}],"identity":{"agentId":"7","agentWallet":"0x2222222222222222222222222222222222222222","chainId":16661,"namespace":"eip155","owner":"0x1111111111111111111111111111111111111111","registrationDigest":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","registrationUri":"ipfs://agent-card","registryAddress":"0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"},"omissions":[],"policyVersion":3,"proofClass":"COMPUTE_VERIFIED","scanner":{"address":"0x4444444444444444444444444444444444444444","softwareVersion":"2.0.0"},"schema":"sentinel.prooflock/evidence-v1","schemaVersion":1,"source":{"blockHash":"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","blockNumber":"12345"},"subject":{"address":"0x3333333333333333333333333333333333333333","kind":"CONTRACT","runtimeCodeHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"verdict":{"label":"SAFE","riskScore":12}}';
+  '{"computeProofs":[{"chatId":"chat-456","model":"llama-3.3","processResponseVerified":true,"provider":"0x5555555555555555555555555555555555555555","purpose":"behavioral-risk","receiptDigest":"0x45d8b8bcf01461883d935bd4805523685842ab5246cf14d328a03f343c02ff6a","requestDigest":"0x0202020202020202020202020202020202020202020202020202020202020202","responseDigest":"0x0303030303030303030303030303030303030303030303030303030303030303","usage":{"completionTokens":4,"promptTokens":8,"totalTokens":12}},{"chatId":"chat-123","model":"llama-3.3","processResponseVerified":true,"provider":"0x5555555555555555555555555555555555555555","purpose":"contract-risk","receiptDigest":"0xf6329dc5840c2ec545a5c8227b54976fb67dcc850ad41902bcbe78e8a8d7c4f2","requestDigest":"0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","responseDigest":"0x0101010101010101010101010101010101010101010101010101010101010101","usage":{"completionTokens":5,"promptTokens":10,"totalTokens":15}}],"coverage":{"behavioralComputeVerified":true,"codeCompute":{"status":"VERIFIED"},"deterministicChecksRun":true,"evidenceStorage":"PENDING_EXTERNAL_COMMITMENT","identityValidated":true,"policyEvaluated":true,"preStorageMask":95,"requiredSealMask":127,"subjectClassified":true},"deterministicChecks":[{"findings":["owner disclosed"],"id":"permissions","inputDigest":"0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","outputDigest":"0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee","status":"PASS","version":"1.0.0"}],"identity":{"agentId":"7","agentWallet":"0x2222222222222222222222222222222222222222","chainId":16661,"namespace":"eip155","owner":"0x1111111111111111111111111111111111111111","registrationDigest":"0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","registrationUri":"ipfs://agent-card","registryAddress":"0x8004a169fb4a3325136eb29fa0ceb6d2e539a432"},"omissions":[],"policyVersion":3,"proofClass":"COMPUTE_VERIFIED","scanner":{"address":"0x4444444444444444444444444444444444444444","softwareVersion":"2.0.0"},"schema":"sentinel.prooflock/evidence-v1","schemaVersion":1,"source":{"blockHash":"0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","blockNumber":"12345"},"subject":{"address":"0x2222222222222222222222222222222222222222","kind":"CONTRACT","runtimeCodeHash":"0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"verdict":{"label":"SAFE","riskScore":12}}';
 
 describe("canonical ProofLock evidence", () => {
   it("matches the fixed JCS bytes and Keccak-256 fixture", () => {
     expect(canonicalizeEvidence(validEnvelope())).toBe(EXPECTED_CANONICAL);
     expect(hashCanonical(validEnvelope())).toBe(
-      "0x078a4bf1725ac6af58b9516cf57efbadeaf5bc5e3b7ecc3345aea985885a590e",
+      "0xe545f1558f7c3179e601d7eefdec874698b31ab2bfac88dccc980b069083a91b",
     );
   });
 
@@ -223,6 +225,7 @@ describe("strict envelope validation", () => {
     ["nested unknown field", (v: any) => (v.identity.extra = true)],
     ["wrong namespace", (v: any) => (v.identity.namespace = "solana")],
     ["wrong chain", (v: any) => (v.identity.chainId = 1)],
+    ["schema version 2", (v: any) => (v.schemaVersion = 2)],
     ["wrong schema", (v: any) => (v.schema = "evidence-v2")],
     ["wrong proof class", (v: any) => (v.proofClass = "SEALED")],
     ["missing coverage", (v: any) => delete v.coverage],
@@ -275,6 +278,19 @@ describe("strict envelope validation", () => {
     expect(() => validateEvidenceEnvelope(value)).toThrow(/duplicate/i);
   });
 
+  it("binds the ERC-8004 wallet to the analyzed subject", () => {
+    const value: any = validEnvelope();
+    value.subject.address = "0x3333333333333333333333333333333333333333";
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/wallet|subject/i);
+  });
+
+  it("requires the canonical chain-16661 identity registry", () => {
+    const value: any = validEnvelope();
+    value.identity.registryAddress =
+      "0x9999999999999999999999999999999999999999";
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/registry/i);
+  });
+
   it("rejects duplicate compute receipt digests", () => {
     const value = validEnvelope();
     value.computeProofs.push({ ...value.computeProofs[0] });
@@ -318,6 +334,7 @@ describe("strict envelope validation", () => {
   it("allows code Compute to be not applicable only for an EOA", () => {
     const eoa: any = validEnvelope();
     eoa.subject.kind = "EOA";
+    eoa.subject.runtimeCodeHash = ZERO_BYTES32;
     eoa.coverage.codeCompute = {
       status: "NOT_APPLICABLE",
       reason: "EOA has no runtime bytecode",
@@ -346,6 +363,7 @@ describe("strict envelope validation", () => {
 
     const eoaWithProof: any = validEnvelope();
     eoaWithProof.subject.kind = "EOA";
+    eoaWithProof.subject.runtimeCodeHash = ZERO_BYTES32;
     eoaWithProof.coverage.codeCompute = {
       status: "NOT_APPLICABLE",
       reason: "EOA has no runtime bytecode",
@@ -366,6 +384,21 @@ describe("strict envelope validation", () => {
     expect(() => validateEvidenceEnvelope(value)).toThrow(/address|zero/i);
   });
 
+  it.each([
+    ["registration digest", (v: any) => (v.identity.registrationDigest = ZERO_BYTES32)],
+    ["source block hash", (v: any) => (v.source.blockHash = ZERO_BYTES32)],
+    ["check input digest", (v: any) => (v.deterministicChecks[0].inputDigest = ZERO_BYTES32)],
+    ["check output digest", (v: any) => (v.deterministicChecks[0].outputDigest = ZERO_BYTES32)],
+    ["Compute receipt digest", (v: any) => (v.computeProofs[0].receiptDigest = ZERO_BYTES32)],
+    ["Compute request digest", (v: any) => (v.computeProofs[0].requestDigest = ZERO_BYTES32)],
+    ["Compute response digest", (v: any) => (v.computeProofs[0].responseDigest = ZERO_BYTES32)],
+    ["previous proof ID", (v: any) => (v.previousProofId = ZERO_BYTES32)],
+  ])("rejects zero %s", (_name, mutate) => {
+    const value: any = validEnvelope();
+    mutate(value);
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/zero/i);
+  });
+
   it("rejects a receipt digest that does not bind its chat ID", () => {
     const value = validEnvelope();
     value.computeProofs[0].receiptDigest = value.computeProofs[0].requestDigest;
@@ -374,6 +407,39 @@ describe("strict envelope validation", () => {
 });
 
 describe("subject provenance invariants", () => {
+  it("uses zero runtime hash only as the plain-EOA marker", () => {
+    const eoa: any = validEnvelope();
+    eoa.subject.kind = "EOA";
+    eoa.subject.runtimeCodeHash = ZERO_BYTES32;
+    eoa.coverage.codeCompute = {
+      status: "NOT_APPLICABLE",
+      reason: "EOA has no runtime bytecode",
+    };
+    eoa.computeProofs = eoa.computeProofs.filter(
+      (proof: any) => proof.purpose !== "contract-risk",
+    );
+    expect(validateEvidenceEnvelope(eoa).subject.runtimeCodeHash).toBe(
+      ZERO_BYTES32,
+    );
+
+    eoa.subject.runtimeCodeHash =
+      "0x1212121212121212121212121212121212121212121212121212121212121212";
+    expect(() => validateEvidenceEnvelope(eoa)).toThrow(/runtime/i);
+
+    for (const kind of ["CONTRACT", "EIP7702_DELEGATED_EOA"]) {
+      const value: any = validEnvelope();
+      value.subject.kind = kind;
+      value.subject.runtimeCodeHash = ZERO_BYTES32;
+      if (kind === "EIP7702_DELEGATED_EOA") {
+        value.subject.delegationTarget =
+          "0x6666666666666666666666666666666666666666";
+        value.subject.delegationCodeHash =
+          "0x1212121212121212121212121212121212121212121212121212121212121212";
+      }
+      expect(() => validateEvidenceEnvelope(value)).toThrow(/runtime/i);
+    }
+  });
+
   it("rejects provenance target fields on a plain EOA", () => {
     for (const field of [
       "delegationTarget",
@@ -383,6 +449,7 @@ describe("subject provenance invariants", () => {
     ]) {
       const value: any = validEnvelope();
       value.subject.kind = "EOA";
+      value.subject.runtimeCodeHash = ZERO_BYTES32;
       value.coverage.codeCompute = {
         status: "NOT_APPLICABLE",
         reason: "EOA has no runtime bytecode",
@@ -414,6 +481,11 @@ describe("subject provenance invariants", () => {
 
     valid.subject.delegationTarget = ZERO_ADDRESS;
     expect(() => validateEvidenceEnvelope(valid)).toThrow(/address|zero/i);
+
+    valid.subject.delegationTarget =
+      "0x6666666666666666666666666666666666666666";
+    valid.subject.delegationCodeHash = ZERO_BYTES32;
+    expect(() => validateEvidenceEnvelope(valid)).toThrow(/hash|zero/i);
   });
 
   it("disallows proxy provenance on EIP-7702 subjects", () => {
@@ -450,6 +522,11 @@ describe("subject provenance invariants", () => {
 
     value.subject.proxyImplementation = ZERO_ADDRESS;
     expect(() => validateEvidenceEnvelope(value)).toThrow(/address|zero/i);
+
+    value.subject.proxyImplementation =
+      "0x7777777777777777777777777777777777777777";
+    value.subject.proxyImplementationCodeHash = ZERO_BYTES32;
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/hash|zero/i);
   });
 
   it("disallows delegation provenance on contracts", () => {
@@ -462,25 +539,148 @@ describe("subject provenance invariants", () => {
   });
 });
 
+describe("hostile input bounds and Unicode safety", () => {
+  it("rejects input deeper than 16 object levels", () => {
+    const value: any = validEnvelope();
+    let cursor: any = value;
+    for (let index = 0; index < 17; index += 1) {
+      cursor.extra = {};
+      cursor = cursor.extra;
+    }
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/depth/i);
+  });
+
+  it("rejects more than 10,000 visited nodes", () => {
+    const value: any = validEnvelope();
+    value.extra = Array.from({ length: 10_001 }, () => 0);
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/node/i);
+  });
+
+  it("rejects an aggregate string payload above 262,144 code units", () => {
+    const value: any = validEnvelope();
+    value.extra = "x".repeat(262_145);
+    expect(() => validateEvidenceEnvelope(value)).toThrow(/string|payload/i);
+  });
+
+  it.each([
+    ["URI", (v: any) => (v.identity.registrationUri = "x".repeat(4097))],
+    ["finding", (v: any) => (v.deterministicChecks[0].findings = ["x".repeat(2049)])],
+    ["omission", (v: any) => (v.omissions = ["x".repeat(2049)])],
+    ["chat ID", (v: any) => (v.computeProofs[0].chatId = "x".repeat(513))],
+    ["model", (v: any) => (v.computeProofs[0].model = "x".repeat(257))],
+    ["check ID", (v: any) => (v.deterministicChecks[0].id = "x".repeat(129))],
+    ["check version", (v: any) => (v.deterministicChecks[0].version = "x".repeat(129))],
+    ["scanner version", (v: any) => (v.scanner.softwareVersion = "x".repeat(129))],
+  ])("rejects an oversized %s", (_name, mutate) => {
+    const value: any = validEnvelope();
+    mutate(value);
+    expect(() => validateEvidenceEnvelope(value)).toThrow();
+  });
+
+  it("caps every variable-length evidence array", () => {
+    const checks: any = validEnvelope();
+    checks.deterministicChecks = Array.from({ length: 65 }, (_, index) => ({
+      ...checks.deterministicChecks[0],
+      id: `check-${index}`,
+    }));
+    expect(() => validateEvidenceEnvelope(checks)).toThrow();
+
+    const findings: any = validEnvelope();
+    findings.deterministicChecks[0].findings = Array.from(
+      { length: 101 },
+      (_, index) => `finding-${index}`,
+    );
+    expect(() => validateEvidenceEnvelope(findings)).toThrow();
+
+    const proofs: any = validEnvelope();
+    proofs.computeProofs.push({ ...proofs.computeProofs[0] });
+    expect(() => validateEvidenceEnvelope(proofs)).toThrow();
+
+    const omissions: any = validEnvelope();
+    omissions.omissions = Array.from(
+      { length: 101 },
+      (_, index) => `omission-${index}`,
+    );
+    expect(() => validateEvidenceEnvelope(omissions)).toThrow();
+  });
+
+  it("enforces uint256 agent IDs and uint64 block numbers", () => {
+    const agent: any = validEnvelope();
+    agent.identity.agentId = (1n << 256n).toString();
+    expect(() => validateEvidenceEnvelope(agent)).toThrow(/uint256|agent/i);
+
+    const source: any = validEnvelope();
+    source.source.blockNumber = (1n << 64n).toString();
+    expect(() => validateEvidenceEnvelope(source)).toThrow(/uint64|block/i);
+  });
+
+  it("rejects cycles but accepts shared noncyclic references", () => {
+    const cyclic: any = validEnvelope();
+    cyclic.extra = cyclic;
+    expect(() => validateEvidenceEnvelope(cyclic)).toThrow(/cyclic/i);
+
+    const shared: any = validEnvelope();
+    const sharedArray = ["shared evidence"];
+    shared.deterministicChecks[0].findings = sharedArray;
+    shared.omissions = sharedArray;
+    expect(validateEvidenceEnvelope(shared).omissions).toEqual(sharedArray);
+  });
+
+  it.each(["\uD800", "\uDC00"])("rejects lone Unicode surrogate %s", (text) => {
+    const value: any = validEnvelope();
+    value.deterministicChecks[0].findings = [text];
+    expect(() => hashCanonical(value)).toThrow(/unicode|surrogate/i);
+  });
+
+  it("preserves well-formed Unicode with JCS key ordering", () => {
+    const value: any = validEnvelope();
+    value.deterministicChecks[0].findings = ["€", "😀", "line\nfeed"];
+    const canonical = canonicalizeEvidence(value);
+    expect(canonical).toContain(
+      '{"findings":["€","😀","line\\nfeed"],"id":"permissions"',
+    );
+    expect(() => hashCanonical(value)).not.toThrow();
+  });
+
+  it("requires exact, overflow-safe token accounting", () => {
+    const mismatch: any = validEnvelope();
+    mismatch.computeProofs[0].usage.totalTokens = 11;
+    expect(() => validateEvidenceEnvelope(mismatch)).toThrow(/total|token/i);
+
+    const overflow: any = validEnvelope();
+    overflow.computeProofs[0].usage.promptTokens = Number.MAX_SAFE_INTEGER;
+    overflow.computeProofs[0].usage.completionTokens = 1;
+    overflow.computeProofs[0].usage.totalTokens = Number.MAX_SAFE_INTEGER;
+    expect(() => validateEvidenceEnvelope(overflow)).toThrow(/overflow/i);
+  });
+});
+
 describe("Storage commitment separation", () => {
   const commitment = {
     envelopeDigest:
-      "0x078a4bf1725ac6af58b9516cf57efbadeaf5bc5e3b7ecc3345aea985885a590e",
-    rootHash:
+      "0xe545f1558f7c3179e601d7eefdec874698b31ab2bfac88dccc980b069083a91b",
+    storageRoot:
       "0x1212121212121212121212121212121212121212121212121212121212121212",
     uploadTxHash:
       "0x1313131313131313131313131313131313131313131313131313131313131313",
     retrievedDigest:
-      "0x078a4bf1725ac6af58b9516cf57efbadeaf5bc5e3b7ecc3345aea985885a590e",
+      "0xe545f1558f7c3179e601d7eefdec874698b31ab2bfac88dccc980b069083a91b",
     finalizedAtBlock: "12350",
     retrievalVerified: true,
   };
 
   it("validates and canonicalizes storage independently", () => {
     expect(validateStorageCommitment(commitment)).toEqual(commitment);
-    expect(canonicalizeStorageCommitment(commitment)).toContain(
-      '"retrievalVerified":true',
-    );
+    const canonical = canonicalizeStorageCommitment(commitment);
+    expect(canonical).toContain('"retrievalVerified":true');
+    expect(canonical).toContain('"storageRoot":');
+    expect(canonical).not.toContain('"rootHash":');
+  });
+
+  it("rejects the retired rootHash field name", () => {
+    const legacy: any = { ...commitment, rootHash: commitment.storageRoot };
+    delete legacy.storageRoot;
+    expect(() => validateStorageCommitment(legacy)).toThrow();
   });
 
   it("does not allow a post-upload commitment inside the envelope", () => {
@@ -495,5 +695,30 @@ describe("Storage commitment separation", () => {
     expect(() =>
       validateStorageCommitment({ ...commitment, finalizedAtBlock: "012350" }),
     ).toThrow();
+    expect(() =>
+      validateStorageCommitment({
+        ...commitment,
+        finalizedAtBlock: (1n << 64n).toString(),
+      }),
+    ).toThrow(/uint64|block/i);
   });
+
+  it("requires retrieval to reproduce the envelope digest", () => {
+    expect(() =>
+      validateStorageCommitment({
+        ...commitment,
+        retrievedDigest:
+          "0x1414141414141414141414141414141414141414141414141414141414141414",
+      }),
+    ).toThrow(/digest/i);
+  });
+
+  it.each(["envelopeDigest", "storageRoot", "uploadTxHash", "retrievedDigest"])(
+    "rejects zero %s",
+    (field) => {
+      expect(() =>
+        validateStorageCommitment({ ...commitment, [field]: ZERO_BYTES32 }),
+      ).toThrow(/zero/i);
+    },
+  );
 });

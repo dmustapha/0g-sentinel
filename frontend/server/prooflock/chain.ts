@@ -39,14 +39,14 @@ export type RegistryProofLockRecord = Readonly<{
 }>;
 
 export type ChainWriteRequest = Readonly<{
-  registryAddress: HexAddress; mode: "SEAL" | "RESEAL"; expectedPriorVersion?: bigint; previousProofId?: Bytes32;
+  registryAddress: HexAddress; scanner: HexAddress; mode: "SEAL" | "RESEAL"; expectedPriorVersion?: bigint; previousProofId?: Bytes32;
   identityKey: Bytes32; subject: HexAddress; envelopeDigest: Bytes32; storageRoot: Bytes32;
   computeRoot: Bytes32; artifactHash: Bytes32; runtimeCodeHash: Bytes32;
   validForSeconds: number; policyVersion: number; behavioralScore: number;
   codeRisk: number; coverage: number;
 }>;
 
-export type ChainWriteResult = Readonly<{ transactionHash: Bytes32; expectedVersion: bigint }>;
+export type ChainWriteResult = Readonly<{ transactionHash: Bytes32; expectedVersion: bigint; signer: HexAddress }>;
 export type DriftWriteRequest = Readonly<{
   registryAddress: HexAddress; identityKey: Bytes32; expectedVersion: bigint; reason: number;
 }>;
@@ -62,9 +62,9 @@ export interface RegistryChainAdapter {
   getChainId(): Promise<bigint>;
   getCode(address: string): Promise<string>;
   getProofLock(identityKey: Bytes32): Promise<RegistryProofLockRecord>;
-  sendTransaction(transaction: Readonly<{ to: HexAddress; data: string }>): Promise<Readonly<{ hash: string; to: string; data: string }>>;
+  sendTransaction(transaction: Readonly<{ to: HexAddress; data: string }>): Promise<Readonly<{ hash: string; to: string; data: string; from: string }>>;
   waitForReceipt(hash: string, confirmations: number, timeoutMs: number): Promise<RegistryReceipt | null>;
-  getTransaction(hash: string): Promise<Readonly<{ hash: string; to: string; data: string }> | null>;
+  getTransaction(hash: string): Promise<Readonly<{ hash: string; to: string; data: string; from: string }> | null>;
 }
 
 export function createEthersRegistryChainAdapter(
@@ -80,7 +80,7 @@ export function createEthersRegistryChainAdapter(
     getProofLock: (identityKey) => getEthersProofLock(provider, registry, identityKey),
     sendTransaction: async (transaction) => {
       const sent = await signer.sendTransaction(transaction);
-      return { hash: sent.hash, to: transaction.to, data: transaction.data };
+      return { hash: sent.hash, to: transaction.to, data: transaction.data, from: sent.from };
     },
     waitForReceipt: async (hash, confirmations, timeoutMs) => {
       const receipt = await provider.waitForTransaction(hash, confirmations, timeoutMs);
@@ -97,7 +97,7 @@ export function createEthersRegistryChainAdapter(
     getTransaction: async (hash) => {
       const transaction = await provider.getTransaction(hash);
       if (!transaction?.to) return null;
-      return { hash: transaction.hash, to: transaction.to, data: transaction.data };
+      return { hash: transaction.hash, to: transaction.to, data: transaction.data, from: transaction.from };
     },
   };
   return Object.freeze(adapter);
@@ -157,11 +157,12 @@ export async function writeProofLock(
   const current = await adapter.getProofLock(request.identityKey);
   const expectedVersion = requireWriteState(request, current);
   const data = encodeWrite(request);
-  const transaction = await send(adapter, request.registryAddress, data);
+  const transaction = await send(adapter, request.registryAddress, data, request.scanner);
   const receipt = await finalize(adapter, transaction.hash, options);
-  await assertTransaction(adapter, transaction.hash, request.registryAddress, data);
+  await assertTransaction(adapter, transaction.hash, request.registryAddress, data, request.scanner);
   assertLockEvent(receipt, request, expectedVersion);
-  return Object.freeze({ transactionHash: bytes32(transaction.hash, false, "transaction hash"), expectedVersion });
+  return Object.freeze({ transactionHash: bytes32(transaction.hash, false, "transaction hash"),
+    expectedVersion, signer: request.scanner });
 }
 
 export const PROOF_LOCK_ID_SCHEMA = "sentinel.prooflock/id-v1" as const;
@@ -253,6 +254,7 @@ function validateRequest(value: ChainWriteRequest): ChainWriteRequest {
   const request = {
     ...snapshot,
     registryAddress: normalizeAddress(snapshot.registryAddress, "registry"),
+    scanner: normalizeAddress(snapshot.scanner, "scanner"),
     subject: normalizeAddress(snapshot.subject, "subject"),
     identityKey: bytes32(snapshot.identityKey, false, "identity key"),
     envelopeDigest: bytes32(snapshot.envelopeDigest, false, "envelope digest"),
@@ -302,7 +304,7 @@ function validateWriteResult(value: ChainWriteResult): ChainWriteResult {
   if (!value || typeof value.expectedVersion !== "bigint"
     || value.expectedVersion < 1n || value.expectedVersion > UINT64_MAX) invalid("write version");
   return Object.freeze({ transactionHash: bytes32(value.transactionHash, false, "write transaction hash"),
-    expectedVersion: value.expectedVersion });
+    expectedVersion: value.expectedVersion, signer: normalizeAddress(value.signer, "write signer") });
 }
 
 async function requireRegistry(adapter: RegistryChainAdapter, registry: HexAddress): Promise<void> {
@@ -372,10 +374,11 @@ function encodeWrite(request: ChainWriteRequest): string {
   ]);
 }
 
-async function send(adapter: RegistryChainAdapter, to: HexAddress, data: string) {
+async function send(adapter: RegistryChainAdapter, to: HexAddress, data: string, expectedFrom?: HexAddress) {
   try {
     const transaction = await adapter.sendTransaction({ to, data });
-    if (!transaction || normalizeAddress(transaction.to, "transaction target") !== to || transaction.data !== data) {
+    if (!transaction || normalizeAddress(transaction.to, "transaction target") !== to || transaction.data !== data
+      || (expectedFrom && normalizeAddress(transaction.from, "transaction sender") !== expectedFrom)) {
       throw new ChainProofError("TRANSACTION_MISMATCH", "Submitted transaction differs from request");
     }
     bytes32(transaction.hash, false, "transaction hash");
@@ -399,10 +402,17 @@ async function finalize(adapter: RegistryChainAdapter, hash: string, options: { 
   return receipt;
 }
 
-async function assertTransaction(adapter: RegistryChainAdapter, hash: string, to: HexAddress, data: string) {
+async function assertTransaction(
+  adapter: RegistryChainAdapter,
+  hash: string,
+  to: HexAddress,
+  data: string,
+  expectedFrom?: HexAddress,
+) {
   const transaction = await adapter.getTransaction(hash);
   if (!transaction || transaction.hash.toLowerCase() !== hash.toLowerCase()
-    || normalizeAddress(transaction.to, "transaction target") !== to || transaction.data !== data) {
+    || normalizeAddress(transaction.to, "transaction target") !== to || transaction.data !== data
+    || (expectedFrom && normalizeAddress(transaction.from, "transaction sender") !== expectedFrom)) {
     throw new ChainProofError("TRANSACTION_MISMATCH", "Finalized transaction calldata mismatch");
   }
 }

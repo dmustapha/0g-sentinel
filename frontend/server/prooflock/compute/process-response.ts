@@ -1,5 +1,5 @@
 import { fork, type ChildProcess } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 export type ProcessResponseVerification = Readonly<{
   provider: string;
@@ -60,7 +60,7 @@ export class SubprocessComputeSdk implements ComputeSdk {
   }
 
   private launchProductionWorker(): ChildProcess {
-    return fork(fileURLToPath(new URL("./sdk-worker.mjs", import.meta.url)), [], {
+    return fork(join(process.cwd(), "server/prooflock/compute/sdk-worker.mjs"), [], {
       env: {
         PATH: process.env.PATH,
         NODE_ENV: process.env.NODE_ENV,

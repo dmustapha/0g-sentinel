@@ -151,7 +151,7 @@ function dependencies(calls: RunnerStage[]): ProofLockRunnerDependencies {
       retrievalVerified: true as const,
       networkProofVerified: false as const,
     }),
-    writeChain: stage("WRITING_CHAIN", { transactionHash: H6, expectedVersion: 1n }),
+    writeChain: stage("WRITING_CHAIN", { transactionHash: H6, expectedVersion: 1n, signer: A }),
     readChainBack: vi.fn(async (input) => {
       calls.push("READING_CHAIN_BACK");
       return {
@@ -320,7 +320,7 @@ describe("controlled ProofLock runner", () => {
       envelopeDigest, storageRoot: H5, uploadTxHash: H6, retrievedDigest: envelopeDigest,
       finalizedAtBlock: "456", retrievalVerified: true, networkProofVerified: false,
     });
-    vi.mocked(deps.writeChain).mockResolvedValueOnce({ transactionHash: H6, expectedVersion: 2n });
+    vi.mocked(deps.writeChain).mockResolvedValueOnce({ transactionHash: H6, expectedVersion: 2n, signer: A });
     vi.mocked(deps.readChainBack).mockImplementationOnce(async (input) => ({
       identityKey: input.identityKey, subject: input.subject, envelopeDigest: input.envelopeDigest,
       storageRoot: input.storageRoot, computeRoot: input.computeRoot, artifactHash: input.artifactHash,
@@ -375,7 +375,7 @@ function chainAdapter(overrides: Partial<RegistryChainAdapter> = {}): RegistryCh
     getChainId: vi.fn(async () => 16661n),
     getCode: vi.fn(async (address) => address.toLowerCase() === REGISTRY ? "0x6000" : "0x"),
     getProofLock: vi.fn(async () => proof),
-    sendTransaction: vi.fn(async ({ to, data }) => ({ hash: H6, to, data })),
+    sendTransaction: vi.fn(async ({ to, data }) => ({ hash: H6, to, data, from: A })),
     waitForReceipt: vi.fn(async () => ({
       transactionHash: H6,
       status: 1,
@@ -384,13 +384,14 @@ function chainAdapter(overrides: Partial<RegistryChainAdapter> = {}): RegistryCh
       confirmations: 3,
       logs: [{ address: REGISTRY, topics: expectedEvent.topics, data: expectedEvent.data }],
     })),
-    getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data: transactionData })),
+    getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data: transactionData, from: A })),
     ...overrides,
   };
 }
 
 const chainRequest = {
   registryAddress: REGISTRY,
+  scanner: A,
   mode: "SEAL" as const,
   identityKey: H1,
   subject: B,
@@ -421,7 +422,7 @@ describe("strict registry chain writer", () => {
     const written = await writeProofLock(adapter, chainRequest, { confirmations: 3, timeoutMs: 10_000 });
     const readAdapter = { ...adapter, getProofLock: vi.fn(async () => record()) };
     const read = await readProofLockBack(readAdapter, chainRequest, written);
-    expect(written).toEqual({ transactionHash: H6, expectedVersion: 1n });
+    expect(written).toEqual({ transactionHash: H6, expectedVersion: 1n, signer: A });
     expect(read).toEqual(record());
   });
 
@@ -442,7 +443,7 @@ describe("strict registry chain writer", () => {
         transactionHash: H6, status: 1, blockNumber: 456n, blockHash: BLOCK,
         confirmations: 3, logs: [{ address: REGISTRY, topics: event.topics, data: event.data }],
       })),
-      getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data: expectedData })),
+      getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data: expectedData, from: A })),
     });
     await writeProofLock(adapter, request, { confirmations: 3, timeoutMs: 10_000 });
     expect(adapter.sendTransaction).toHaveBeenCalledWith({ to: REGISTRY, data: expectedData });
@@ -508,7 +509,7 @@ describe("strict registry chain writer", () => {
   });
 
   it("rejects a mismatched transaction and a missing expected event", async () => {
-    const wrongTx = chainAdapter({ getTransaction: vi.fn(async () => ({ hash: H6, to: A, data: "0x" })) });
+    const wrongTx = chainAdapter({ getTransaction: vi.fn(async () => ({ hash: H6, to: A, data: "0x", from: A })) });
     await expect(writeProofLock(wrongTx, chainRequest, { confirmations: 3, timeoutMs: 10_000 }))
       .rejects.toMatchObject({ code: "TRANSACTION_MISMATCH" });
     const noEvent = chainAdapter({ waitForReceipt: vi.fn(async () => ({ transactionHash: H6, status: 1, blockNumber: 1n, blockHash: BLOCK, confirmations: 3, logs: [] })) });
@@ -518,7 +519,7 @@ describe("strict registry chain writer", () => {
 
   it("rejects readback mismatches", async () => {
     const adapter = chainAdapter({ getProofLock: vi.fn(async () => record({ storageRoot: H6 })) });
-    await expect(readProofLockBack(adapter, chainRequest, { transactionHash: H6, expectedVersion: 1n }))
+    await expect(readProofLockBack(adapter, chainRequest, { transactionHash: H6, expectedVersion: 1n, signer: A }))
       .rejects.toBeInstanceOf(ChainProofError);
   });
 
@@ -617,7 +618,7 @@ describe("strict drift lifecycle write", () => {
         transactionHash: H6, status: 1, blockNumber: 456n, blockHash: BLOCK,
         confirmations: 3, logs: [{ address: REGISTRY, topics: event.topics, data: event.data }],
       })),
-      getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data })),
+      getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data, from: A })),
       ...overrides,
     });
   }
@@ -665,7 +666,7 @@ describe("strict drift lifecycle write", () => {
     ["REGISTRY_UNAVAILABLE", { getCode: vi.fn(async () => "0x") }],
     ["TRANSACTION_REVERTED", { waitForReceipt: vi.fn(async () => ({ transactionHash: H6, status: 0, blockNumber: 1n, blockHash: BLOCK, confirmations: 3, logs: [] })) }],
     ["FINALITY_INCOMPLETE", { waitForReceipt: vi.fn(async () => ({ transactionHash: H6, status: 1, blockNumber: 1n, blockHash: BLOCK, confirmations: 2, logs: [] })) }],
-    ["TRANSACTION_MISMATCH", { getTransaction: vi.fn(async () => ({ hash: H6, to: A, data: "0x" })) }],
+    ["TRANSACTION_MISMATCH", { getTransaction: vi.fn(async () => ({ hash: H6, to: A, data: "0x", from: A })) }],
   ])("fails closed on drift lifecycle dependency error %s", async (code, overrides) => {
     await expect(markProofLockDrift(driftAdapter(overrides), {
       registryAddress: REGISTRY, identityKey: H1, expectedVersion: 1n, reason: 3,

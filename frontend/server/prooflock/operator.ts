@@ -1,12 +1,11 @@
-import { lstatSync } from "node:fs";
-import { isAbsolute } from "node:path";
-import { pathToFileURL } from "node:url";
-
 import { markProofLockDrift, type RegistryChainAdapter } from "./chain";
 import { runOnDemandDriftCheck, type DriftFingerprint } from "./drift";
-import { createProofLockRunner, type ProofLockRunnerDependencies } from "./runner";
+import * as productionOperator from "./production-operator";
+import { createProofLockRunner, type ProofLockRunnerDependencies, type RunnerInput,
+  type RunnerResult, type RunnerStage } from "./runner";
 import type { Bytes32 } from "./types";
-import type { DriftRunner, StreamRunner } from "./api";
+import type { DriftRunner, OperatorRequestInput, StreamRunner } from "./api";
+import type { ProductionOperatorBinding } from "./production-operator";
 
 type DriftOperator = Readonly<{
   chainAdapter: RegistryChainAdapter; registryAddress: `0x${string}`; confirmations: number; timeoutMs: number;
@@ -16,12 +15,26 @@ type DriftOperator = Readonly<{
 type OperatorModule = Readonly<{
   createProofLockDependencies(): Promise<ProofLockRunnerDependencies> | ProofLockRunnerDependencies;
   createProofLockDriftOperator(): Promise<DriftOperator> | DriftOperator;
+  readProductionOperatorBinding(): ProductionOperatorBinding;
 }>;
 
 export async function loadProofLockRunner(): Promise<StreamRunner> {
   const loaded = await loadModule();
   if (typeof loaded.createProofLockDependencies !== "function") throw new Error("Operator runner is unavailable");
-  return createProofLockRunner(await loaded.createProofLockDependencies());
+  if (typeof loaded.readProductionOperatorBinding !== "function") throw new Error("Operator binding is unavailable");
+  const runner = createProofLockRunner(await loaded.createProofLockDependencies());
+  return bindOperatorRunner(runner, loaded.readProductionOperatorBinding());
+}
+
+type FullRunner = Readonly<{ run(input: RunnerInput, report?: (stage: RunnerStage) => void,
+  signal?: AbortSignal): Promise<RunnerResult | unknown> }>;
+
+export function bindOperatorRunner(runner: FullRunner, binding: ProductionOperatorBinding): StreamRunner {
+  return Object.freeze({ run: (request: OperatorRequestInput, report, signal) => runner.run({
+    ...request, registryAddress: binding.registryAddress, scanner: binding.scanner,
+    scannerSoftwareVersion: binding.scannerSoftwareVersion, policyVersion: binding.policyVersion,
+    validForSeconds: binding.validForSeconds,
+  }, report, signal) });
 }
 
 export async function loadProofLockDrift(): Promise<DriftRunner> {
@@ -37,9 +50,5 @@ export async function loadProofLockDrift(): Promise<DriftRunner> {
 }
 
 async function loadModule(): Promise<Partial<OperatorModule>> {
-  const path = process.env.PROOFLOCK_OPERATOR_MODULE;
-  if (!path || !isAbsolute(path)) throw new Error("Operator module is not configured");
-  const metadata = lstatSync(path);
-  if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("Operator module is invalid");
-  return await import(/* webpackIgnore: true */ pathToFileURL(path).href) as Partial<OperatorModule>;
+  return productionOperator;
 }

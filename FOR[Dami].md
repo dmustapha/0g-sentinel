@@ -61,3 +61,15 @@ The runner is the transaction boundary for the whole product. It executes identi
 The contract also checks the analyzed runtime hash at the exact moment the lease is mined. This matters because code could change after the runner's preflight but before transaction execution. Without the contract check, the runner could notice the mismatch only after an ACTIVE lease had already been created. Reseals similarly include the exact prior version, so two competing updates cannot both advance from the same proof.
 
 Drift detection is intentionally on demand, not continuous monitoring. The operator recomputes the identity, card, subject, runtime, proxy or delegation target, implementation hash, and policy fingerprint. If it changed, the drift transaction names the version being invalidated and is accepted only after its calldata, finalized receipt, event, and onchain readback all agree.
+
+### Why the public verifier is trustworthy
+
+The public proof endpoint does not rerun paid inference and does not trust a stored `verified: true` flag. It retrieves the exact evidence and checks the provider's EIP-191 signature, signed request/response transcript, expected signer, provider, model, and current decentralized model-TEE service metadata. It then retrieves the Storage artifact, recomputes its 0G root, recovers the finalized Flow submission transaction and event, reconstructs the canonical Storage commitment, and requires that commitment to match the Registry's `artifactHash`.
+
+Older Sentinel records remain visible as history, but they cannot pass this stricter verifier if they lack the new provenance extension. That is deliberate: backward readability is not backward trust.
+
+### Public reads and operator authority
+
+Public endpoints can resolve identities, read current ProofLocks, discover emitted locks, verify proofs, and inspect health. They cannot start inference, upload Storage, fund ledgers, write leases, or enqueue background scans. Operator mutations require a strong server-only bearer token, and disconnecting from the progress stream aborts the synchronous runner so paid work does not silently continue.
+
+Health is evidence, not theater. It independently checks 0G chain ID, ERC-8004, RegistryV2, AgentGateV2, strict Compute service metadata, and a previously sealed Storage canary. Missing configuration is `UNKNOWN`, required failures return `503`, and Compute health performs no paid inference.

@@ -22,7 +22,7 @@ In progress on `feature/sentinel-prooflock`.
 | Subject analysis | Complete | 67 focused tests; spec and code-quality reviews approved |
 | Strict Storage | Complete | 42 focused tests; corrective security review approved |
 | Strict Compute | Complete | 53 focused tests; transactional replay store; corrective security review approved |
-| Runner and APIs | In progress | Runner/drift complete and reviewed; API/auth/health pending |
+| Runner and APIs | Complete | Runner/drift and API/auth/health corrective reviews approved |
 | Frontend | Pending | Pending |
 | Mainnet and package | Pending | Pending |
 
@@ -91,3 +91,17 @@ In progress on `feature/sentinel-prooflock`.
 - On-demand drift writes are expected-version-bound and verify chain, code, calldata, receipt, finality, exactly one event, and drifted readback before reporting success.
 - Final GREEN: 58 focused runner tests, 452 full ProofLock tests, 140 Hardhat tests, both TypeScript checks, and the Next production build.
 - Reviews: contract/runtime and runner corrective reviews found no open Critical or Important issues.
+
+## API, Auth, and Health Phase
+
+- Commits: `ddfc61c`, `b4e5be4`.
+- Public routes are read-only; authenticated admin SSE and drift routes use a 32–256 byte server-only bearer token with constant-time digest comparison.
+- SSE request abort and response-body cancellation share one signal that stops the synchronous runner before later paid stages; admin bodies are streamed with a hard 16 KiB cutoff.
+- Six legacy public mutation routes return structured `410 GONE`; discovery reads ProofLock events and has no queue, `waitUntil`, or background scan behavior.
+- Every contract read first performs a bounded raw `eth_chainId` check for 16661; static-network assumptions are removed.
+- Public proof verification rechecks exact Compute transcript bytes, EIP-191 signature, signer/provider/model, live decentralized separated model-TEE service state, retrieved Storage bytes/root, finalized Flow transaction/event/calldata, and the canonical Storage commitment against onchain `artifactHash` without paid inference.
+- Health reports six independent timed probes and returns `503` when a required dependency is failed or unknown. Compute health uses the read-only broker and never loads a wallet, funds a ledger, or performs inference.
+- Legacy evidence remains parseable but fails strict public verification when the bounded provenance extension is absent; it is never silently upgraded.
+- Final GREEN: 42 focused API/health tests, 502 combined ProofLock/API tests, 140 Hardhat tests, both TypeScript checks, and the Next production build.
+- Reviews: independent corrective security review found no open Critical or Important issues.
+- Operational note: set `PROOFLOCK_STORAGE_FLOW_FROM_BLOCK` near deployment to bound public Flow event recovery cost.

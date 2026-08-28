@@ -1,9 +1,14 @@
 import { sha256 } from "ethers";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  FileReceiptClaimStore,
   MemoryReceiptClaimStore,
   StrictComputeError,
+  createPinnedSdkProcessResponseVerifier,
   runStrictCompute,
   type ComputeHttpRequest,
   type ComputeHttpResponse,
@@ -25,10 +30,9 @@ const SIGNER = "0x3333333333333333333333333333333333333333";
 const TARGET_SIGNER = "0x4444444444444444444444444444444444444444";
 const MODEL = "0GM-1.0-35B-A3B";
 const CONTENT = '{"riskScore":8,"label":"SAFE"}';
+const SIGNATURE = `0x${"ab".repeat(65)}`;
 
-function input(
-  overrides: Partial<StrictComputeInput> = {}
-): StrictComputeInput {
+function input(overrides: Partial<StrictComputeInput> = {}): StrictComputeInput {
   return {
     chainId: 16661,
     purpose: "behavioral-risk",
@@ -36,6 +40,7 @@ function input(
     model: MODEL,
     systemPrompt: "Return a risk verdict as JSON.",
     userMessage: "Inspect this bounded subject profile.",
+    spendAuthorized: true,
     timeoutMs: 1_000,
     maxResponseBytes: 16_384,
     ...overrides,
@@ -58,14 +63,12 @@ function body(overrides: Record<string, unknown> = {}) {
 }
 
 function encode(value: unknown): Uint8Array {
-  return new TextEncoder().encode(
-    typeof value === "string" ? value : JSON.stringify(value)
-  );
+  return new TextEncoder().encode(typeof value === "string" ? value : JSON.stringify(value));
 }
 
 function inferenceResponse(
   value: unknown = body(),
-  overrides: Partial<ComputeHttpResponse> = {}
+  overrides: Partial<ComputeHttpResponse> = {},
 ): ComputeHttpResponse {
   return {
     status: 200,
@@ -98,11 +101,11 @@ function harness(
     signatureValid?: boolean;
     serviceAdditionalInfo?: string;
     serviceAcknowledged?: boolean;
-    statusAcknowledged?: boolean;
-    statusSigner?: string;
+    serviceValue?: unknown;
+    serviceAfterProcess?: unknown;
     receiptStore?: ReceiptClaimStore;
     hang?: "metadata" | "headers" | "process";
-  } = {}
+  } = {},
 ) {
   const never = new Promise<never>(() => undefined);
   const processResponse = vi.fn(async (): Promise<boolean | null> => {
@@ -110,6 +113,7 @@ function harness(
     if (options.processError) throw options.processError;
     return options.verification === undefined ? true : options.verification;
   });
+  let serviceReads = 0;
   const broker: StrictComputeBroker = {
     inference: {
       getServiceMetadata: vi.fn(async () =>
@@ -118,54 +122,55 @@ function harness(
           : {
               endpoint: "https://compute.example/v1/proxy",
               model: options.metadataModel ?? MODEL,
-            }
+            },
       ),
       getRequestHeaders: vi.fn(async () =>
-        options.hang === "headers" ? never : { Authorization: "signed-voucher" }
+        options.hang === "headers" ? never : { Authorization: "signed-voucher" },
       ),
       processResponse,
-      checkProviderSignerStatus: vi.fn(async () => ({
-        isAcknowledged: options.statusAcknowledged ?? true,
-        teeSignerAddress: options.statusSigner ?? SIGNER,
-      })),
       listService: vi.fn(async () => [
-        {
-          provider: PROVIDER,
-          url: "https://compute.example",
-          model: MODEL,
-          additionalInfo: options.serviceAdditionalInfo ?? "{}",
-          teeSignerAddress: SIGNER,
-          teeSignerAcknowledged: options.serviceAcknowledged ?? true,
-        },
+        (serviceReads++ > 0 && options.serviceAfterProcess) ||
+          options.serviceValue || {
+            provider: PROVIDER,
+            url: "https://compute.example",
+            model: MODEL,
+            additionalInfo:
+              options.serviceAdditionalInfo ??
+              JSON.stringify({
+                ProviderType: "decentralized",
+                TargetSeparated: true,
+                TargetTeeAddress: TARGET_SIGNER,
+              }),
+            teeSignerAddress: SIGNER,
+            teeSignerAcknowledged: options.serviceAcknowledged ?? true,
+          },
       ]),
     },
   };
   const served = options.inference ?? inferenceResponse();
   let postedRequest = new Uint8Array();
-  const request = vi.fn(
-    async (httpRequest: ComputeHttpRequest): Promise<ComputeHttpResponse> => {
-      if (httpRequest.method === "POST") {
-        postedRequest = new Uint8Array(httpRequest.body ?? []);
-        return served;
-      }
-      const text =
-        options.signatureText ?? signedText(postedRequest, served.body);
-      return inferenceResponse(
-        {
-          text,
-          signature: "0xsignature",
-          signing_address: options.responseSigner ?? SIGNER,
-        },
-        { headers: [["content-type", "application/json"]] }
-      );
+  const request = vi.fn(async (httpRequest: ComputeHttpRequest): Promise<ComputeHttpResponse> => {
+    if (httpRequest.method === "POST") {
+      postedRequest = new Uint8Array(httpRequest.body ?? []);
+      return served;
     }
-  );
+    const text = options.signatureText ?? signedText(postedRequest, served.body);
+    return inferenceResponse(
+      {
+        text,
+        signature: SIGNATURE,
+        signing_address: options.responseSigner ?? TARGET_SIGNER,
+      },
+      { headers: [["content-type", "application/json"]] },
+    );
+  });
   const verifySignature = vi.fn(() => options.signatureValid ?? true);
   const dependencies: StrictComputeDependencies = {
     broker,
     transport: { request },
     signatureVerifier: { verifySignature },
     receiptStore: options.receiptStore ?? new MemoryReceiptClaimStore(),
+    processResponseVerifier: { verify: processResponse },
   };
   return { broker, dependencies, processResponse, request, verifySignature };
 }
@@ -180,35 +185,44 @@ describe("strict 0G Compute", () => {
       model: MODEL,
       chatId: "header-chat-id",
       processResponseVerified: true,
+      proofClass: "DECENTRALIZED_MODEL_TEE",
+      signatureScheme: "EIP191",
+      expectedSigner: TARGET_SIGNER,
+      receiptSource: "ZG-Res-Key",
     });
     expect(result.contentBinding).toMatchObject({
-      expectedSigner: SIGNER,
+      expectedSigner: TARGET_SIGNER,
       signatureVerified: true,
       requestSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
       responseSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
     });
+    expect(result.proof).toMatchObject({
+      signature: SIGNATURE,
+      signedTextSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      requestSha256: result.contentBinding.requestSha256,
+      rawResponseSha256: result.contentBinding.responseSha256,
+      responseHeadersSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+    });
     expect(verifySignature).toHaveBeenCalledWith(
       result.contentBinding.signedText,
-      "0xsignature",
-      SIGNER
+      SIGNATURE,
+      TARGET_SIGNER,
     );
     expect(processResponse).toHaveBeenCalledWith(
-      PROVIDER,
-      "header-chat-id",
-      JSON.stringify({
-        prompt_tokens: 8,
-        completion_tokens: 4,
-        total_tokens: 12,
-      })
+      expect.objectContaining({
+        provider: PROVIDER,
+        chatId: "header-chat-id",
+        usage: JSON.stringify({
+          prompt_tokens: 8,
+          completion_tokens: 4,
+          total_tokens: 12,
+        }),
+      }),
     );
   });
 
   it.each([
-    [
-      "malformed signed text",
-      "not-two-sha256-hashes",
-      "COMPUTE_SIGNED_TEXT_INVALID",
-    ],
+    ["malformed signed text", "not-two-sha256-hashes", "COMPUTE_SIGNED_TEXT_INVALID"],
     [
       "request hash mismatch",
       `${"0".repeat(64)}:${"1".repeat(64)}`,
@@ -216,9 +230,7 @@ describe("strict 0G Compute", () => {
     ],
   ] as const)("rejects %s", async (_label, signatureText, code) => {
     const { dependencies } = harness({ signatureText });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      { code }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({ code });
   });
 
   it("rejects response hash mismatch even when the signature is valid", async () => {
@@ -234,36 +246,30 @@ describe("strict 0G Compute", () => {
         return inferenceResponse(
           {
             text: `${hash(exactRequest)}:${"0".repeat(64)}`,
-            signature: "0xsignature",
+            signature: SIGNATURE,
           },
-          { headers: [["content-type", "application/json"]] }
+          { headers: [["content-type", "application/json"]] },
         );
       }),
     };
     const dependencies = { ...h.dependencies, transport };
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_RESPONSE_BINDING_FAILED",
-      }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_RESPONSE_BINDING_FAILED",
+    });
   });
 
   it("rejects a cryptographic signer mismatch", async () => {
     const { dependencies } = harness({ signatureValid: false });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_SIGNATURE_INVALID",
-      }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_SIGNATURE_INVALID",
+    });
   });
 
   it("rejects a signature response that names a different signer", async () => {
     const { dependencies } = harness({ responseSigner: OTHER_PROVIDER });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_SIGNER_MISMATCH",
-      }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_SIGNER_MISMATCH",
+    });
   });
 
   it("uses TargetTeeAddress for a separated decentralized provider", async () => {
@@ -276,103 +282,209 @@ describe("strict 0G Compute", () => {
       responseSigner: TARGET_SIGNER,
     });
     await runStrictCompute(input(), dependencies);
-    expect(verifySignature).toHaveBeenCalledWith(
-      expect.any(String),
-      "0xsignature",
-      TARGET_SIGNER
-    );
+    expect(verifySignature).toHaveBeenCalledWith(expect.any(String), SIGNATURE, TARGET_SIGNER);
   });
 
-  it("keeps the broker signer for a separated centralized provider", async () => {
-    const { dependencies, verifySignature } = harness({
+  it("rejects a centralized router receipt as an unsupported proof class", async () => {
+    const { dependencies } = harness({
       serviceAdditionalInfo: JSON.stringify({
         ProviderType: "centralized",
         TargetSeparated: true,
         TargetTeeAddress: TARGET_SIGNER,
       }),
+      signatureText: `${"0".repeat(64)}:${"1".repeat(64)}:1:2:3`,
     });
-    await runStrictCompute(input(), dependencies);
-    expect(verifySignature).toHaveBeenCalledWith(
-      expect.any(String),
-      "0xsignature",
-      SIGNER
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_PROOF_CLASS_UNSUPPORTED",
+    });
   });
 
-  it.each([
-    ["service", { serviceAcknowledged: false }],
-    ["status", { statusAcknowledged: false }],
-  ] as const)(
-    "rejects an unacknowledged %s signer",
-    async (_label, overrides) => {
-      const { dependencies } = harness(overrides);
+  it.each(["standard", "unknown", undefined] as const)(
+    "rejects ProviderType %s instead of defaulting to decentralized",
+    async (providerType) => {
+      const additionalInfo = {
+        ...(providerType === undefined ? {} : { ProviderType: providerType }),
+        TargetSeparated: true,
+        TargetTeeAddress: TARGET_SIGNER,
+      };
       await expect(
-        runStrictCompute(input(), dependencies)
-      ).rejects.toMatchObject({
-        code: "COMPUTE_SIGNER_UNACKNOWLEDGED",
-      });
-    }
+        runStrictCompute(
+          input(),
+          harness({ serviceAdditionalInfo: JSON.stringify(additionalInfo) }).dependencies,
+        ),
+      ).rejects.toMatchObject({ code: "COMPUTE_PROOF_CLASS_UNSUPPORTED" });
+    },
   );
 
-  it("rejects disagreement between service and status signer", async () => {
-    const { dependencies } = harness({ statusSigner: OTHER_PROVIDER });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+  it("rejects an unacknowledged signer from the immutable service detail", async () => {
+    const { dependencies } = harness({ serviceAcknowledged: false });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_SIGNER_UNACKNOWLEDGED",
+    });
+  });
+
+  it("requires an exact separated target TEE signer", async () => {
+    for (const additionalInfo of [
+      { ProviderType: "decentralized", TargetSeparated: false },
+      { ProviderType: "decentralized", TargetSeparated: true },
       {
-        code: "COMPUTE_SIGNER_MISMATCH",
-      }
-    );
+        ProviderType: "decentralized",
+        TargetSeparated: true,
+        TargetTeeAddress: "0x0000000000000000000000000000000000000000",
+      },
+    ]) {
+      await expect(
+        runStrictCompute(
+          input(),
+          harness({ serviceAdditionalInfo: JSON.stringify(additionalInfo) }).dependencies,
+        ),
+      ).rejects.toMatchObject({ code: "COMPUTE_PROOF_CLASS_UNSUPPORTED" });
+    }
+  });
+
+  it("normalizes an ethers Result-shaped service tuple before validation", async () => {
+    const tuple = [
+      PROVIDER,
+      "inference",
+      "https://compute.example",
+      1n,
+      1n,
+      1n,
+      MODEL,
+      "TEE",
+      JSON.stringify({
+        ProviderType: "decentralized",
+        TargetSeparated: true,
+        TargetTeeAddress: TARGET_SIGNER,
+      }),
+      SIGNER,
+      true,
+    ] as unknown[] & Record<string, unknown>;
+    Object.assign(tuple, {
+      provider: tuple[0],
+      url: tuple[2],
+      model: tuple[6],
+      additionalInfo: tuple[8],
+      teeSignerAddress: tuple[9],
+      teeSignerAcknowledged: tuple[10],
+    });
+    await expect(
+      runStrictCompute(input(), harness({ serviceValue: tuple }).dependencies),
+    ).resolves.toBeDefined();
+  });
+
+  it("requires an explicit spend authorization before requesting a voucher", async () => {
+    const h = harness();
+    const unauthorized = {
+      ...input(),
+      spendAuthorized: false,
+    } as unknown as StrictComputeInput;
+    await expect(runStrictCompute(unauthorized, h.dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_SPEND_NOT_AUTHORIZED",
+    });
+    expect(h.broker.inference.getRequestHeaders).not.toHaveBeenCalled();
   });
 
   it("pins the configured model through metadata and response", async () => {
     const h = harness();
     await runStrictCompute(input(), h.dependencies);
-    expect(h.broker.inference.getServiceMetadata).toHaveBeenCalledWith(
-      PROVIDER,
-      MODEL
-    );
+    expect(h.broker.inference.getServiceMetadata).toHaveBeenCalledWith(PROVIDER, MODEL);
+  });
+
+  it("rejects an on-chain service snapshot change after SDK verification", async () => {
+    const receiptStore: ReceiptClaimStore = {
+      claim: vi.fn(async () => "claim-token"),
+      renew: vi.fn(async () => undefined),
+      commit: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const changed = {
+      provider: PROVIDER,
+      url: "https://compute.example",
+      model: MODEL,
+      additionalInfo: JSON.stringify({
+        ProviderType: "decentralized",
+        TargetSeparated: true,
+        TargetTeeAddress: TARGET_SIGNER,
+        ImageDigest: "changed",
+      }),
+      teeSignerAddress: SIGNER,
+      teeSignerAcknowledged: true,
+    };
+    await expect(
+      runStrictCompute(
+        input(),
+        harness({ receiptStore, serviceAfterProcess: changed }).dependencies,
+      ),
+    ).rejects.toMatchObject({ code: "COMPUTE_SERVICE_UNAVAILABLE" });
+    expect(receiptStore.commit).not.toHaveBeenCalled();
+  });
+
+  it("serializes pinned SDK fetch guards so concurrent verifications cannot escape", async () => {
+    const seen: string[] = [];
+    const urls = {
+      a: "https://compute.example/v1/proxy/signature/a?model=model",
+      b: "https://compute.example/v1/proxy/signature/b?model=model",
+    };
+    const broker = {
+      inference: {
+        processResponse: vi.fn(async (_provider: string, chatId?: string) => {
+          const response = await fetch(urls[chatId as "a" | "b"]);
+          seen.push(((await response.json()) as { id: string }).id);
+          return true;
+        }),
+      },
+    } as unknown as StrictComputeBroker;
+    const verifier = createPinnedSdkProcessResponseVerifier(broker);
+    await Promise.all([
+      verifier.verify({
+        provider: PROVIDER,
+        chatId: "a",
+        usage: "{}",
+        signatureUrl: urls.a,
+        signatureBody: encode({ id: "a" }),
+      }),
+      verifier.verify({
+        provider: PROVIDER,
+        chatId: "b",
+        usage: "{}",
+        signatureUrl: urls.b,
+        signatureBody: encode({ id: "b" }),
+      }),
+    ]);
+    expect(seen).toEqual(["a", "b"]);
   });
 
   it("rejects a metadata model mismatch", async () => {
     const { dependencies } = harness({ metadataModel: "other-model" });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_MODEL_MISMATCH",
-      }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_MODEL_MISMATCH",
+    });
   });
 
   it("rejects a response model mismatch", async () => {
     const { dependencies } = harness({
       inference: inferenceResponse(body({ model: "other-model" })),
     });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_MODEL_MISMATCH",
-      }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_MODEL_MISMATCH",
+    });
   });
 
-  it.each([[false], [null]] as const)(
-    "rejects processResponse %s",
-    async (verification) => {
-      const { dependencies } = harness({ verification });
-      await expect(
-        runStrictCompute(input(), dependencies)
-      ).rejects.toMatchObject({
-        code: "COMPUTE_VERIFICATION_FAILED",
-      });
-    }
-  );
+  it.each([[false], [null]] as const)("rejects processResponse %s", async (verification) => {
+    const { dependencies } = harness({ verification });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_VERIFICATION_FAILED",
+    });
+  });
 
   it("rejects thrown processResponse verification", async () => {
     const { dependencies } = harness({
       processError: new Error("verification unavailable"),
     });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_VERIFICATION_ERROR",
-      }
-    );
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_VERIFICATION_ERROR",
+    });
   });
 
   it("requires an injected receipt claim store", async () => {
@@ -381,18 +493,16 @@ describe("strict 0G Compute", () => {
       ...dependencies,
       receiptStore: undefined,
     } as unknown as StrictComputeDependencies;
-    await expect(runStrictCompute(input(), withoutStore)).rejects.toMatchObject(
-      {
-        code: "COMPUTE_REPLAY_STORE_REQUIRED",
-      }
-    );
+    await expect(runStrictCompute(input(), withoutStore)).rejects.toMatchObject({
+      code: "COMPUTE_REPLAY_STORE_REQUIRED",
+    });
   });
 
   it("rejects replay across two runner instances sharing an atomic store", async () => {
     const receiptStore = new MemoryReceiptClaimStore();
     await runStrictCompute(input(), harness({ receiptStore }).dependencies);
     await expect(
-      runStrictCompute(input(), harness({ receiptStore }).dependencies)
+      runStrictCompute(input(), harness({ receiptStore }).dependencies),
     ).rejects.toMatchObject({
       code: "COMPUTE_RECEIPT_REPLAY",
     });
@@ -401,6 +511,7 @@ describe("strict 0G Compute", () => {
   it("keys replay claims by chain, provider, and chat ID with transcript metadata", async () => {
     const receiptStore: ReceiptClaimStore = {
       claim: vi.fn(async () => "claim-token"),
+      renew: vi.fn(async () => undefined),
       commit: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
@@ -419,42 +530,38 @@ describe("strict 0G Compute", () => {
     await runStrictCompute(input(), harness({ receiptStore }).dependencies);
     const equivocated = inferenceResponse(
       body({
-        choices: [
-          { message: { content: '{"riskScore":99,"label":"FLAGGED"}' } },
-        ],
-      })
+        choices: [{ message: { content: '{"riskScore":99,"label":"FLAGGED"}' } }],
+      }),
     );
     await expect(
-      runStrictCompute(
-        input(),
-        harness({ receiptStore, inference: equivocated }).dependencies
-      )
+      runStrictCompute(input(), harness({ receiptStore, inference: equivocated }).dependencies),
     ).rejects.toMatchObject({ code: "COMPUTE_RECEIPT_REPLAY" });
   });
 
   it("releases a failed claim so the same shared store can retry", async () => {
     const receiptStore = new MemoryReceiptClaimStore();
     await expect(
-      runStrictCompute(
-        input(),
-        harness({ receiptStore, verification: false }).dependencies
-      )
+      runStrictCompute(input(), harness({ receiptStore, verification: false }).dependencies),
     ).rejects.toBeInstanceOf(StrictComputeError);
     await expect(
-      runStrictCompute(input(), harness({ receiptStore }).dependencies)
+      runStrictCompute(input(), harness({ receiptStore }).dependencies),
     ).resolves.toBeDefined();
   });
 
   it.each(["metadata", "headers", "process"] as const)(
-    "times out a hung %s stage",
+    "does not falsely return while non-cancellable %s SDK work is still live",
     async (hang) => {
       const { dependencies } = harness({ hang });
-      await expect(
-        runStrictCompute(input({ timeoutMs: 10 }), dependencies)
-      ).rejects.toMatchObject({
-        code: "COMPUTE_TIMEOUT",
-      });
-    }
+      const run = runStrictCompute(input({ timeoutMs: 10 }), dependencies);
+      const state = await Promise.race([
+        run.then(
+          () => "settled",
+          () => "settled",
+        ),
+        new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 30)),
+      ]);
+      expect(state).toBe("pending");
+    },
   );
 
   it("does not commit a receipt when processResponse resolves after timeout", async () => {
@@ -464,37 +571,54 @@ describe("strict 0G Compute", () => {
     });
     const receiptStore: ReceiptClaimStore = {
       claim: vi.fn(async () => "late-claim"),
+      renew: vi.fn(async () => undefined),
       commit: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const h = harness({ receiptStore });
     h.processResponse.mockImplementationOnce(() => pending);
     const run = runStrictCompute(input({ timeoutMs: 10 }), h.dependencies);
-    await expect(run).rejects.toMatchObject({ code: "COMPUTE_TIMEOUT" });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(receiptStore.commit).not.toHaveBeenCalled();
     resolveProcess(true);
+    await expect(run).rejects.toMatchObject({ code: "COMPUTE_TIMEOUT" });
     await vi.waitFor(() => expect(receiptStore.release).toHaveBeenCalled());
     expect(receiptStore.commit).not.toHaveBeenCalled();
   });
 
   it("preserves headers and keeps router verification and billing separate", async () => {
     const result = await runStrictCompute(input(), harness().dependencies);
-    expect(result.rawResponseHeaders).toContainEqual([
-      "x-custom-proof-header",
-      "preserve-me",
-    ]);
+    expect(result.rawResponseHeaders).toContainEqual(["x-custom-proof-header", "preserve-me"]);
     expect(result.routerVerification).toEqual({ reportedTeeVerified: true });
     expect(result.billingMetadata).toEqual({ charged: "0.00001", unit: "0G" });
     expect(result).not.toHaveProperty("settled");
+  });
+
+  it("hashes deterministic response headers without sensitive authorization", async () => {
+    const first = inferenceResponse(body(), {
+      headers: [
+        ["ZG-Res-Key", "header-chat-id"],
+        ["Authorization", "secret-one"],
+        ["X-Proof", " value "],
+      ],
+    });
+    const second = inferenceResponse(body(), {
+      headers: [
+        ["x-proof", "value"],
+        ["authorization", "secret-two"],
+        ["zg-res-key", "header-chat-id"],
+      ],
+    });
+    const left = await runStrictCompute(input(), harness({ inference: first }).dependencies);
+    const right = await runStrictCompute(input(), harness({ inference: second }).dependencies);
+    expect(left.proof.responseHeadersSha256).toBe(right.proof.responseHeadersSha256);
   });
 
   it("uses body ID only when ZG-Res-Key is absent", async () => {
     const served = inferenceResponse(body(), {
       headers: [["content-type", "application/json"]],
     });
-    const result = await runStrictCompute(
-      input(),
-      harness({ inference: served }).dependencies
-    );
+    const result = await runStrictCompute(input(), harness({ inference: served }).dependencies);
     expect(result.receiptSource).toBe("body-id-fallback");
     expect(result.proof.chatId).toBe("body-chat-id");
   });
@@ -506,7 +630,7 @@ describe("strict 0G Compute", () => {
       headers: [["content-type", "application/json"]],
     });
     await expect(
-      runStrictCompute(input(), harness({ inference: served }).dependencies)
+      runStrictCompute(input(), harness({ inference: served }).dependencies),
     ).rejects.toMatchObject({ code: "COMPUTE_CHAT_ID_MISSING" });
   });
 
@@ -515,20 +639,16 @@ describe("strict 0G Compute", () => {
       inference: inferenceResponse(
         body({
           x_0g_trace: { provider: PROVIDER, tee_verified: "true" },
-        })
+        }),
       ),
     });
-    await expect(
-      runStrictCompute(input(), trace.dependencies)
-    ).rejects.toMatchObject({
+    await expect(runStrictCompute(input(), trace.dependencies)).rejects.toMatchObject({
       code: "COMPUTE_RESPONSE_INVALID",
     });
     const http = harness({
       inference: inferenceResponse(body(), { status: 503 }),
     });
-    await expect(
-      runStrictCompute(input(), http.dependencies)
-    ).rejects.toMatchObject({
+    await expect(runStrictCompute(input(), http.dependencies)).rejects.toMatchObject({
       code: "COMPUTE_PROVIDER_HTTP_ERROR",
     });
   });
@@ -538,18 +658,14 @@ describe("strict 0G Compute", () => {
       inference: inferenceResponse(
         body({
           x_0g_trace: { provider: OTHER_PROVIDER, tee_verified: true },
-        })
+        }),
       ),
     });
-    await expect(
-      runStrictCompute(input(), mismatch.dependencies)
-    ).rejects.toMatchObject({
+    await expect(runStrictCompute(input(), mismatch.dependencies)).rejects.toMatchObject({
       code: "COMPUTE_PROVIDER_MISMATCH",
     });
     const malformed = harness({ inference: inferenceResponse("not-json") });
-    await expect(
-      runStrictCompute(input(), malformed.dependencies)
-    ).rejects.toMatchObject({
+    await expect(runStrictCompute(input(), malformed.dependencies)).rejects.toMatchObject({
       code: "COMPUTE_RESPONSE_INVALID",
     });
   });
@@ -566,9 +682,7 @@ describe("strict 0G Compute", () => {
         endpoint,
         model: MODEL,
       });
-      await expect(
-        runStrictCompute(input(), h.dependencies)
-      ).rejects.toMatchObject({
+      await expect(runStrictCompute(input(), h.dependencies)).rejects.toMatchObject({
         code: "COMPUTE_METADATA_INVALID",
       });
       expect(h.broker.inference.getRequestHeaders).not.toHaveBeenCalled();
@@ -587,9 +701,7 @@ describe("strict 0G Compute", () => {
       method: "GET",
       allowRedirects: false,
     });
-    expect(
-      new Headers(request.mock.calls[1][0].headers).has("authorization")
-    ).toBe(false);
+    expect(new Headers(request.mock.calls[1][0].headers).has("authorization")).toBe(false);
   });
 
   it("bounds the test-only memory store rather than evicting replay history", async () => {
@@ -599,12 +711,82 @@ describe("strict 0G Compute", () => {
       requestSha256: `0x${"1".repeat(64)}` as const,
       responseSha256: `0x${"2".repeat(64)}` as const,
     };
-    const first = await store.claim("one", metadata);
-    await store.commit("one", first!);
-    await expect(store.claim("two", metadata)).rejects.toMatchObject({
+    const first = await store.claim("one", metadata, Date.now() + 1_000);
+    await store.commit("one", first!, Date.now() + 7 * 24 * 60 * 60 * 1_000);
+    await expect(store.claim("two", metadata, Date.now() + 1_000)).rejects.toMatchObject({
       code: "COMPUTE_REPLAY_STORE_FULL",
     });
-    await expect(store.claim("one", metadata)).resolves.toBeNull();
+    await expect(store.claim("one", metadata, Date.now() + 1_000)).resolves.toBeNull();
+  });
+
+  it("persists committed replay and equivocation rejection across file-store restarts", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    let now = 1_000_000;
+    const options = { stateDirectory: directory, clock: () => now };
+    try {
+      const metadata = {
+        model: MODEL,
+        requestSha256: `0x${"1".repeat(64)}` as const,
+        responseSha256: `0x${"2".repeat(64)}` as const,
+      };
+      const first = new FileReceiptClaimStore(options);
+      const token = await first.claim("receipt", metadata, now + 60_000);
+      await first.commit("receipt", token!, now + 7 * 24 * 60 * 60 * 1_000);
+      const restarted = new FileReceiptClaimStore(options);
+      await expect(restarted.claim("receipt", metadata, now + 60_000)).resolves.toBeNull();
+      await expect(
+        restarted.claim(
+          "receipt",
+          { ...metadata, responseSha256: `0x${"3".repeat(64)}` },
+          now + 60_000,
+        ),
+      ).resolves.toBeNull();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("recovers an expired pending file lease after restart", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    let now = 1_000_000;
+    const options = { stateDirectory: directory, clock: () => now };
+    try {
+      const metadata = {
+        model: MODEL,
+        requestSha256: `0x${"1".repeat(64)}` as const,
+        responseSha256: `0x${"2".repeat(64)}` as const,
+      };
+      await new FileReceiptClaimStore(options).claim("receipt", metadata, now + 1_000);
+      now += 1_001;
+      await expect(
+        new FileReceiptClaimStore(options).claim("receipt", metadata, now + 1_000),
+      ).resolves.toMatch(/^0x[0-9a-f]+$/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces durable file-store capacity without evicting proof history", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    const now = 1_000_000;
+    const store = new FileReceiptClaimStore({
+      stateDirectory: directory,
+      clock: () => now,
+      maximumRecords: 1,
+    });
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    try {
+      await store.claim("one", metadata, now + 1_000);
+      await expect(store.claim("two", metadata, now + 1_000)).rejects.toMatchObject({
+        code: "COMPUTE_REPLAY_STORE_FULL",
+      });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 
   it("rejects private literal endpoints before opening a socket", async () => {
@@ -616,7 +798,7 @@ describe("strict 0G Compute", () => {
         signal: controller.signal,
         maxResponseBytes: 512,
         allowRedirects: false,
-      })
+      }),
     ).rejects.toMatchObject({ reason: "PRIVATE_NETWORK" });
   });
 

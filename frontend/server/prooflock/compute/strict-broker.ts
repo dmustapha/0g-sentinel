@@ -1,8 +1,5 @@
-import {
-  createZGComputeNetworkBroker,
-  InferenceVerifier,
-} from "@0gfoundation/0g-compute-ts-sdk";
-import { hexlify, keccak256, randomBytes, sha256, toUtf8Bytes } from "ethers";
+import { createZGComputeNetworkBroker } from "@0gfoundation/0g-compute-ts-sdk";
+import { keccak256, toUtf8Bytes } from "ethers";
 import { z } from "zod";
 
 import { receiptDigest } from "../canonical";
@@ -10,92 +7,62 @@ import type { ComputeProof, HexAddress } from "../types";
 import {
   SafeComputeHttpError,
   safeComputeTransport,
-  validateComputeUrl,
   type ComputeHttpRequest,
   type ComputeHttpResponse,
   type ComputeHttpTransport,
 } from "./safe-https";
+import {
+  assertSameServiceSnapshot,
+  assertServiceEndpoint,
+  resolveExpectedSigner,
+  resolveService,
+  validateBaseUrl,
+  type ServiceDetail,
+} from "./service";
+import {
+  decodeUtf8,
+  parseSignature,
+  responseHeadersSha256,
+  verifyContentBinding,
+  type ContentBinding,
+  type FetchedSignature,
+  type SignatureVerifier,
+} from "./transcript";
 
 export type { ComputeHttpRequest, ComputeHttpResponse, ComputeHttpTransport };
 
-export type StrictComputeErrorCode =
-  | "COMPUTE_INPUT_INVALID"
-  | "COMPUTE_METADATA_INVALID"
-  | "COMPUTE_MODEL_MISMATCH"
-  | "COMPUTE_BROKER_ERROR"
-  | "COMPUTE_PROVIDER_HTTP_ERROR"
-  | "COMPUTE_RESPONSE_TOO_LARGE"
-  | "COMPUTE_RESPONSE_INVALID"
-  | "COMPUTE_CHAT_ID_MISSING"
-  | "COMPUTE_PROVIDER_MISMATCH"
-  | "COMPUTE_SERVICE_UNAVAILABLE"
-  | "COMPUTE_SIGNER_UNACKNOWLEDGED"
-  | "COMPUTE_SIGNER_MISMATCH"
-  | "COMPUTE_SIGNATURE_INVALID"
-  | "COMPUTE_SIGNED_TEXT_INVALID"
-  | "COMPUTE_REQUEST_BINDING_FAILED"
-  | "COMPUTE_RESPONSE_BINDING_FAILED"
-  | "COMPUTE_RECEIPT_REPLAY"
-  | "COMPUTE_REPLAY_STORE_REQUIRED"
-  | "COMPUTE_REPLAY_STORE_FULL"
-  | "COMPUTE_VERIFICATION_FAILED"
-  | "COMPUTE_VERIFICATION_ERROR"
-  | "COMPUTE_TIMEOUT";
-
-export class StrictComputeError extends Error {
-  constructor(
-    public readonly code: StrictComputeErrorCode,
-    message: string,
-    options?: ErrorOptions
-  ) {
-    super(message, options);
-    this.name = "StrictComputeError";
-  }
-}
-
-type ServiceDetail = Readonly<{
-  provider: string;
-  url: string;
-  model: string;
-  additionalInfo: string;
-  teeSignerAddress: string;
-  teeSignerAcknowledged: boolean;
-}>;
+export { StrictComputeError } from "./strict-error";
+export type { StrictComputeErrorCode } from "./strict-error";
+import { computeFailure as failure, StrictComputeError } from "./strict-error";
+import {
+  createPinnedSdkProcessResponseVerifier,
+  type ProcessResponseVerifier,
+} from "./process-response";
+import {
+  FileReceiptClaimStore,
+  MIN_COMMITTED_RETENTION_MS,
+  type ReceiptClaimMetadata,
+  type ReceiptClaimStore,
+} from "./receipt-store";
+export { FileReceiptClaimStore, MemoryReceiptClaimStore } from "./receipt-store";
+export type { ReceiptClaimMetadata, ReceiptClaimStore } from "./receipt-store";
+export { createPinnedSdkProcessResponseVerifier } from "./process-response";
+export type { ProcessResponseVerification, ProcessResponseVerifier } from "./process-response";
 
 export type StrictComputeBroker = Readonly<{
   inference: Readonly<{
     getServiceMetadata(
       provider: string,
-      model?: string
+      model?: string,
     ): Promise<{ endpoint: string; model: string }>;
     getRequestHeaders(provider: string, content?: string): Promise<unknown>;
-    processResponse(
-      provider: string,
-      chatId?: string,
-      usage?: string
-    ): Promise<boolean | null>;
-    checkProviderSignerStatus(provider: string): Promise<{
-      isAcknowledged: boolean;
-      teeSignerAddress: string;
-    }>;
+    processResponse(provider: string, chatId?: string, usage?: string): Promise<boolean | null>;
     listService(
       offset?: number,
       limit?: number,
-      includeUnacknowledged?: boolean
-    ): Promise<readonly ServiceDetail[]>;
+      includeUnacknowledged?: boolean,
+    ): Promise<readonly unknown[]>;
   }>;
-}>;
-
-export type ReceiptClaimMetadata = Readonly<{
-  model: string;
-  requestSha256: `0x${string}`;
-  responseSha256: `0x${string}`;
-}>;
-
-export type ReceiptClaimStore = Readonly<{
-  claim(key: string, metadata: ReceiptClaimMetadata): Promise<string | null>;
-  commit(key: string, token: string): Promise<void>;
-  release(key: string, token: string): Promise<void>;
 }>;
 
 export type StrictComputeInput = Readonly<{
@@ -105,6 +72,7 @@ export type StrictComputeInput = Readonly<{
   model: string;
   systemPrompt: string;
   userMessage: string;
+  spendAuthorized: true;
   timeoutMs?: number;
   maxResponseBytes?: number;
 }>;
@@ -121,6 +89,8 @@ export type StrictComputeResult = Readonly<{
     signedText: string;
     requestSha256: `0x${string}`;
     responseSha256: `0x${string}`;
+    signature: string;
+    signedTextSha256: `0x${string}`;
     signatureVerified: true;
   }>;
 }>;
@@ -128,14 +98,16 @@ export type StrictComputeResult = Readonly<{
 export type StrictComputeDependencies = Readonly<{
   broker: StrictComputeBroker;
   receiptStore: ReceiptClaimStore;
+  processResponseVerifier: ProcessResponseVerifier;
   transport?: ComputeHttpTransport;
-  signatureVerifier?: Readonly<{
-    verifySignature(
-      text: string,
-      signature: string,
-      expectedSigner: string
-    ): boolean;
-  }>;
+  signatureVerifier?: SignatureVerifier;
+}>;
+
+export type ProductionStrictComputeOptions = Readonly<{
+  broker: StrictComputeBroker;
+  stateDirectory: string;
+  transport?: ComputeHttpTransport;
+  signatureVerifier?: StrictComputeDependencies["signatureVerifier"];
 }>;
 
 const addressPattern = /^0x[0-9a-fA-F]{40}$/;
@@ -152,6 +124,7 @@ const inputSchema = z
     model: nonempty(256),
     systemPrompt: nonempty(32_768),
     userMessage: nonempty(262_144),
+    spendAuthorized: z.literal(true),
     timeoutMs: z.number().int().min(1).max(120_000).default(90_000),
     maxResponseBytes: z.number().int().min(256).max(1_048_576).default(131_072),
   })
@@ -188,7 +161,7 @@ const responseSchema = z
           .object({
             message: z.object({ content: nonempty(65_536) }).passthrough(),
           })
-          .passthrough()
+          .passthrough(),
       )
       .min(1)
       .max(16),
@@ -196,105 +169,42 @@ const responseSchema = z
     x_0g_trace: traceSchema.optional(),
   })
   .passthrough();
-const signatureSchema = z
-  .object({
-    text: nonempty(256),
-    signature: nonempty(512),
-    signing_address: z.string().regex(addressPattern).optional(),
-  })
-  .passthrough();
-const serviceSchema = z
-  .object({
-    provider: z.string().regex(addressPattern),
-    url: nonempty(4_096),
-    model: nonempty(256),
-    additionalInfo: z.string().max(65_536),
-    teeSignerAddress: z.string().regex(addressPattern),
-    teeSignerAcknowledged: z.boolean(),
-  })
-  .passthrough();
-
-/** Bounded process-local helper for tests and one-shot CLI runs; not a durable production store. */
-export class MemoryReceiptClaimStore implements ReceiptClaimStore {
-  private readonly records = new Map<
-    string,
-    {
-      token: string;
-      state: "CLAIMED" | "COMMITTED";
-      metadata: ReceiptClaimMetadata;
-    }
-  >();
-
-  constructor(private readonly maximum = 10_000) {
-    if (!Number.isInteger(maximum) || maximum < 1 || maximum > 100_000) {
-      throw new TypeError("MemoryReceiptClaimStore maximum is out of bounds");
-    }
-  }
-
-  async claim(
-    key: string,
-    metadata: ReceiptClaimMetadata
-  ): Promise<string | null> {
-    if (this.records.has(key)) return null;
-    if (this.records.size >= this.maximum) {
-      throw failure(
-        "COMPUTE_REPLAY_STORE_FULL",
-        "test-only receipt store is full"
-      );
-    }
-    const token = hexlify(randomBytes(32));
-    this.records.set(key, {
-      token,
-      state: "CLAIMED",
-      metadata: Object.freeze({ ...metadata }),
-    });
-    return token;
-  }
-
-  async commit(key: string, token: string): Promise<void> {
-    const record = this.records.get(key);
-    if (!record || record.token !== token || record.state !== "CLAIMED")
-      storeConflict();
-    record.state = "COMMITTED";
-  }
-
-  async release(key: string, token: string): Promise<void> {
-    const record = this.records.get(key);
-    if (record?.token === token && record.state === "CLAIMED")
-      this.records.delete(key);
-  }
-}
-
 export async function createStrictComputeBroker(
-  signer: Parameters<typeof createZGComputeNetworkBroker>[0]
+  signer: Parameters<typeof createZGComputeNetworkBroker>[0],
 ): Promise<StrictComputeBroker> {
   return await createZGComputeNetworkBroker(signer);
 }
 
+export function createProductionStrictComputeDependencies(
+  options: ProductionStrictComputeOptions,
+): StrictComputeDependencies {
+  return {
+    broker: options.broker,
+    receiptStore: new FileReceiptClaimStore({
+      stateDirectory: options.stateDirectory,
+    }),
+    processResponseVerifier: createPinnedSdkProcessResponseVerifier(options.broker),
+    transport: options.transport ?? safeComputeTransport,
+    signatureVerifier: options.signatureVerifier,
+  };
+}
+
 export async function runStrictCompute(
   rawInput: StrictComputeInput,
-  dependencies: StrictComputeDependencies
+  dependencies: StrictComputeDependencies,
 ): Promise<StrictComputeResult> {
   const input = parseInput(rawInput);
   if (!dependencies.receiptStore) {
-    throw failure(
-      "COMPUTE_REPLAY_STORE_REQUIRED",
-      "an atomic receipt claim store is required"
-    );
+    throw failure("COMPUTE_REPLAY_STORE_REQUIRED", "an atomic receipt claim store is required");
   }
   const controller = new AbortController();
   const deadline = createDeadline(input.timeoutMs, controller);
   try {
-    return await Promise.race([
-      execute(input, dependencies, controller.signal),
-      deadline.promise,
-    ]);
+    return await execute(input, dependencies, controller.signal);
   } catch (error) {
-    if (deadline.expired())
-      throw failure("COMPUTE_TIMEOUT", "0G Compute deadline exceeded", error);
+    if (deadline.expired()) throw failure("COMPUTE_TIMEOUT", "0G Compute deadline exceeded", error);
     if (error instanceof StrictComputeError) throw error;
-    if (error instanceof SafeComputeHttpError)
-      throw mapSafeTransportError(error);
+    if (error instanceof SafeComputeHttpError) throw mapSafeTransportError(error);
     throw failure("COMPUTE_BROKER_ERROR", "0G Compute request failed", error);
   } finally {
     deadline.clear();
@@ -307,37 +217,22 @@ type ParsedInput = z.infer<typeof inputSchema>;
 async function execute(
   input: ParsedInput,
   dependencies: StrictComputeDependencies,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<StrictComputeResult> {
   const metadata = parseMetadata(
-    await stage(
-      dependencies.broker.inference.getServiceMetadata(
-        input.provider,
-        input.model
-      ),
-      signal
+    await nonCancelableStage(
+      dependencies.broker.inference.getServiceMetadata(input.provider, input.model),
+      signal,
     ),
-    input.model
+    input.model,
   );
-  const service = await resolveService(
-    dependencies.broker,
-    input.provider,
-    signal
-  );
+  const service = await resolveService(dependencies.broker, input.provider, input.model, signal);
   assertServiceEndpoint(metadata.endpoint, service.url);
-  const expectedSigner = await resolveExpectedSigner(
-    dependencies.broker,
-    input.provider,
-    service,
-    signal
-  );
+  const expectedSigner = resolveExpectedSigner(service);
   const requestBytes = buildRequestBytes(input);
-  const signedHeaders = await stage(
-    dependencies.broker.inference.getRequestHeaders(
-      input.provider,
-      input.userMessage
-    ),
-    signal
+  const signedHeaders = await nonCancelableStage(
+    dependencies.broker.inference.getRequestHeaders(input.provider, input.userMessage),
+    signal,
   );
   const response = await requestInference(
     metadata.endpoint,
@@ -345,30 +240,32 @@ async function execute(
     signedHeaders,
     input,
     dependencies,
-    signal
+    signal,
   );
   return verifyAndAccept(
     input,
     requestBytes,
     response,
-    service.url,
+    service,
     expectedSigner,
     dependencies,
-    signal
+    signal,
   );
 }
 
 function parseInput(input: StrictComputeInput): ParsedInput {
+  if ((input as { spendAuthorized?: unknown }).spendAuthorized !== true) {
+    throw failure(
+      "COMPUTE_SPEND_NOT_AUTHORIZED",
+      "0G Compute voucher spend was not explicitly authorized",
+    );
+  }
   const parsed = inputSchema.safeParse(input);
-  if (!parsed.success)
-    throw failure("COMPUTE_INPUT_INVALID", parsed.error.message);
+  if (!parsed.success) throw failure("COMPUTE_INPUT_INVALID", parsed.error.message);
   return { ...parsed.data, provider: parsed.data.provider.toLowerCase() };
 }
 
-function parseMetadata(
-  value: { endpoint: string; model: string },
-  expectedModel: string
-) {
+function parseMetadata(value: { endpoint: string; model: string }, expectedModel: string) {
   const parsed = z
     .object({ endpoint: z.string().url(), model: nonempty(256) })
     .strict()
@@ -377,116 +274,6 @@ function parseMetadata(
   validateBaseUrl(parsed.data.endpoint);
   if (parsed.data.model !== expectedModel) modelFailure("metadata");
   return parsed.data;
-}
-
-function validateBaseUrl(endpoint: string): URL {
-  try {
-    return validateComputeUrl(endpoint, false);
-  } catch (error) {
-    throw failure(
-      "COMPUTE_METADATA_INVALID",
-      "0G Compute endpoint is not a safe HTTPS base URL",
-      error
-    );
-  }
-}
-
-async function resolveService(
-  broker: StrictComputeBroker,
-  provider: string,
-  signal: AbortSignal
-): Promise<ServiceDetail> {
-  for (let offset = 0; offset < 1_000; offset += 50) {
-    const page = await stage(
-      broker.inference.listService(offset, 50, true),
-      signal
-    );
-    const candidate = page.find(
-      (service) => service.provider.toLowerCase() === provider
-    );
-    if (candidate) {
-      const parsed = serviceSchema.safeParse(candidate);
-      if (!parsed.success) {
-        throw failure(
-          "COMPUTE_SERVICE_UNAVAILABLE",
-          "on-chain service detail is malformed"
-        );
-      }
-      return parsed.data;
-    }
-    if (page.length < 50) break;
-  }
-  throw failure(
-    "COMPUTE_SERVICE_UNAVAILABLE",
-    "configured 0G Compute service was not found on-chain"
-  );
-}
-
-function assertServiceEndpoint(
-  metadataEndpoint: string,
-  serviceEndpoint: string
-): void {
-  const metadata = validateBaseUrl(metadataEndpoint);
-  const service = validateBaseUrl(serviceEndpoint);
-  const expected = `${service.href.replace(/\/$/, "")}/v1/proxy`;
-  if (metadata.href.replace(/\/$/, "") !== expected) {
-    throw failure(
-      "COMPUTE_METADATA_INVALID",
-      "metadata endpoint differs from on-chain service endpoint"
-    );
-  }
-}
-
-async function resolveExpectedSigner(
-  broker: StrictComputeBroker,
-  provider: string,
-  service: ServiceDetail,
-  signal: AbortSignal
-): Promise<HexAddress> {
-  if (!service.teeSignerAcknowledged) signerUnacknowledged();
-  const status = await stage(
-    broker.inference.checkProviderSignerStatus(provider),
-    signal
-  );
-  if (!status.isAcknowledged) signerUnacknowledged();
-  if (!sameAddress(status.teeSignerAddress, service.teeSignerAddress)) {
-    throw failure(
-      "COMPUTE_SIGNER_MISMATCH",
-      "service and signer status disagree"
-    );
-  }
-  const additional = parseAdditionalInfo(service.additionalInfo);
-  const providerType =
-    additional.ProviderType === "centralized" ? "centralized" : "decentralized";
-  const target =
-    additional.TargetSeparated === true &&
-    providerType === "decentralized" &&
-    typeof additional.TargetTeeAddress === "string"
-      ? additional.TargetTeeAddress
-      : undefined;
-  const expected = target ?? service.teeSignerAddress;
-  if (!addressPattern.test(expected) || /^0x0{40}$/i.test(expected)) {
-    throw failure(
-      "COMPUTE_SIGNER_MISMATCH",
-      "expected signer address is invalid"
-    );
-  }
-  return expected.toLowerCase() as HexAddress;
-}
-
-function parseAdditionalInfo(raw: string): Record<string, unknown> {
-  try {
-    const value = JSON.parse(raw);
-    if (!value || typeof value !== "object" || Array.isArray(value))
-      throw new TypeError();
-    return value;
-  } catch (error) {
-    throw failure(
-      "COMPUTE_SERVICE_UNAVAILABLE",
-      "service additionalInfo is invalid",
-      error
-    );
-  }
 }
 
 function buildRequestBytes(input: ParsedInput): Uint8Array {
@@ -501,7 +288,7 @@ function buildRequestBytes(input: ParsedInput): Uint8Array {
       max_tokens: 1_024,
       temperature: 0,
       chat_template_kwargs: { enable_thinking: false },
-    })
+    }),
   );
 }
 
@@ -511,7 +298,7 @@ async function requestInference(
   signedHeaders: unknown,
   input: ParsedInput,
   dependencies: StrictComputeDependencies,
-  signal: AbortSignal
+  signal: AbortSignal,
 ) {
   const url = `${endpoint.replace(/\/$/, "")}/chat/completions`;
   const response = await stage(
@@ -524,10 +311,9 @@ async function requestInference(
       maxResponseBytes: input.maxResponseBytes,
       allowRedirects: false,
     }),
-    signal
+    signal,
   );
-  if (response.status < 200 || response.status >= 300)
-    httpFailure(response.status);
+  if (response.status < 200 || response.status >= 300) httpFailure(response.status);
   return response;
 }
 
@@ -535,32 +321,22 @@ async function verifyAndAccept(
   input: ParsedInput,
   requestBytes: Uint8Array,
   rawResponse: ComputeHttpResponse,
-  serviceUrl: string,
+  service: ServiceDetail,
   expectedSigner: HexAddress,
   dependencies: StrictComputeDependencies,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<StrictComputeResult> {
   const response = parseResponse(rawResponse.body);
   if (response.model !== input.model) modelFailure("response");
-  assertReturnedProvider(
-    input.provider,
-    response.x_0g_trace?.provider,
-    rawResponse.headers
-  );
+  assertReturnedProvider(input.provider, response.x_0g_trace?.provider, rawResponse.headers);
   const receipt = selectReceipt(rawResponse.headers, response.id);
-  const signature = await fetchSignature(
-    input,
-    serviceUrl,
-    receipt.chatId,
-    dependencies,
-    signal
-  );
+  const signature = await fetchSignature(input, service.url, receipt.chatId, dependencies, signal);
   const binding = verifyContentBinding(
-    signature,
+    signature.parsed,
     expectedSigner,
     requestBytes,
     rawResponse.body,
-    dependencies
+    dependencies.signatureVerifier,
   );
   const key = receiptClaimKey(input, receipt.chatId);
   return withReceiptClaim(
@@ -570,8 +346,10 @@ async function verifyAndAccept(
     receipt,
     rawResponse,
     binding,
+    signature,
+    service,
     dependencies,
-    signal
+    signal,
   );
 }
 
@@ -580,12 +358,12 @@ async function fetchSignature(
   serviceUrl: string,
   chatId: string,
   dependencies: StrictComputeDependencies,
-  signal: AbortSignal
-): Promise<SignatureResponse> {
+  signal: AbortSignal,
+): Promise<FetchedSignature> {
   const base = validateBaseUrl(serviceUrl).href.replace(/\/$/, "");
-  const url = `${base}/v1/proxy/signature/${encodeURIComponent(
-    chatId
-  )}?model=${encodeURIComponent(input.model)}`;
+  const url = `${base}/v1/proxy/signature/${encodeURIComponent(chatId)}?model=${encodeURIComponent(
+    input.model,
+  )}`;
   const raw = await stage(
     (dependencies.transport ?? safeComputeTransport).request({
       url,
@@ -595,86 +373,10 @@ async function fetchSignature(
       maxResponseBytes: 16_384,
       allowRedirects: false,
     }),
-    signal
+    signal,
   );
   if (raw.status < 200 || raw.status >= 300) httpFailure(raw.status);
-  return parseSignature(raw.body);
-}
-
-type SignatureResponse = z.infer<typeof signatureSchema>;
-
-function parseSignature(bytes: Uint8Array): SignatureResponse {
-  try {
-    const parsed = signatureSchema.safeParse(JSON.parse(decode(bytes)));
-    if (!parsed.success) throw parsed.error;
-    return parsed.data;
-  } catch (error) {
-    throw failure(
-      "COMPUTE_SIGNATURE_INVALID",
-      "provider signature response is malformed",
-      error
-    );
-  }
-}
-
-type ContentBinding = StrictComputeResult["contentBinding"];
-
-function verifyContentBinding(
-  signature: SignatureResponse,
-  expectedSigner: HexAddress,
-  requestBytes: Uint8Array,
-  responseBytes: Uint8Array,
-  dependencies: StrictComputeDependencies
-): ContentBinding {
-  if (
-    signature.signing_address &&
-    !sameAddress(signature.signing_address, expectedSigner)
-  ) {
-    throw failure(
-      "COMPUTE_SIGNER_MISMATCH",
-      "signature response names a different signer"
-    );
-  }
-  const verifier = dependencies.signatureVerifier ?? InferenceVerifier;
-  let signatureValid = false;
-  try {
-    signatureValid = verifier.verifySignature(
-      signature.text,
-      signature.signature,
-      expectedSigner
-    );
-  } catch (error) {
-    throw failure(
-      "COMPUTE_SIGNATURE_INVALID",
-      "provider signature is malformed",
-      error
-    );
-  }
-  if (!signatureValid) {
-    throw failure(
-      "COMPUTE_SIGNATURE_INVALID",
-      "provider signature does not match expected signer"
-    );
-  }
-  const parts = /^([0-9a-f]{64}):([0-9a-f]{64})$/.exec(signature.text);
-  if (!parts)
-    throw failure(
-      "COMPUTE_SIGNED_TEXT_INVALID",
-      "signed text is not two SHA-256 hashes"
-    );
-  const requestSha256 = sha256(requestBytes) as `0x${string}`;
-  const responseSha256 = sha256(responseBytes) as `0x${string}`;
-  if (parts[1] !== requestSha256.slice(2))
-    bindingFailure("COMPUTE_REQUEST_BINDING_FAILED");
-  if (parts[2] !== responseSha256.slice(2))
-    bindingFailure("COMPUTE_RESPONSE_BINDING_FAILED");
-  return {
-    expectedSigner,
-    signedText: signature.text,
-    requestSha256,
-    responseSha256,
-    signatureVerified: true,
-  };
+  return { parsed: parseSignature(raw.body), rawBody: raw.body, url };
 }
 
 async function withReceiptClaim(
@@ -684,62 +386,96 @@ async function withReceiptClaim(
   receipt: Receipt,
   rawResponse: ComputeHttpResponse,
   binding: ContentBinding,
+  signature: FetchedSignature,
+  service: ServiceDetail,
   dependencies: StrictComputeDependencies,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<StrictComputeResult> {
   const metadata: ReceiptClaimMetadata = {
     model: input.model,
     requestSha256: binding.requestSha256,
     responseSha256: binding.responseSha256,
   };
-  const token = await stage(
-    dependencies.receiptStore.claim(key, metadata),
-    signal
+  const token = await nonCancelableStage(
+    dependencies.receiptStore.claim(key, Object.freeze(metadata), Date.now() + 120_000),
+    signal,
   );
-  if (!token)
-    throw failure(
-      "COMPUTE_RECEIPT_REPLAY",
-      "0G Compute receipt was already processed"
-    );
+  if (!token) throw failure("COMPUTE_RECEIPT_REPLAY", "0G Compute receipt was already processed");
+  let releasePromise: Promise<void> | undefined;
+  const release = () => (releasePromise ??= boundedRelease(dependencies.receiptStore, key, token));
+  const onAbort = () => void release();
+  signal.addEventListener("abort", onAbort, { once: true });
   try {
+    await nonCancelableStage(
+      dependencies.receiptStore.renew(key, token, Date.now() + 120_000),
+      signal,
+    );
     await requireSdkVerification(
-      dependencies.broker,
+      dependencies.processResponseVerifier,
       input.provider,
       receipt.chatId,
       response.usage,
-      signal
+      signature,
+      signal,
     );
+    const confirmedService = await resolveService(
+      dependencies.broker,
+      input.provider,
+      input.model,
+      signal,
+    );
+    assertSameServiceSnapshot(service, confirmedService);
     signal.throwIfAborted();
-    await stage(dependencies.receiptStore.commit(key, token), signal);
+    await nonCancelableStage(
+      dependencies.receiptStore.commit(key, token, Date.now() + MIN_COMMITTED_RETENTION_MS),
+      signal,
+    );
     return buildResult(input, response, receipt, rawResponse, binding);
   } catch (error) {
-    await dependencies.receiptStore.release(key, token);
+    await release();
     throw error;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+async function boundedRelease(store: ReceiptClaimStore, key: string, token: string): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bound = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, 1_000);
+  });
+  try {
+    await Promise.race([store.release(key, token), bound]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
 async function requireSdkVerification(
-  broker: StrictComputeBroker,
+  verifier: ProcessResponseVerifier,
   provider: string,
   chatId: string,
   usage: ResponseBody["usage"],
-  signal: AbortSignal
+  signature: FetchedSignature,
+  signal: AbortSignal,
 ): Promise<void> {
   // SDK 0.9 does not accept AbortSignal and may finish its internal fee-cache update late.
   // The post-await abort check prevents that late completion from accepting our receipt/proof.
   let result: boolean | null;
   try {
-    result = await stage(
-      broker.inference.processResponse(provider, chatId, JSON.stringify(usage)),
-      signal
+    result = await nonCancelableStage(
+      verifier.verify({
+        provider,
+        chatId,
+        usage: JSON.stringify(usage),
+        signatureUrl: signature.url,
+        signatureBody: signature.rawBody,
+      }),
+      signal,
     );
   } catch (error) {
     if (signal.aborted) throw signal.reason;
-    throw failure(
-      "COMPUTE_VERIFICATION_ERROR",
-      "0G Compute SDK verification threw",
-      error
-    );
+    throw failure("COMPUTE_VERIFICATION_ERROR", "0G Compute SDK verification threw", error);
   }
   if (result !== true) verificationFailure();
 }
@@ -748,21 +484,16 @@ type ResponseBody = z.infer<typeof responseSchema>;
 
 function parseResponse(bytes: Uint8Array): ResponseBody {
   try {
-    const parsed = responseSchema.safeParse(JSON.parse(decode(bytes)));
+    const parsed = responseSchema.safeParse(JSON.parse(decodeUtf8(bytes)));
     if (!parsed.success) throw parsed.error;
     return parsed.data;
   } catch (error) {
-    throw failure(
-      "COMPUTE_RESPONSE_INVALID",
-      "0G Compute response is invalid",
-      error
-    );
+    throw failure("COMPUTE_RESPONSE_INVALID", "0G Compute response is invalid", error);
   }
 }
 
 function parseRequestHeaders(value: unknown): Headers {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    brokerHeaderFailure();
+  if (!value || typeof value !== "object" || Array.isArray(value)) brokerHeaderFailure();
   const headers = new Headers();
   for (const [name, headerValue] of Object.entries(value)) {
     if (headerValue === undefined) continue;
@@ -779,17 +510,11 @@ type Receipt = Readonly<{
   source: "ZG-Res-Key" | "body-id-fallback";
 }>;
 
-function selectReceipt(
-  headers: ComputeHttpResponse["headers"],
-  bodyId?: string
-): Receipt {
+function selectReceipt(headers: ComputeHttpResponse["headers"], bodyId?: string): Receipt {
   const header = headerValue(headers, "zg-res-key");
   const chatId = header === null ? bodyId : header;
   if (!chatId?.trim())
-    throw failure(
-      "COMPUTE_CHAT_ID_MISSING",
-      "0G Compute response has no chat ID"
-    );
+    throw failure("COMPUTE_CHAT_ID_MISSING", "0G Compute response has no chat ID");
   if (chatId.length > 512)
     throw failure("COMPUTE_RESPONSE_INVALID", "0G Compute chat ID is too long");
   return {
@@ -801,14 +526,11 @@ function selectReceipt(
 function assertReturnedProvider(
   configured: string,
   traced: string | undefined,
-  headers: ComputeHttpResponse["headers"]
+  headers: ComputeHttpResponse["headers"],
 ) {
   const returned = traced ?? headerValue(headers, "x-0g-provider") ?? undefined;
   if (returned && !sameAddress(returned, configured)) {
-    throw failure(
-      "COMPUTE_PROVIDER_MISMATCH",
-      "0G Compute returned a different provider"
-    );
+    throw failure("COMPUTE_PROVIDER_MISMATCH", "0G Compute returned a different provider");
   }
 }
 
@@ -821,7 +543,7 @@ function buildResult(
   response: ResponseBody,
   receipt: Receipt,
   rawResponse: ComputeHttpResponse,
-  binding: ContentBinding
+  binding: ContentBinding,
 ): StrictComputeResult {
   const content = response.choices[0].message.content;
   return {
@@ -831,7 +553,9 @@ function buildResult(
       response,
       receipt.chatId,
       content,
-      binding.requestSha256
+      binding,
+      receipt.source,
+      responseHeadersSha256(rawResponse.headers),
     ),
     receiptSource: receipt.source,
     rawResponseHeaders: rawResponse.headers,
@@ -848,7 +572,9 @@ function buildProof(
   response: ResponseBody,
   chatId: string,
   content: string,
-  requestSha256: string
+  binding: ContentBinding,
+  receiptSource: Receipt["source"],
+  responseHeadersSha256: `0x${string}`,
 ): ComputeProof {
   return {
     purpose: input.purpose,
@@ -856,8 +582,17 @@ function buildProof(
     model: response.model,
     chatId,
     receiptDigest: receiptDigest(chatId),
-    requestDigest: requestSha256 as `0x${string}`,
+    requestDigest: binding.requestSha256,
     responseDigest: keccak256(toUtf8Bytes(content)) as `0x${string}`,
+    proofClass: "DECENTRALIZED_MODEL_TEE",
+    signatureScheme: "EIP191",
+    expectedSigner: binding.expectedSigner,
+    signature: binding.signature,
+    signedTextSha256: binding.signedTextSha256,
+    requestSha256: binding.requestSha256,
+    rawResponseSha256: binding.responseSha256,
+    receiptSource,
+    responseHeadersSha256,
     usage: {
       promptTokens: response.usage.prompt_tokens,
       completionTokens: response.usage.completion_tokens,
@@ -869,32 +604,27 @@ function buildProof(
 
 async function stage<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
   signal.throwIfAborted();
+  let onAbort!: () => void;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([promise, aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+  }
+}
+
+async function nonCancelableStage<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
   const result = await promise;
   signal.throwIfAborted();
   return result;
 }
 
-function decode(bytes: Uint8Array): string {
-  try {
-    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch (error) {
-    throw failure(
-      "COMPUTE_RESPONSE_INVALID",
-      "0G Compute bytes are not valid UTF-8",
-      error
-    );
-  }
-}
-
-function headerValue(
-  headers: ComputeHttpResponse["headers"],
-  name: string
-): string | null {
-  return (
-    headers.find(
-      ([header]) => header.toLowerCase() === name.toLowerCase()
-    )?.[1] ?? null
-  );
+function headerValue(headers: ComputeHttpResponse["headers"], name: string): string | null {
+  return headers.find(([header]) => header.toLowerCase() === name.toLowerCase())?.[1] ?? null;
 }
 
 function sameAddress(left: string, right: string): boolean {
@@ -907,28 +637,11 @@ function sameAddress(left: string, right: string): boolean {
 
 function createDeadline(timeoutMs: number, controller: AbortController) {
   let expired = false;
-  let timer: ReturnType<typeof setTimeout>;
-  const promise = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => {
-      expired = true;
-      const error = failure("COMPUTE_TIMEOUT", "0G Compute deadline exceeded");
-      controller.abort(error);
-      reject(error);
-    }, timeoutMs);
-  });
-  return { expired: () => expired, clear: () => clearTimeout(timer), promise };
-}
-
-function failure(
-  code: StrictComputeErrorCode,
-  message: string,
-  cause?: unknown
-) {
-  return new StrictComputeError(
-    code,
-    message,
-    cause === undefined ? undefined : { cause }
-  );
+  const timer = setTimeout(() => {
+    expired = true;
+    controller.abort(failure("COMPUTE_TIMEOUT", "0G Compute deadline exceeded"));
+  }, timeoutMs);
+  return { expired: () => expired, clear: () => clearTimeout(timer) };
 }
 
 function metadataFailure(): never {
@@ -936,73 +649,35 @@ function metadataFailure(): never {
 }
 
 function modelFailure(boundary: string): never {
-  throw failure(
-    "COMPUTE_MODEL_MISMATCH",
-    `configured model differs at ${boundary} boundary`
-  );
+  throw failure("COMPUTE_MODEL_MISMATCH", `configured model differs at ${boundary} boundary`);
 }
 
 function signerUnacknowledged(): never {
-  throw failure(
-    "COMPUTE_SIGNER_UNACKNOWLEDGED",
-    "0G Compute signer is not acknowledged"
-  );
-}
-
-function bindingFailure(
-  code: "COMPUTE_REQUEST_BINDING_FAILED" | "COMPUTE_RESPONSE_BINDING_FAILED"
-): never {
-  throw failure(code, "provider signature does not bind the exact HTTP bytes");
+  throw failure("COMPUTE_SIGNER_UNACKNOWLEDGED", "0G Compute signer is not acknowledged");
 }
 
 function brokerHeaderFailure(): never {
-  throw failure(
-    "COMPUTE_BROKER_ERROR",
-    "0G Compute signed authorization headers are invalid"
-  );
+  throw failure("COMPUTE_BROKER_ERROR", "0G Compute signed authorization headers are invalid");
 }
 
 function verificationFailure(): never {
-  throw failure(
-    "COMPUTE_VERIFICATION_FAILED",
-    "0G Compute SDK verification was not true"
-  );
-}
-
-function storeConflict(): never {
-  throw failure(
-    "COMPUTE_RECEIPT_REPLAY",
-    "receipt claim token is stale or invalid"
-  );
+  throw failure("COMPUTE_VERIFICATION_FAILED", "0G Compute SDK verification was not true");
 }
 
 function httpFailure(status: number): never {
-  throw failure(
-    "COMPUTE_PROVIDER_HTTP_ERROR",
-    `0G Compute provider returned HTTP ${status}`
-  );
+  throw failure("COMPUTE_PROVIDER_HTTP_ERROR", `0G Compute provider returned HTTP ${status}`);
 }
 
-function mapSafeTransportError(
-  error: SafeComputeHttpError
-): StrictComputeError {
+function mapSafeTransportError(error: SafeComputeHttpError): StrictComputeError {
   if (error.reason === "TOO_LARGE") {
-    return failure(
-      "COMPUTE_RESPONSE_TOO_LARGE",
-      "0G Compute response exceeds byte limit",
-      error
-    );
+    return failure("COMPUTE_RESPONSE_TOO_LARGE", "0G Compute response exceeds byte limit", error);
   }
   if (error.reason === "INVALID_URL" || error.reason === "PRIVATE_NETWORK") {
     return failure(
       "COMPUTE_METADATA_INVALID",
       "0G Compute endpoint failed network safety checks",
-      error
+      error,
     );
   }
-  return failure(
-    "COMPUTE_BROKER_ERROR",
-    "safe 0G Compute transport failed",
-    error
-  );
+  return failure("COMPUTE_BROKER_ERROR", "safe 0G Compute transport failed", error);
 }

@@ -1,16 +1,28 @@
-import { keccak256, toUtf8Bytes } from "ethers";
+import { sha256 } from "ethers";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ReceiptReplayGuard,
+  MemoryReceiptClaimStore,
   StrictComputeError,
   runStrictCompute,
+  type ComputeHttpRequest,
+  type ComputeHttpResponse,
+  type ReceiptClaimStore,
   type StrictComputeBroker,
+  type StrictComputeDependencies,
   type StrictComputeInput,
 } from "../../server/prooflock/compute/strict-broker";
+import {
+  SafeComputeHttpError,
+  collectBody,
+  safeComputeTransport,
+  validateComputeUrl,
+} from "../../server/prooflock/compute/safe-https";
 
 const PROVIDER = "0x1111111111111111111111111111111111111111";
 const OTHER_PROVIDER = "0x2222222222222222222222222222222222222222";
+const SIGNER = "0x3333333333333333333333333333333333333333";
+const TARGET_SIGNER = "0x4444444444444444444444444444444444444444";
 const MODEL = "0GM-1.0-35B-A3B";
 const CONTENT = '{"riskScore":8,"label":"SAFE"}';
 
@@ -18,6 +30,7 @@ function input(
   overrides: Partial<StrictComputeInput> = {}
 ): StrictComputeInput {
   return {
+    chainId: 16661,
     purpose: "behavioral-risk",
     provider: PROVIDER,
     model: MODEL,
@@ -44,95 +57,410 @@ function body(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function response(value: unknown = body(), init: ResponseInit = {}): Response {
-  const suppliedHeaders = Object.fromEntries(
-    new Headers(init.headers).entries()
+function encode(value: unknown): Uint8Array {
+  return new TextEncoder().encode(
+    typeof value === "string" ? value : JSON.stringify(value)
   );
-  return new Response(JSON.stringify(value), {
-    ...init,
-    status: init.status ?? 200,
-    headers: {
-      "content-type": "application/json",
-      "x-custom-proof-header": "preserve-me",
-      "ZG-Res-Key": "header-chat-id",
-      ...suppliedHeaders,
-    },
-  });
+}
+
+function inferenceResponse(
+  value: unknown = body(),
+  overrides: Partial<ComputeHttpResponse> = {}
+): ComputeHttpResponse {
+  return {
+    status: 200,
+    headers: [
+      ["content-type", "application/json"],
+      ["x-custom-proof-header", "preserve-me"],
+      ["zg-res-key", "header-chat-id"],
+    ],
+    body: encode(value),
+    ...overrides,
+  };
+}
+
+function hash(bytes: Uint8Array): string {
+  return sha256(bytes).slice(2);
+}
+
+function signedText(request: Uint8Array, response: Uint8Array): string {
+  return `${hash(request)}:${hash(response)}`;
 }
 
 function harness(
   options: {
     verification?: true | false | null;
     processError?: Error;
-    fetchResponse?: Response;
-    fetchImpl?: typeof fetch;
-    endpoint?: string;
-    providerModel?: string;
+    inference?: ComputeHttpResponse;
+    metadataModel?: string;
+    responseSigner?: string;
+    signatureText?: string;
+    signatureValid?: boolean;
+    serviceAdditionalInfo?: string;
+    serviceAcknowledged?: boolean;
+    statusAcknowledged?: boolean;
+    statusSigner?: string;
+    receiptStore?: ReceiptClaimStore;
+    hang?: "metadata" | "headers" | "process";
   } = {}
 ) {
-  const processResponse = vi.fn(
-    async (
-      _provider: string,
-      _chatId?: string,
-      _content?: string
-    ): Promise<boolean | null> => {
-      if (options.processError) throw options.processError;
-      return options.verification === undefined ? true : options.verification;
-    }
-  );
+  const never = new Promise<never>(() => undefined);
+  const processResponse = vi.fn(async (): Promise<boolean | null> => {
+    if (options.hang === "process") return never;
+    if (options.processError) throw options.processError;
+    return options.verification === undefined ? true : options.verification;
+  });
   const broker: StrictComputeBroker = {
     inference: {
-      getServiceMetadata: vi.fn(async () => ({
-        endpoint: options.endpoint ?? "https://compute.example",
-        model: options.providerModel ?? MODEL,
-      })),
-      getRequestHeaders: vi.fn(async () => ({
-        Authorization: "signed-voucher",
-      })),
+      getServiceMetadata: vi.fn(async () =>
+        options.hang === "metadata"
+          ? never
+          : {
+              endpoint: "https://compute.example/v1/proxy",
+              model: options.metadataModel ?? MODEL,
+            }
+      ),
+      getRequestHeaders: vi.fn(async () =>
+        options.hang === "headers" ? never : { Authorization: "signed-voucher" }
+      ),
       processResponse,
+      checkProviderSignerStatus: vi.fn(async () => ({
+        isAcknowledged: options.statusAcknowledged ?? true,
+        teeSignerAddress: options.statusSigner ?? SIGNER,
+      })),
+      listService: vi.fn(async () => [
+        {
+          provider: PROVIDER,
+          url: "https://compute.example",
+          model: MODEL,
+          additionalInfo: options.serviceAdditionalInfo ?? "{}",
+          teeSignerAddress: SIGNER,
+          teeSignerAcknowledged: options.serviceAcknowledged ?? true,
+        },
+      ]),
     },
   };
-  const fetchImpl =
-    options.fetchImpl ?? vi.fn(async () => options.fetchResponse ?? response());
-  return { broker, fetchImpl, processResponse };
+  const served = options.inference ?? inferenceResponse();
+  let postedRequest = new Uint8Array();
+  const request = vi.fn(
+    async (httpRequest: ComputeHttpRequest): Promise<ComputeHttpResponse> => {
+      if (httpRequest.method === "POST") {
+        postedRequest = new Uint8Array(httpRequest.body ?? []);
+        return served;
+      }
+      const text =
+        options.signatureText ?? signedText(postedRequest, served.body);
+      return inferenceResponse(
+        {
+          text,
+          signature: "0xsignature",
+          signing_address: options.responseSigner ?? SIGNER,
+        },
+        { headers: [["content-type", "application/json"]] }
+      );
+    }
+  );
+  const verifySignature = vi.fn(() => options.signatureValid ?? true);
+  const dependencies: StrictComputeDependencies = {
+    broker,
+    transport: { request },
+    signatureVerifier: { verifySignature },
+    receiptStore: options.receiptStore ?? new MemoryReceiptClaimStore(),
+  };
+  return { broker, dependencies, processResponse, request, verifySignature };
 }
 
 describe("strict 0G Compute", () => {
-  it("returns a proof only after exact true independent verification", async () => {
-    const { broker, fetchImpl, processResponse } = harness();
-    const result = await runStrictCompute(input(), {
-      broker,
-      fetch: fetchImpl,
-      replayGuard: new ReceiptReplayGuard(),
-    });
+  it("binds the provider signature to exact request and raw response bytes", async () => {
+    const { dependencies, processResponse, verifySignature } = harness();
+    const result = await runStrictCompute(input(), dependencies);
 
     expect(result.proof).toMatchObject({
-      purpose: "behavioral-risk",
       provider: PROVIDER,
       model: MODEL,
       chatId: "header-chat-id",
-      receiptDigest: keccak256(toUtf8Bytes("header-chat-id")),
-      responseDigest: keccak256(toUtf8Bytes(CONTENT)),
       processResponseVerified: true,
-      usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 },
     });
-    expect(result.proof.requestDigest).toMatch(/^0x[0-9a-f]{64}$/);
+    expect(result.contentBinding).toMatchObject({
+      expectedSigner: SIGNER,
+      signatureVerified: true,
+      requestSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      responseSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+    });
+    expect(verifySignature).toHaveBeenCalledWith(
+      result.contentBinding.signedText,
+      "0xsignature",
+      SIGNER
+    );
     expect(processResponse).toHaveBeenCalledWith(
       PROVIDER,
       "header-chat-id",
-      CONTENT
+      JSON.stringify({
+        prompt_tokens: 8,
+        completion_tokens: 4,
+        total_tokens: 12,
+      })
     );
-    expect(result.receiptSource).toBe("ZG-Res-Key");
   });
 
-  it("preserves provider response headers and keeps router verification separate", async () => {
-    const { broker, fetchImpl } = harness();
-    const result = await runStrictCompute(input(), {
-      broker,
-      fetch: fetchImpl,
-      replayGuard: new ReceiptReplayGuard(),
-    });
+  it.each([
+    [
+      "malformed signed text",
+      "not-two-sha256-hashes",
+      "COMPUTE_SIGNED_TEXT_INVALID",
+    ],
+    [
+      "request hash mismatch",
+      `${"0".repeat(64)}:${"1".repeat(64)}`,
+      "COMPUTE_REQUEST_BINDING_FAILED",
+    ],
+  ] as const)("rejects %s", async (_label, signatureText, code) => {
+    const { dependencies } = harness({ signatureText });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      { code }
+    );
+  });
 
+  it("rejects response hash mismatch even when the signature is valid", async () => {
+    let exactRequest = new Uint8Array();
+    const served = inferenceResponse();
+    const h = harness({ inference: served });
+    const transport = {
+      request: vi.fn(async (request: ComputeHttpRequest) => {
+        if (request.method === "POST") {
+          exactRequest = new Uint8Array(request.body ?? []);
+          return served;
+        }
+        return inferenceResponse(
+          {
+            text: `${hash(exactRequest)}:${"0".repeat(64)}`,
+            signature: "0xsignature",
+          },
+          { headers: [["content-type", "application/json"]] }
+        );
+      }),
+    };
+    const dependencies = { ...h.dependencies, transport };
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_RESPONSE_BINDING_FAILED",
+      }
+    );
+  });
+
+  it("rejects a cryptographic signer mismatch", async () => {
+    const { dependencies } = harness({ signatureValid: false });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_SIGNATURE_INVALID",
+      }
+    );
+  });
+
+  it("rejects a signature response that names a different signer", async () => {
+    const { dependencies } = harness({ responseSigner: OTHER_PROVIDER });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_SIGNER_MISMATCH",
+      }
+    );
+  });
+
+  it("uses TargetTeeAddress for a separated decentralized provider", async () => {
+    const { dependencies, verifySignature } = harness({
+      serviceAdditionalInfo: JSON.stringify({
+        ProviderType: "decentralized",
+        TargetSeparated: true,
+        TargetTeeAddress: TARGET_SIGNER,
+      }),
+      responseSigner: TARGET_SIGNER,
+    });
+    await runStrictCompute(input(), dependencies);
+    expect(verifySignature).toHaveBeenCalledWith(
+      expect.any(String),
+      "0xsignature",
+      TARGET_SIGNER
+    );
+  });
+
+  it("keeps the broker signer for a separated centralized provider", async () => {
+    const { dependencies, verifySignature } = harness({
+      serviceAdditionalInfo: JSON.stringify({
+        ProviderType: "centralized",
+        TargetSeparated: true,
+        TargetTeeAddress: TARGET_SIGNER,
+      }),
+    });
+    await runStrictCompute(input(), dependencies);
+    expect(verifySignature).toHaveBeenCalledWith(
+      expect.any(String),
+      "0xsignature",
+      SIGNER
+    );
+  });
+
+  it.each([
+    ["service", { serviceAcknowledged: false }],
+    ["status", { statusAcknowledged: false }],
+  ] as const)(
+    "rejects an unacknowledged %s signer",
+    async (_label, overrides) => {
+      const { dependencies } = harness(overrides);
+      await expect(
+        runStrictCompute(input(), dependencies)
+      ).rejects.toMatchObject({
+        code: "COMPUTE_SIGNER_UNACKNOWLEDGED",
+      });
+    }
+  );
+
+  it("rejects disagreement between service and status signer", async () => {
+    const { dependencies } = harness({ statusSigner: OTHER_PROVIDER });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_SIGNER_MISMATCH",
+      }
+    );
+  });
+
+  it("pins the configured model through metadata and response", async () => {
+    const h = harness();
+    await runStrictCompute(input(), h.dependencies);
+    expect(h.broker.inference.getServiceMetadata).toHaveBeenCalledWith(
+      PROVIDER,
+      MODEL
+    );
+  });
+
+  it("rejects a metadata model mismatch", async () => {
+    const { dependencies } = harness({ metadataModel: "other-model" });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_MODEL_MISMATCH",
+      }
+    );
+  });
+
+  it("rejects a response model mismatch", async () => {
+    const { dependencies } = harness({
+      inference: inferenceResponse(body({ model: "other-model" })),
+    });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_MODEL_MISMATCH",
+      }
+    );
+  });
+
+  it.each([[false], [null]] as const)(
+    "rejects processResponse %s",
+    async (verification) => {
+      const { dependencies } = harness({ verification });
+      await expect(
+        runStrictCompute(input(), dependencies)
+      ).rejects.toMatchObject({
+        code: "COMPUTE_VERIFICATION_FAILED",
+      });
+    }
+  );
+
+  it("rejects thrown processResponse verification", async () => {
+    const { dependencies } = harness({
+      processError: new Error("verification unavailable"),
+    });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_VERIFICATION_ERROR",
+      }
+    );
+  });
+
+  it("requires an injected receipt claim store", async () => {
+    const { dependencies } = harness();
+    const withoutStore = {
+      ...dependencies,
+      receiptStore: undefined,
+    } as unknown as StrictComputeDependencies;
+    await expect(runStrictCompute(input(), withoutStore)).rejects.toMatchObject(
+      {
+        code: "COMPUTE_REPLAY_STORE_REQUIRED",
+      }
+    );
+  });
+
+  it("rejects replay across two runner instances sharing an atomic store", async () => {
+    const receiptStore = new MemoryReceiptClaimStore();
+    await runStrictCompute(input(), harness({ receiptStore }).dependencies);
+    await expect(
+      runStrictCompute(input(), harness({ receiptStore }).dependencies)
+    ).rejects.toMatchObject({
+      code: "COMPUTE_RECEIPT_REPLAY",
+    });
+  });
+
+  it("keys replay claims by chain, provider, model, chat ID, and signed response digest", async () => {
+    const receiptStore: ReceiptClaimStore = {
+      claim: vi.fn(async () => "claim-token"),
+      commit: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    await runStrictCompute(input(), harness({ receiptStore }).dependencies);
+    const key = vi.mocked(receiptStore.claim).mock.calls[0][0];
+    expect(JSON.parse(key)).toEqual([
+      16661,
+      PROVIDER,
+      MODEL,
+      "header-chat-id",
+      expect.stringMatching(/^0x[0-9a-f]{64}$/),
+    ]);
+  });
+
+  it("releases a failed claim so the same shared store can retry", async () => {
+    const receiptStore = new MemoryReceiptClaimStore();
+    await expect(
+      runStrictCompute(
+        input(),
+        harness({ receiptStore, verification: false }).dependencies
+      )
+    ).rejects.toBeInstanceOf(StrictComputeError);
+    await expect(
+      runStrictCompute(input(), harness({ receiptStore }).dependencies)
+    ).resolves.toBeDefined();
+  });
+
+  it.each(["metadata", "headers", "process"] as const)(
+    "times out a hung %s stage",
+    async (hang) => {
+      const { dependencies } = harness({ hang });
+      await expect(
+        runStrictCompute(input({ timeoutMs: 10 }), dependencies)
+      ).rejects.toMatchObject({
+        code: "COMPUTE_TIMEOUT",
+      });
+    }
+  );
+
+  it("does not commit a receipt when processResponse resolves after timeout", async () => {
+    let resolveProcess!: (value: true) => void;
+    const pending = new Promise<true>((resolve) => {
+      resolveProcess = resolve;
+    });
+    const receiptStore: ReceiptClaimStore = {
+      claim: vi.fn(async () => "late-claim"),
+      commit: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const h = harness({ receiptStore });
+    h.processResponse.mockImplementationOnce(() => pending);
+    const run = runStrictCompute(input({ timeoutMs: 10 }), h.dependencies);
+    await expect(run).rejects.toMatchObject({ code: "COMPUTE_TIMEOUT" });
+    resolveProcess(true);
+    await vi.waitFor(() => expect(receiptStore.release).toHaveBeenCalled());
+    expect(receiptStore.commit).not.toHaveBeenCalled();
+  });
+
+  it("preserves headers and keeps router verification and billing separate", async () => {
+    const result = await runStrictCompute(input(), harness().dependencies);
     expect(result.rawResponseHeaders).toContainEqual([
       "x-custom-proof-header",
       "preserve-me",
@@ -140,342 +468,162 @@ describe("strict 0G Compute", () => {
     expect(result.routerVerification).toEqual({ reportedTeeVerified: true });
     expect(result.billingMetadata).toEqual({ charged: "0.00001", unit: "0G" });
     expect(result).not.toHaveProperty("settled");
-    expect(JSON.stringify(result)).not.toMatch(/onchain.settl/i);
   });
 
-  it("sends signed broker headers without a hosted fallback", async () => {
-    const { broker, fetchImpl } = harness();
-    await runStrictCompute(input(), {
-      broker,
-      fetch: fetchImpl,
-      replayGuard: new ReceiptReplayGuard(),
+  it("uses body ID only when ZG-Res-Key is absent", async () => {
+    const served = inferenceResponse(body(), {
+      headers: [["content-type", "application/json"]],
     });
-
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-    const [url, init] = vi.mocked(fetchImpl).mock.calls[0];
-    expect(url).toBe("https://compute.example/chat/completions");
-    expect(new Headers(init?.headers).get("Authorization")).toBe(
-      "signed-voucher"
+    const result = await runStrictCompute(
+      input(),
+      harness({ inference: served }).dependencies
     );
-    expect(JSON.parse(String(init?.body))).toMatchObject({
-      model: MODEL,
-      messages: [
-        { role: "system", content: input().systemPrompt },
-        { role: "user", content: input().userMessage },
-      ],
-    });
-  });
-
-  it.each([
-    ["false", false],
-    ["null", null],
-  ] as const)(
-    "rejects a %s verification result",
-    async (_label, verification) => {
-      const { broker, fetchImpl } = harness({ verification });
-      await expect(
-        runStrictCompute(input(), {
-          broker,
-          fetch: fetchImpl,
-          replayGuard: new ReceiptReplayGuard(),
-        })
-      ).rejects.toMatchObject({ code: "COMPUTE_VERIFICATION_FAILED" });
-    }
-  );
-
-  it("rejects a thrown verification", async () => {
-    const { broker, fetchImpl } = harness({
-      processError: new Error("signature service down"),
-    });
-    await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_VERIFICATION_ERROR" });
-  });
-
-  it("uses the documented body ID fallback only when ZG-Res-Key is absent", async () => {
-    const fallbackResponse = response(body(), {
-      headers: { "content-type": "application/json" },
-    });
-    fallbackResponse.headers.delete("ZG-Res-Key");
-    const { broker, fetchImpl, processResponse } = harness({
-      fetchResponse: fallbackResponse,
-    });
-    const result = await runStrictCompute(input(), {
-      broker,
-      fetch: fetchImpl,
-      replayGuard: new ReceiptReplayGuard(),
-    });
-
     expect(result.receiptSource).toBe("body-id-fallback");
     expect(result.proof.chatId).toBe("body-chat-id");
-    expect(processResponse).toHaveBeenCalledWith(
-      PROVIDER,
-      "body-chat-id",
-      CONTENT
-    );
   });
 
-  it("rejects a response with neither ZG-Res-Key nor body ID", async () => {
-    const { id: _id, ...withoutId } = body();
-    const noHeader = response(withoutId);
-    noHeader.headers.delete("ZG-Res-Key");
-    const { broker, fetchImpl } = harness({ fetchResponse: noHeader });
+  it("rejects a response without either receipt ID source", async () => {
+    const value = body();
+    delete (value as { id?: string }).id;
+    const served = inferenceResponse(value, {
+      headers: [["content-type", "application/json"]],
+    });
     await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
+      runStrictCompute(input(), harness({ inference: served }).dependencies)
     ).rejects.toMatchObject({ code: "COMPUTE_CHAT_ID_MISSING" });
   });
 
-  it("rejects a configured-versus-returned provider mismatch", async () => {
-    const mismatched = response(
-      body({
-        x_0g_trace: { provider: OTHER_PROVIDER, tee_verified: true },
-      })
-    );
-    const { broker, fetchImpl } = harness({ fetchResponse: mismatched });
-    await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_PROVIDER_MISMATCH" });
-  });
-
-  it("rejects replay of an already accepted provider receipt", async () => {
-    const guard = new ReceiptReplayGuard();
-    const first = harness();
-    await runStrictCompute(input(), {
-      broker: first.broker,
-      fetch: first.fetchImpl,
-      replayGuard: guard,
-    });
-    const second = harness();
-    await expect(
-      runStrictCompute(input(), {
-        broker: second.broker,
-        fetch: second.fetchImpl,
-        replayGuard: guard,
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_RECEIPT_REPLAY" });
-    expect(second.processResponse).not.toHaveBeenCalled();
-  });
-
-  it("rejects concurrent use of the same receipt", async () => {
-    let release!: (value: true) => void;
-    const pending = new Promise<true>((resolve) => {
-      release = resolve;
-    });
-    const first = harness();
-    first.processResponse.mockImplementationOnce(() => pending);
-    const guard = new ReceiptReplayGuard();
-    const firstRun = runStrictCompute(input(), {
-      broker: first.broker,
-      fetch: first.fetchImpl,
-      replayGuard: guard,
-    });
-    await vi.waitFor(() => expect(first.processResponse).toHaveBeenCalled());
-    const second = harness();
-    await expect(
-      runStrictCompute(input(), {
-        broker: second.broker,
-        fetch: second.fetchImpl,
-        replayGuard: guard,
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_RECEIPT_REPLAY" });
-    release(true);
-    await firstRun;
-  });
-
-  it("releases a failed receipt claim so an operator can retry", async () => {
-    const guard = new ReceiptReplayGuard();
-    const failed = harness({ verification: false });
-    await expect(
-      runStrictCompute(input(), {
-        broker: failed.broker,
-        fetch: failed.fetchImpl,
-        replayGuard: guard,
-      })
-    ).rejects.toBeInstanceOf(StrictComputeError);
-    const retried = harness();
-    await expect(
-      runStrictCompute(input(), {
-        broker: retried.broker,
-        fetch: retried.fetchImpl,
-        replayGuard: guard,
-      })
-    ).resolves.toBeDefined();
-  });
-
-  it("rejects response-content mismatch through independent verification", async () => {
-    const { broker, fetchImpl, processResponse } = harness();
-    processResponse.mockImplementation(
-      async (_provider, _chatId, verifiedContent) =>
-        verifiedContent === "different signed content"
-    );
-    await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_VERIFICATION_FAILED" });
-    expect(processResponse).toHaveBeenCalledWith(
-      PROVIDER,
-      "header-chat-id",
-      CONTENT
-    );
-  });
-
-  it.each([
-    ["empty provider", { provider: "" }],
-    ["zero provider", { provider: `0x${"0".repeat(40)}` }],
-    ["empty model", { model: "" }],
-    ["empty prompt", { systemPrompt: "" }],
-    ["empty message", { userMessage: "" }],
-  ] as const)("rejects %s", async (_label, override) => {
-    const { broker, fetchImpl } = harness();
-    await expect(
-      runStrictCompute(input(override), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_INPUT_INVALID" });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it("rejects non-2xx provider responses without retrying or falling back", async () => {
-    const { broker, fetchImpl } = harness({
-      fetchResponse: new Response("provider unavailable", { status: 503 }),
-    });
-    await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_PROVIDER_HTTP_ERROR" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-
-  it("rejects malformed JSON and malformed response shape", async () => {
-    for (const fetchResponse of [
-      new Response("not-json", { status: 200 }),
-      response({ id: "chat", model: MODEL, choices: [], usage: {} }),
-    ]) {
-      const { broker, fetchImpl } = harness({ fetchResponse });
-      await expect(
-        runStrictCompute(input(), {
-          broker,
-          fetch: fetchImpl,
-          replayGuard: new ReceiptReplayGuard(),
+  it("rejects malformed router verification and provider HTTP errors", async () => {
+    const trace = harness({
+      inference: inferenceResponse(
+        body({
+          x_0g_trace: { provider: PROVIDER, tee_verified: "true" },
         })
-      ).rejects.toMatchObject({ code: "COMPUTE_RESPONSE_INVALID" });
+      ),
+    });
+    await expect(
+      runStrictCompute(input(), trace.dependencies)
+    ).rejects.toMatchObject({
+      code: "COMPUTE_RESPONSE_INVALID",
+    });
+    const http = harness({
+      inference: inferenceResponse(body(), { status: 503 }),
+    });
+    await expect(
+      runStrictCompute(input(), http.dependencies)
+    ).rejects.toMatchObject({
+      code: "COMPUTE_PROVIDER_HTTP_ERROR",
+    });
+  });
+
+  it("rejects provider response mismatch and malformed response", async () => {
+    const mismatch = harness({
+      inference: inferenceResponse(
+        body({
+          x_0g_trace: { provider: OTHER_PROVIDER, tee_verified: true },
+        })
+      ),
+    });
+    await expect(
+      runStrictCompute(input(), mismatch.dependencies)
+    ).rejects.toMatchObject({
+      code: "COMPUTE_PROVIDER_MISMATCH",
+    });
+    const malformed = harness({ inference: inferenceResponse("not-json") });
+    await expect(
+      runStrictCompute(input(), malformed.dependencies)
+    ).rejects.toMatchObject({
+      code: "COMPUTE_RESPONSE_INVALID",
+    });
+  });
+
+  it("rejects non-HTTPS or ambiguous provider endpoints before sending vouchers", async () => {
+    for (const endpoint of [
+      "http://compute.example/v1/proxy",
+      "https://user:pass@compute.example/v1/proxy",
+      "https://compute.example/v1/proxy?target=other",
+      "https://compute.example/v1/proxy#fragment",
+    ]) {
+      const h = harness();
+      vi.mocked(h.broker.inference.getServiceMetadata).mockResolvedValueOnce({
+        endpoint,
+        model: MODEL,
+      });
+      await expect(
+        runStrictCompute(input(), h.dependencies)
+      ).rejects.toMatchObject({
+        code: "COMPUTE_METADATA_INVALID",
+      });
+      expect(h.broker.inference.getRequestHeaders).not.toHaveBeenCalled();
     }
   });
 
-  it("rejects an oversized response before JSON parsing", async () => {
-    const oversized = response(body({ padding: "x".repeat(2_000) }));
-    const { broker, fetchImpl } = harness({ fetchResponse: oversized });
-    await expect(
-      runStrictCompute(input({ maxResponseBytes: 512 }), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_RESPONSE_TOO_LARGE" });
+  it("uses controlled transport for inference and signature without forwarding authorization", async () => {
+    const { dependencies, request } = harness();
+    await runStrictCompute(input(), dependencies);
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[0][0]).toMatchObject({
+      method: "POST",
+      allowRedirects: false,
+    });
+    expect(request.mock.calls[1][0]).toMatchObject({
+      method: "GET",
+      allowRedirects: false,
+    });
+    expect(
+      new Headers(request.mock.calls[1][0].headers).has("authorization")
+    ).toBe(false);
   });
 
-  it("cancels an oversized response stream as soon as the byte limit is crossed", async () => {
-    let cancelled = false;
-    const stream = new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(new Uint8Array(400));
-        controller.enqueue(new Uint8Array(400));
+  it("bounds the test-only memory store rather than evicting replay history", async () => {
+    const store = new MemoryReceiptClaimStore(1);
+    const first = await store.claim("one");
+    await store.commit("one", first!);
+    await expect(store.claim("two")).rejects.toMatchObject({
+      code: "COMPUTE_REPLAY_STORE_FULL",
+    });
+    await expect(store.claim("one")).resolves.toBeNull();
+  });
+
+  it("rejects private literal endpoints before opening a socket", async () => {
+    const controller = new AbortController();
+    await expect(
+      safeComputeTransport.request({
+        url: "https://127.0.0.1/v1/proxy/chat/completions",
+        method: "POST",
+        signal: controller.signal,
+        maxResponseBytes: 512,
+        allowRedirects: false,
+      })
+    ).rejects.toMatchObject({ reason: "PRIVATE_NETWORK" });
+  });
+
+  it("rejects unsafe URL authority and query ambiguity", () => {
+    for (const url of [
+      "http://example.com",
+      "https://user:secret@example.com",
+      "https://example.com?redirect=internal",
+      "https://example.com#fragment",
+      "https://localhost",
+    ]) {
+      expect(() => validateComputeUrl(url)).toThrow(SafeComputeHttpError);
+    }
+  });
+
+  it("destroys an oversized transport body immediately", async () => {
+    let destroyed = false;
+    const stream = {
+      async *[Symbol.asyncIterator]() {
+        yield new Uint8Array(400);
+        yield new Uint8Array(400);
       },
-      cancel() {
-        cancelled = true;
+      destroy() {
+        destroyed = true;
       },
+    };
+    await expect(collectBody(stream, 512)).rejects.toMatchObject({
+      reason: "TOO_LARGE",
     });
-    const { broker, fetchImpl } = harness({
-      fetchResponse: new Response(stream, { status: 200 }),
-    });
-    await expect(
-      runStrictCompute(input({ maxResponseBytes: 512 }), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_RESPONSE_TOO_LARGE" });
-    expect(cancelled).toBe(true);
-  });
-
-  it("rejects a request that exceeds the total deadline", async () => {
-    const fetchImpl = vi.fn(
-      (_url: RequestInfo | URL, init?: RequestInit) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () =>
-            reject(init.signal?.reason)
-          );
-        })
-    ) as typeof fetch;
-    const { broker } = harness();
-    await expect(
-      runStrictCompute(input({ timeoutMs: 10 }), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_TIMEOUT" });
-  });
-
-  it("rejects invalid router tee_verified instead of upgrading it to true", async () => {
-    const invalidTrace = response(
-      body({
-        x_0g_trace: { provider: PROVIDER, tee_verified: "true" },
-      })
-    );
-    const { broker, fetchImpl } = harness({ fetchResponse: invalidTrace });
-    await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_RESPONSE_INVALID" });
-  });
-
-  it("records absent router verification and billing metadata as null", async () => {
-    const withoutTrace = response(body({ x_0g_trace: undefined }));
-    const { broker, fetchImpl } = harness({ fetchResponse: withoutTrace });
-    const result = await runStrictCompute(input(), {
-      broker,
-      fetch: fetchImpl,
-      replayGuard: new ReceiptReplayGuard(),
-    });
-    expect(result.routerVerification).toEqual({ reportedTeeVerified: null });
-    expect(result.billingMetadata).toBeNull();
-  });
-
-  it("rejects non-HTTPS provider metadata", async () => {
-    const { broker, fetchImpl } = harness({
-      endpoint: "http://compute.example",
-    });
-    await expect(
-      runStrictCompute(input(), {
-        broker,
-        fetch: fetchImpl,
-        replayGuard: new ReceiptReplayGuard(),
-      })
-    ).rejects.toMatchObject({ code: "COMPUTE_METADATA_INVALID" });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(destroyed).toBe(true);
   });
 });

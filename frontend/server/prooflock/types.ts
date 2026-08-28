@@ -1,6 +1,9 @@
 export type HexAddress = `0x${string}`;
 export type Bytes32 = `0x${string}`;
 
+export const ERC8004_IDENTITY_REGISTRY =
+  "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432" as const satisfies HexAddress;
+
 export type AgentIdentity = Readonly<{
   namespace: "eip155";
   chainId: 16661;

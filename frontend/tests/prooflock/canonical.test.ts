@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { canonicalize as canonicalizeJcs } from "json-canonicalize";
 
 import {
   canonicalizeEvidence,
@@ -8,8 +9,10 @@ import {
   validateEvidenceEnvelope,
   validateStorageCommitment,
 } from "../../server/prooflock/canonical";
+import { EvidenceValidationError } from "../../server/prooflock/errors";
 import {
   COVERAGE,
+  ERC8004_IDENTITY_REGISTRY,
   REQUIRED_COVERAGE,
   type ProofLifecycle,
 } from "../../server/prooflock/types";
@@ -20,7 +23,7 @@ const BEHAVIORAL_RECEIPT =
   "0x45d8b8bcf01461883d935bd4805523685842ab5246cf14d328a03f343c02ff6a";
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 const ZERO_BYTES32 = `0x${"00".repeat(32)}`;
-const IDENTITY_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
+const IDENTITY_REGISTRY = ERC8004_IDENTITY_REGISTRY;
 
 function validEnvelope() {
   return {
@@ -153,6 +156,13 @@ describe("canonical ProofLock evidence", () => {
     expect(receiptDigest("chat-123")).not.toContain("636861742d313233");
   });
 
+  it("bounds and Unicode-validates direct receipt digests", () => {
+    expect(() => receiptDigest("x".repeat(513))).toThrow(/512|length|long/i);
+    expect(() => receiptDigest("\uD800")).toThrow(/unicode|surrogate/i);
+    expect(() => receiptDigest("\uDC00")).toThrow(/unicode|surrogate/i);
+    expect(() => receiptDigest("chat-😀")).not.toThrow();
+  });
+
   it("preserves ordered findings and deterministic checks", () => {
     const value: any = validEnvelope();
     value.deterministicChecks[0].findings = ["first", "second"];
@@ -191,6 +201,10 @@ describe("canonical ProofLock evidence", () => {
 });
 
 describe("frozen coverage and lifecycle constants", () => {
+  it("exports the canonical ERC-8004 registry once", () => {
+    expect(ERC8004_IDENTITY_REGISTRY).toBe(IDENTITY_REGISTRY);
+  });
+
   it("matches the contract bit layout exactly", () => {
     expect(COVERAGE).toEqual({
       IDENTITY_VALIDATED: 0x01,
@@ -212,7 +226,7 @@ describe("frozen coverage and lifecycle constants", () => {
 
 describe("strict envelope validation", () => {
   it("normalizes all addresses to lowercase", () => {
-    const value = validEnvelope();
+    const value: any = validEnvelope();
     value.identity.registryAddress =
       "0x8004A169FB4A3325136EB29FA0CEB6D2E539A432";
     expect(validateEvidenceEnvelope(value).identity.registryAddress).toBe(
@@ -282,6 +296,16 @@ describe("strict envelope validation", () => {
     const value: any = validEnvelope();
     value.subject.address = "0x3333333333333333333333333333333333333333";
     expect(() => validateEvidenceEnvelope(value)).toThrow(/wallet|subject/i);
+  });
+
+  it("accepts policyVersion through uint32 max and rejects overflow", () => {
+    const maximum: any = validEnvelope();
+    maximum.policyVersion = 4_294_967_295;
+    expect(validateEvidenceEnvelope(maximum).policyVersion).toBe(4_294_967_295);
+
+    const overflow: any = validEnvelope();
+    overflow.policyVersion = 4_294_967_296;
+    expect(() => validateEvidenceEnvelope(overflow)).toThrow(/policy|uint32/i);
   });
 
   it("requires the canonical chain-16661 identity registry", () => {
@@ -540,6 +564,23 @@ describe("subject provenance invariants", () => {
 });
 
 describe("hostile input bounds and Unicode safety", () => {
+  it("rejects a huge sparse array before enumerating its entries", () => {
+    const value: any = validEnvelope();
+    value.extra = new Array(1_000_000);
+    expect(() => validateEvidenceEnvelope(value)).toThrowError(
+      expect.objectContaining({
+        name: EvidenceValidationError.name,
+        message: expect.stringMatching(/array|node|length/i),
+      }),
+    );
+  });
+
+  it("rejects holes in bounded schema arrays normally", () => {
+    const value: any = validEnvelope();
+    value.deterministicChecks[0].findings = new Array(2);
+    expect(() => validateEvidenceEnvelope(value)).toThrow(EvidenceValidationError);
+  });
+
   it("rejects input deeper than 16 object levels", () => {
     const value: any = validEnvelope();
     let cursor: any = value;
@@ -632,7 +673,7 @@ describe("hostile input bounds and Unicode safety", () => {
     expect(() => hashCanonical(value)).toThrow(/unicode|surrogate/i);
   });
 
-  it("preserves well-formed Unicode with JCS key ordering", () => {
+  it("preserves well-formed Unicode values", () => {
     const value: any = validEnvelope();
     value.deterministicChecks[0].findings = ["€", "😀", "line\nfeed"];
     const canonical = canonicalizeEvidence(value);
@@ -640,6 +681,11 @@ describe("hostile input bounds and Unicode safety", () => {
       '{"findings":["€","😀","line\\nfeed"],"id":"permissions"',
     );
     expect(() => hashCanonical(value)).not.toThrow();
+  });
+
+  it("orders non-ASCII object keys by UTF-16 code units", () => {
+    const unordered = { "😀": 1, "€": 4, "é": 2, a: 3 };
+    expect(canonicalizeJcs(unordered)).toBe('{"a":3,"é":2,"€":4,"😀":1}');
   });
 
   it("requires exact, overflow-safe token accounting", () => {

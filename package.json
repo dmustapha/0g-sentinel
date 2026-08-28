@@ -5,8 +5,10 @@
   "scripts": {
     "compile": "npx hardhat compile",
     "test": "npx hardhat test",
-    "deploy:testnet": "npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogTestnet && npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogTestnet && npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogTestnet",
-    "deploy:mainnet": "npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogMainnet && npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogMainnet && npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogMainnet",
+    "deploy:legacy:testnet": "npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogTestnet && npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogTestnet && npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogTestnet",
+    "deploy:legacy:mainnet": "npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogMainnet && npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogMainnet && npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogMainnet",
+    "deploy:mainnet": "npm run deploy:prooflock-v2:mainnet",
+    "deploy:prooflock-v2:mainnet": "npx hardhat run scripts/deploy/04_deploy_prooflock_v2.ts --network zerogMainnet",
     "seed-demo": "npx ts-node scripts/seed-demo.ts",
     "generate-proof": "npx ts-node scripts/generate-proof.ts",
     "typecheck": "tsc --noEmit"

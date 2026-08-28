@@ -35,15 +35,10 @@ export function ScanInput(_legacyProps: { defaultAddress?: string } = {}) {
 
   async function evaluate() {
     if (!identity || !operatorToken) return;
-    const registryAddress = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
-    const scanner = process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS;
-    if (!isAddress(registryAddress) || !isAddress(scanner)) { setError(clientError("OPERATOR_CONFIG_MISSING", "Operator addresses are not configured in this deployment.")); return; }
     const controller = new AbortController(); abortRef.current = controller; setStages([]); setFailed(undefined); setError(undefined);
     try {
-      await runProofLock({ identity: identity.identity, registryAddress, scanner,
-        scannerSoftwareVersion: process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_VERSION ?? "sentinel-prooflock-v2",
-        policyVersion: Number(process.env.NEXT_PUBLIC_PROOFLOCK_POLICY_VERSION ?? "1"), validForSeconds: 604800,
-        mode: "SEAL" }, operatorToken, (stage) => setStages((current) => current.includes(stage) ? current : [...current, stage]), controller.signal);
+      await runProofLock({ identity: identity.identity, mode: "SEAL" }, operatorToken,
+        (stage) => setStages((current) => current.includes(stage) ? current : [...current, stage]), controller.signal);
       setOperatorToken(""); await resolveCurrent(agentId);
     } catch (cause) {
       setOperatorToken(""); const detail = cause instanceof ProofLockApiError ? cause.detail : clientError("RUN_FAILED", "ProofLock run stopped safely.");
@@ -72,5 +67,4 @@ export function ScanInput(_legacyProps: { defaultAddress?: string } = {}) {
 }
 
 function identityKey(identity: CanonicalIdentity): string { return keccak256(AbiCoder.defaultAbiCoder().encode(["uint256", "address", "uint256"], [16661, identity.identity.registryAddress, BigInt(identity.identity.agentId)])); }
-function isAddress(value?: string): value is `0x${string}` { return !!value && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value); }
 function clientError(code: string, message: string): ApiErrorShape { return { code, message, stage: "VALIDATING_IDENTITY", retryable: true, requestId: "client" }; }

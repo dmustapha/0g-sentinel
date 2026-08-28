@@ -2,10 +2,39 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { SubsystemHealthGrid } from "../../components/SubsystemHealthGrid";
-import { VerificationResult } from "../../components/VerifyEvidenceButton";
+import { currentAccessFor, HistoricalProofDetails, VerificationResult, verificationStateForError } from "../../components/VerifyEvidenceButton";
+import { ProofLockApiError } from "../../lib/prooflock-client";
 import type { HealthSnapshot, ProofVerificationState } from "../../lib/prooflock-types";
 
 describe("public proof verification", () => {
+  it("maps mismatch, dependency outage, and abort to distinct stable states", () => {
+    const error = (code: string, status: number) => new ProofLockApiError({ code, message: code, stage: "VERIFYING_PROOF",
+      retryable: status === 503, requestId: "req" }, status);
+    expect(verificationStateForError(error("MISMATCH", 409), false)).toBe("MISMATCH");
+    expect(verificationStateForError(error("DEPENDENCY_UNAVAILABLE", 503), false)).toBe("UNAVAILABLE");
+    expect(verificationStateForError(new DOMException("Aborted", "AbortError"), true)).toBe("TIMEOUT");
+  });
+
+  it("keeps current access blocked when Gate allows but guarded consumer proof is unknown", () => {
+    const proof = historicalProof(); const subject = proof.proofLock.subject;
+    const detail = { identityKey: proof.identityKey, proofLock: proof.proofLock, detail: { status: "VERIFIED" as const,
+      identity: { identityKey: proof.identityKey, namespace: "eip155" as const, chainId: 16661 as const,
+        registryAddress: `0x${"88".repeat(20)}` as `0x${string}`, agentId: "7", owner: subject, agentWallet: subject,
+        registrationUri: "ipfs://agent", registrationDigest: `0x${"aa".repeat(32)}` as `0x${string}`,
+        sourceBlockNumber: "100", sourceBlockHash: `0x${"bb".repeat(32)}` as `0x${string}` },
+      resolution: { owner: subject, agentWallet: subject, agentURI: "ipfs://agent", registrationDigest: `0x${"aa".repeat(32)}` as `0x${string}`,
+        sourceBlockNumber: "100", sourceBlockHash: `0x${"bb".repeat(32)}` as `0x${string}` },
+      gate: { status: "VERIFIED" as const, allowed: true, reason: 0, subject, version: "2" },
+      consumer: { status: "UNKNOWN" as const, accepted: false as const } } };
+    expect(currentAccessFor(detail)).toEqual({ current: "BLOCKED", reason: "CONSUMER_UNKNOWN" });
+  });
+
+  it("renders immutable chain, Storage, and Compute provenance with explorer links", () => {
+    const html = renderToStaticMarkup(React.createElement(HistoricalProofDetails, { proof: historicalProof(),
+      explorerBase: "https://chainscan.0g.ai" }));
+    for (const value of ["block 123", "Version 2", "provider-tee", "model-tee", `0x${"55".repeat(32)}`, `0x${"66".repeat(32)}`]) expect(html).toContain(value);
+    expect(html).toContain(`/tx/0x${"77".repeat(32)}`); expect(html).toContain(`/address/0x${"88".repeat(20)}`);
+  });
   it.each([
     ["MATCH", "Historical artifact matches"], ["MISMATCH", "Historical artifact mismatch"],
     ["UNAVAILABLE", "Evidence unavailable"], ["TIMEOUT", "Verification timed out"], ["RETRYING", "Retrying verification"],
@@ -18,6 +47,16 @@ describe("public proof verification", () => {
     expect(html).not.toContain("Current access: ADMITTED");
   });
 });
+
+function historicalProof() {
+  const h = (byte: string) => `0x${byte.repeat(64)}` as `0x${string}`;
+  return { proofId: h("1"), identityKey: h("2"), source: { kind: "ProofLocked" as const, registryAddress: `0x${"88".repeat(20)}` as `0x${string}`,
+    transactionHash: h("7"), blockNumber: 123, blockHash: h("9"), logIndex: 4 }, proofLock: {
+    identityKey: h("2"), subject: `0x${"33".repeat(20)}` as `0x${string}`, envelopeDigest: h("4"), storageRoot: h("5"), computeRoot: h("6"),
+    artifactHash: h("7"), runtimeCodeHash: h("8"), version: "2", issuedAt: "1", validUntil: "9999999999", policyVersion: 1,
+    behavioralScore: 10, codeRisk: 0, coverage: 127, state: 1, stateReason: 0 }, storage: { retrievalVerified: true as const,
+    networkProofVerified: false as const, storageCommitment: { uploadTxHash: h("6") }, envelope: { computeProofs: [{ provider: "provider-tee", model: "model-tee" }] } } };
+}
 
 describe("independent subsystem health", () => {
   it("renders all six probes with independent states, latency, and observation time", () => {

@@ -15,6 +15,13 @@ export class ProofMismatchError extends Error {
   }
 }
 
+export class ProofLocatorHintRequiredError extends Error {
+  constructor() {
+    super("A source transaction hash is required for this historical proof");
+    this.name = "ProofLocatorHintRequiredError";
+  }
+}
+
 export type IdentityErrorCode =
   | "INVALID_IDENTITY"
   | "WRONG_CHAIN"

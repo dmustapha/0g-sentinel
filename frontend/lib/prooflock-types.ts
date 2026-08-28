@@ -82,10 +82,13 @@ export type ProofLockDetail =
       sourceBlockNumber: string; sourceBlockHash: Bytes32;
     }>; resolution: Readonly<{ owner: HexAddress; agentWallet: HexAddress; agentURI: string;
       registrationDigest: Bytes32; sourceBlockNumber: string; sourceBlockHash: Bytes32 }>;
-      gate: Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number }>
-        | Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }> }>
+      gate: Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number; subject: HexAddress; version: string }>
+        | Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
+      consumer: Readonly<{ status: "VERIFIED"; accepted: boolean; address: HexAddress; subject: HexAddress; version: string }>
+        | Readonly<{ status: "UNKNOWN"; accepted: false }> }>
   | Readonly<{ status: "UNAVAILABLE"; code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID";
-      identity: null; resolution: null; gate: Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }> }>;
+      identity: null; resolution: null; gate: Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
+      consumer: Readonly<{ status: "UNKNOWN"; accepted: false }> }>;
 
 export type ProofLockDetailResponse = Readonly<{ identityKey: Bytes32; proofLock: ProofLockRecord; detail: ProofLockDetail }>;
 export type ProofLockInventoryItem = ProofLockDetailResponse & Readonly<{ transactionHash: Bytes32; blockNumber: number }>;
@@ -94,6 +97,7 @@ export type SubsystemName = "rpc" | "identity" | "registry" | "gate" | "compute"
 export type SubsystemHealth = Readonly<{
   status: "HEALTHY" | "UNHEALTHY" | "UNKNOWN";
   latencyMs: number;
+  observedAt: string;
   detail?: Readonly<Record<string, unknown>>;
 }>;
 

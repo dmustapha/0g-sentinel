@@ -7,6 +7,7 @@ import { identityInputState } from "../../components/IdentityResolver";
 import { ProofCoverageGrid } from "../../components/ProofCoverageGrid";
 import { StreamingScanPanel } from "../../components/StreamingScanPanel";
 import type { RunnerStage } from "../../lib/prooflock-types";
+import { admittedConsumerState } from "../../lib/prooflock-status";
 
 const STAGES: readonly RunnerStage[] = [
   "VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT", "RUNNING_DETERMINISTIC_CHECKS",
@@ -15,6 +16,17 @@ const STAGES: readonly RunnerStage[] = [
 ];
 
 describe("Evaluate ceremony", () => {
+  it("fails closed unless guarded Gate fields match subject, version, and ALLOWED reason", () => {
+    const subject = `0x${"22".repeat(20)}` as `0x${string}`;
+    const record = { subject, version: "2" };
+    const gate = { status: "VERIFIED", allowed: true, reason: 0, subject, version: "2" } as const;
+    const consumer = { status: "VERIFIED", accepted: true, address: `0x${"44".repeat(20)}` as `0x${string}`, subject, version: "2" } as const;
+    expect(admittedConsumerState(record, gate, consumer, subject)).toBe(true);
+    expect(admittedConsumerState(record, { ...gate, reason: 1 }, consumer, subject)).toBe(false);
+    expect(admittedConsumerState(record, gate, consumer, `0x${"33".repeat(20)}`)).toBe(false);
+    expect(admittedConsumerState(record, { ...gate, version: "1" }, consumer, subject)).toBe(false);
+    expect(admittedConsumerState(record, gate, { status: "UNKNOWN", accepted: false }, subject)).toBe(false);
+  });
   it("distinguishes invalid, resolving, missing, mismatch and valid identity states", () => {
     expect(identityInputState("abc", "idle")).toBe("INVALID");
     expect(identityInputState("7", "resolving")).toBe("RESOLVING");

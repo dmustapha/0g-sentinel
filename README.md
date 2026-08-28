@@ -1,257 +1,82 @@
-# 0G Sentinel: On-chain security attestations for AI agents
+# 0G Sentinel ProofLock
 
-Security infrastructure for the AI agent era. 0G Sentinel discovers every active contract on 0G Aristotle via chain logs, scans them through two independent AI inference pipelines, and writes immutable 9-field attestations to 0G Chain. Any dApp, orchestrator, or smart contract can query attestations in a single call and gate execution on the result, with no agent registration required.
+ProofLock is a policy-scoped admission layer for ERC-8004 agents on 0G Mainnet (chain ID `16661`). It binds a canonical agent identity to a verified evidence envelope, a time-limited onchain lease, and a stable AgentGateV2 decision.
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Solidity](https://img.shields.io/badge/Solidity-0.8-363636?logo=solidity)](https://soliditylang.org/)
-[![Next.js](https://img.shields.io/badge/Next.js-14.2-black?logo=next.js)](https://nextjs.org/)
-[![0G Chain](https://img.shields.io/badge/0G-Aristotle_Mainnet-00d4ff)](https://chainscan.0g.ai)
-[![Tests](https://img.shields.io/badge/tests-89_passing-brightgreen)]()
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+It does **not** certify that an agent is universally safe. Admission means only that the current identity subject, evidence coverage, policy version, lease state, and Gate decision satisfy this deployment's disclosed policy at read time.
 
-![Dashboard](docs/images/dashboard.png)
+## Current V2 flow
 
-## Live Demo
+1. Resolve an ERC-8004 Agent ID from the canonical Identity Registry.
+2. Bind the owner, current agent wallet, registration digest, source block, and runtime commitment.
+3. Run typed deterministic checks and two AI-assisted purposes through an acknowledged decentralized separated-model 0G Compute service.
+4. Accept Compute evidence only when the SDK's `processResponse` returns `true` and the signed transcript matches the expected provider signer. There is no receipt-eligible hosted-router fallback.
+5. Upload the exact canonical envelope bytes to 0G Storage, recompute the 0G root locally, confirm the finalized Flow transaction, retrieve the bytes, and match them again.
+6. Write a versioned ProofLock lease to RegistryV2 and read it back.
+7. AgentGateV2 returns an explicit allowed/blocked result with a stable reason code.
 
-**[https://0g-sentinel.vercel.app](https://0g-sentinel.vercel.app)**
+Proof history is append-preserved by version. Historical artifact validity is separate from current lease and Gate state. On-demand drift can block a consumer action; resealing creates a new version and restores access only after the complete policy succeeds again.
 
-Browse the live agent database, scan any 0G Aristotle address, and inspect on-chain attestation proofs.
+## Honest proof boundaries
 
----
+- Compute health is service discovery only: `inferenceExecuted: false` and `paidInference: false`. It proves that the configured acknowledged service is discoverable, not that a paid inference just ran.
+- Storage proof verification currently reports `networkProofVerified: false`. “Retrieved and root-matched” means the exact bytes were retrieved and recomputed at the recorded observation time; it is not an independently verified network Merkle proof.
+- A named operator-authorized validator issues leases. Guardian and validator authority are disclosed trust boundaries and may be centralized in this build.
+- Drift checks are on-demand, not continuous monitoring.
+- `SAFE` is a policy result, not admission. Only a current lease plus an AgentGateV2 `ALLOWED` decision admits a consumer action.
+- Missing, mismatched, stale, wrong-chain, or unavailable evidence fails closed.
 
-## What Is 0G Sentinel?
+## Public application
 
-AI agents operate on-chain with real funds. There is currently no standard way to verify whether an agent is safe before granting it access to a protocol. 0G Sentinel fills that gap.
+- `/` — resolve an ERC-8004 identity and run an authenticated evaluation
+- `/agents` — current ProofLock V2 lease inventory
+- `/agents/:agentId` — identity, lease, Gate, evidence, drift, and reseal detail
+- `/proof` — public historical proof verifier and independent subsystem health
+- `/api/v1/identities/resolve` — guarded canonical identity read
+- `/api/v1/prooflocks/:identityKey` — current lease, identity enrichment, and Gate decision
+- `/api/v1/proofs/:proofId/verify?identityKey=…` — retrieve and recompute stored evidence
+- `/api/health` — six independent timestamped probes
+- `/api/admin/prooflocks/stream` — authenticated evaluation stream
+- `/api/admin/prooflocks/:identityKey/drift` — authenticated on-demand drift action
 
-Both audits run as verified inference on 0G Compute: the behavioral audit and the code audit each route through the 0G Compute broker (TEE-attested, on-chain-settled), with a hosted 0G router fallback so a scan never fails. The AI doing the checking lives on 0G itself, not on a centralized API key. The code audit pairs a deterministic static-analysis pass (reentrancy, unprotected selfdestruct, arbitrary external calls, unchecked low-level calls) with the LLM, so a VULNERABLE verdict has a reproducible ground truth behind it, not one model asked twice.
+Operator tokens are server secrets. The UI keeps an entered token only in component memory for the request and clears it afterward.
 
-Behavioral signals are computed from real on-chain history read from the 0G explorer (chainscan.0g.ai), scored 0 to 100, and written with the LLM reasoning into a 9-field attestation struct on `AttestationRegistry`. A background queue auto-scans every newly discovered contract, results stream in live as each stage lands, and any protocol can gate agent execution on the verdict with a single `isSafe()` call.
+## Configuration
 
----
-
-## Deployed Contracts (0G Aristotle Mainnet)
-
-| Contract | Address | Explorer |
-|----------|---------|---------|
-| AttestationRegistry | `0xB3E7048cef229fF5043CD2dBba296bF278d3F88d` | [View](https://chainscan.0g.ai/address/0xB3E7048cef229fF5043CD2dBba296bF278d3F88d) |
-| AgentRegistry | `0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc` | [View](https://chainscan.0g.ai/address/0xcc1cd4550ec98DDcB19F9200331f3E96cab97fAc) |
-| AgentGate | `0xCA3338Af9A1E0Df0539c3C8967597A56044D9360` | [View](https://chainscan.0g.ai/address/0xCA3338Af9A1E0Df0539c3C8967597A56044D9360) |
-
-Chain ID: 16661 (0G Aristotle Mainnet)
-
-See [`submission/proof.md`](submission/proof.md) for live attestation data and on-chain transaction hashes.
-
----
-
-## Screenshots
-
-| Agent Database | Chain Discovery |
-|----------------|-----------------|
-| ![Dashboard](docs/images/dashboard.png) | ![Chain Discovery](docs/images/chain-discovery.png) |
-
-| Agent Detail | Integration Proof |
-|--------------|------------------|
-| ![Agent Detail](docs/images/agent-detail.png) | ![Proof](docs/images/proof.png) |
-
----
-
-## Features
-
-- **Chain-native discovery**: Scans the last 10,000 blocks via `eth_getLogs` to find every active contract on 0G Aristotle, sorted by event activity, no manual setup required
-- **Background auto-scan queue**: All discovered contracts are enqueued for scanning automatically; scans run serially to avoid nonce collisions; results appear progressively as each attestation lands on-chain (requires a persistent server process)
-- **Verified inference on 0G Compute**: Each scan's two audits route through the 0G Compute broker, TEE-attested and on-chain-settled, with a hosted 0G router fallback; a receipt is stored on-chain as proof the inference ran
-- **Behavioral risk scoring**: 0-100 risk score computed from real on-chain history read from the 0G explorer: transaction cadence, fund outflow patterns, counterparty concentration, and timing regularity
-- **Two independent code audits**: A deterministic static-analysis pass (reentrancy, unprotected selfdestruct, arbitrary external calls, unchecked low-level calls) cross-checked by 0G Compute inference; the static finding is a floor the model cannot argue away
-- **Live-streamed audit**: The five stages (discover, behavioral, code, evidence, attest) stream to the browser over SSE and settle on-chain in real time, no dead air
-- **Immutable on-chain attestations**: 9-field struct written to `AttestationRegistry`, queryable by any dApp with a single call; includes full LLM reasoning string
-- **Risk-ranked agent board**: Every attested agent ranked riskiest-first, searchable, with inline AI reasoning, threat badges, and a shareable verdict card (dynamic OG image) per agent
-- **AgentGate composability**: Drop-in security gate for any protocol; `isSafe()` and `isSafeWithAge()` read `AttestationRegistry` directly, no intermediary
-- **Evidence archival**: Full scan evidence JSON content-addressed and hashed; `evidence_hash` stored immutably in attestation struct
-- **OpenClaw skill**: `openclaw-skill/0g-sentinel-scan.json` enables AI orchestrators to trigger scans as a native tool call
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js 14.2, React, TypeScript |
-| Smart Contracts | Solidity 0.8, Hardhat |
-| AI Inference | 0G Compute broker (verifiable, TEE-attested, on-chain-settled) with hosted `router-api.0g.ai/v1` fallback, 0GM-1.0-35B-A3B model |
-| Compute SDK | `@0gfoundation/0g-compute-ts-sdk` (verifiable inference + on-chain settlement) |
-| Evidence Storage | `@0gfoundation/0g-ts-sdk` 1.2.8, SHA256 content hash |
-| Chain | 0G Aristotle Mainnet (chain ID 16661) |
-| Wallet | ethers.js v6 |
-
----
-
-## How It Works
-
-```
-                     0G Sentinel Scanner
-                           |
-          +----------------+----------------+
-          |                                 |
-   Pipeline 1: Behavioral          Pipeline 2: Code Scan
-   (0G Compute / 0GM model)        (0G Compute / 0GM model)
-   - tx frequency analysis         - Solidity AST analysis
-   - fund flow anomalies           - reentrancy detection
-   - access control patterns       - broken access control
-          |                                 |
-   behavioral_receipt_hash          code_receipt_hash
-   (unique per inference)           (unique per inference)
-          |                                 |
-          +----------------+----------------+
-                           |
-                   Evidence Archive
-                   (0G Storage SDK)
-                   evidence_hash
-                           |
-                  AttestationRegistry
-                  (0G Chain, mainnet)
-                  9-field attestation struct:
-                  behavioral_score (0-100)
-                  threat_level (SAFE/CAUTION/FLAGGED)
-                  code_risk (CLEAN/WARNING/VULNERABLE)
-                  code_findings (string)
-                  reasoning (string, LLM explanation)
-                  behavioral_receipt_hash (bytes32)
-                  code_receipt_hash (bytes32)
-                  evidence_hash (bytes32)
-                  attestation_timestamp (uint256)
-                           |
-                      AgentGate
-                  (composability primitive)
-                  gates execution based on
-                  attestation verdict
-```
-
-1. **Discover**: `/api/discover` scans last 10k blocks via `eth_getLogs`; every contract that emitted events is a candidate
-2. **Queue**: All discovered addresses enqueue for background auto-scanning (serial, nonce-safe)
-3. **Scan**: Two parallel AI pipelines run via 0G Compute for each address
-4. **Archive**: Evidence JSON uploaded to 0G Storage; SHA256 root hash stored
-5. **Attest**: Scanner writes 9-field attestation to `AttestationRegistry` on 0G Chain
-6. **Gate**: `AgentGate` reads attestation; reverts if agent is flagged or unscanned
-
-Each pipeline call produces a unique `zg-res-key` receipt UUID from the 0G router, converted to a bytes32 hash. Both hashes stored on-chain prove two independent AI verifications ran.
-
----
-
-## Running Locally
+Copy both active examples as appropriate:
 
 ```bash
-# 1. Install dependencies
-npm install
-cd frontend && npm install && cd ..
-
-# 2. Set environment variables
+cp .env.example .env
 cp frontend/.env.example frontend/.env.local
-# Fill in: ZERO_G_COMPUTE_API_KEY, ZERO_G_PRIVATE_KEY, and verify contract addresses
-
-# 3. Compile contracts
-npx hardhat compile
-
-# 4. Deploy to 0G testnet (optional: mainnet contracts are already live)
-npx hardhat run scripts/deploy/01_deploy_registry.ts --network zerogTestnet
-npx hardhat run scripts/deploy/02_deploy_attestation.ts --network zerogTestnet
-npx hardhat run scripts/deploy/03_deploy_gate.ts --network zerogTestnet
-
-# 5. Run frontend
-cd frontend && npm run dev
 ```
 
-Open [http://localhost:3000/agents](http://localhost:3000/agents).
+V2 public address names are exact and never fall back to Legacy V1 addresses:
 
-The dashboard auto-discovers active contracts from chain logs on load. To scan an agent, paste any 0G Aristotle address into the hero scan panel and submit.
-
----
-
-## Running a Scan
-
-```typescript
-import { runFullScan } from "./scanner/scanner";
-
-const result = await runFullScan("0xAgentAddress");
-console.log(result.threat_level);         // 0=SAFE, 1=CAUTION, 2=FLAGGED
-console.log(result.code_risk);            // 0=CLEAN, 1=WARNING, 2=VULNERABLE
-console.log(result.attestation_tx_hash);  // on-chain proof
+```text
+NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS
+NEXT_PUBLIC_AGENT_GATE_V2_ADDRESS
+NEXT_PUBLIC_PROOFLOCK_CONSUMER_ADDRESS
+NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS
 ```
 
-## Querying Attestations On-Chain
+See the example files for the complete server, health-canary, version, policy, and optional labeled-demo configuration.
 
-```solidity
-IAttestationRegistry registry = IAttestationRegistry(REGISTRY_ADDRESS);
-Attestation memory att = registry.getAttestation(agentAddress);
-require(att.threat_level < 2, "Agent is flagged");
-require(att.code_risk < 2, "Agent has vulnerabilities");
+## Run and verify
+
+```bash
+npm install
+cd frontend && npm install
+npm test
+npm run typecheck
+npm run build
+cd .. && npx hardhat test
 ```
 
----
+## Legacy V1 — excluded
 
-## API Reference
+`AttestationRegistry`, `AgentRegistry`, the original `AgentGate`, address-based scanning, background queue, risk ranking, fine-tuning, fictional seeded addresses, and the old evidence endpoint are Legacy V1. Their historical deployments and source remain for provenance, but they are excluded from active ProofLock V2 admission and are not evidence for V2 claims. Legacy mutation/read endpoints return `410 GONE`.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Service health, RPC endpoint, registry address |
-| GET | `/api/agents` | All attested agents with on-chain attestation data |
-| GET | `/api/discover` | Discover active contracts from chain logs (last 10k blocks) |
-| GET | `/api/scan/queue` | Background auto-scan queue status (queued, inFlight, completed, failed) |
-| POST | `/api/scan/behavioral` | Trigger behavioral + full scan for an agent address |
-| POST | `/api/scan/code` | Trigger code vulnerability scan only |
-
----
-
-## Project Structure
-
-```
-0g-sentinel/
-├── contracts/
-│   ├── AttestationRegistry.sol   # Core: stores 9-field attestation struct
-│   ├── AgentRegistry.sol         # Agent registration list
-│   └── AgentGate.sol             # Composability: gates on attestation verdict
-├── scanner/
-│   ├── scanner.ts                # Main pipeline orchestrator
-│   ├── behavioral.ts             # Pipeline 1: behavioral risk analysis
-│   ├── code-scan.ts              # Pipeline 2: Solidity vulnerability scan
-│   ├── compute.ts                # 0G Compute API client
-│   └── storage.ts                # 0G Storage evidence archival
-├── frontend/
-│   ├── app/
-│   │   ├── agents/               # Agent database + detail pages
-│   │   ├── proof/                # Integration proof page
-│   │   └── api/
-│   │       ├── agents/           # Attested agent list
-│   │       ├── discover/         # Chain-native contract discovery
-│   │       └── scan/
-│   │           ├── behavioral/   # Full scan trigger
-│   │           └── queue/        # Auto-scan queue status
-│   ├── components/
-│   │   ├── AgentsTable.tsx       # Paginated, searchable agent list
-│   │   ├── ChainDiscovery.tsx    # Live chain contract discovery panel
-│   │   ├── QueueBanner.tsx       # Auto-scan progress bar
-│   │   └── ScanInput.tsx         # Hero scan input
-│   └── scanner/
-│       └── queue.ts              # Background auto-scan queue singleton
-├── openclaw-skill/
-│   └── 0g-sentinel-scan.json     # OpenClaw skill manifest
-├── scripts/
-│   ├── deploy/                   # Hardhat deploy scripts
-│   └── seed-demo.ts              # Seed demo agents with real attestations
-└── tests/                        # 89 tests across unit, integration, E2E
-```
-
----
-
-## OpenClaw Skill
-
-0G Sentinel ships an OpenClaw-compatible skill manifest at `openclaw-skill/0g-sentinel-scan.json`, enabling AI orchestrators to invoke security scans as a native tool call.
-
----
+Current V2 deployment addresses must come from environment configuration. This repository does not invent a production deployment or treat old attestation transactions as current ProofLock evidence.
 
 ## License
 
 MIT
-
----
-
-Built for 0G Arena, Zero Cup 2026. AI-native security infrastructure, live on 0G Aristotle Mainnet.

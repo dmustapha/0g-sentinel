@@ -10,8 +10,8 @@ import { GateDecisionCard } from "@/components/GateDecisionCard";
 import { ProofCoverageGrid } from "@/components/ProofCoverageGrid";
 import { RescanButton } from "@/components/RescanButton";
 import { SealLifecycle } from "@/components/SealLifecycle";
-import { simulateConsumerAction } from "@/lib/contracts";
 import { computeProofId, readProofLockDetail, resolveIdentity, verifyProof } from "@/lib/prooflock-client";
+import { admittedConsumerState } from "@/lib/prooflock-status";
 import type { CanonicalIdentity, GateDecision, ProofLockDetailResponse, VerifiedProof } from "@/lib/prooflock-types";
 
 type ViewData = Readonly<{ identity: CanonicalIdentity; detail: ProofLockDetailResponse; proofId: `0x${string}`; proof?: VerifiedProof; consumerAllowed?: boolean }>;
@@ -23,9 +23,9 @@ export default function AgentDetailPage({ params }: { params: { address: string 
     const identity = await resolveIdentity(agentId, signal); const key = identityKey(identity);
     const detail = await readProofLockDetail(key, signal); const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
     if (!registry) throw new Error("RegistryV2 is not configured"); const proofId = computeProofId(registry, detail.proofLock);
-    const [proof, consumerAllowed] = await Promise.all([
-      verifyProof(proofId, key, signal).catch(() => undefined), simulateConsumerAction(agentId, identity.agentWallet).catch(() => undefined),
-    ]); setData({ identity, detail, proofId, proof, consumerAllowed });
+    const proof = await verifyProof(proofId, key, signal).catch(() => undefined);
+    const consumerAllowed = admittedConsumerState(detail.proofLock, detail.detail.gate, detail.detail.consumer, identity.agentWallet);
+    setData({ identity, detail, proofId, proof, consumerAllowed });
   }, [agentId]);
   useEffect(() => { const controller = new AbortController(); setError(""); void load(controller.signal).catch((cause) => {
     if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "ProofLock detail is unavailable");
@@ -46,8 +46,8 @@ function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
       {process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId && <DemoFixtureBadge />}</header>
     {detail.detail.status === "UNAVAILABLE" && <div className="inline-state state-warn"><b>{detail.detail.code}</b> · Stored evidence could not enrich this identity. Gate remains UNKNOWN and blocked.</div>}
     <div className="decision-grid"><GateDecisionCard decision={gate} /><AdmissionLeaseCard record={record} /></div>
-    <div className={data.consumerAllowed ? "consumer-call state-good" : "consumer-call state-bad"}><span className="card-kicker">ProofLockConsumerDemo · eth_call simulation</span>
-      <b>{data.consumerAllowed ? "CONSUMER ACTION ACCEPTED" : "CONSUMER ACTION BLOCKED"}</b><p>This calls the deployed consumer from the resolved agent wallet without writing state.</p></div>
+    <div className={data.consumerAllowed ? "consumer-call state-good" : "consumer-call state-bad"}><span className="card-kicker">Guarded ProofLockConsumerDemo simulation</span>
+      <b>{data.consumerAllowed ? "CONSUMER ACTION ACCEPTED" : "CONSUMER ACTION BLOCKED"}</b><p>Accepted only when the server-guarded consumer simulation, Gate subject, Gate version, current lease, and ERC-8004 wallet all match.</p></div>
     <ProofCoverageGrid coverage={record.coverage} /><EvidenceProofCard record={record} compute={compute} storage={storage} />
     <SealLifecycle currentVersion={record.version} previousProofId={previous} />
     <RescanButton identity={identity} record={record} previousProofId={proofId} onComplete={onComplete} />

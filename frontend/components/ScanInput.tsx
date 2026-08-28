@@ -2,8 +2,7 @@
 
 import { AbiCoder, keccak256 } from "ethers";
 import { useCallback, useRef, useState } from "react";
-import { readGateDecision } from "@/lib/contracts";
-import { ProofLockApiError, readProofLock, resolveIdentity, runProofLock } from "@/lib/prooflock-client";
+import { ProofLockApiError, readProofLockDetail, resolveIdentity, runProofLock } from "@/lib/prooflock-client";
 import type { ApiErrorShape, CanonicalIdentity, GateDecision, ProofLockRecord, RunnerStage } from "@/lib/prooflock-types";
 import { GateDecisionCard } from "./GateDecisionCard";
 import { IdentityResolver, identityInputState } from "./IdentityResolver";
@@ -24,12 +23,11 @@ export function ScanInput(_legacyProps: { defaultAddress?: string } = {}) {
     setStatus("resolving"); setError(undefined); setIdentity(null); setLock(null); setGate(null); setStages([]); setFailed(undefined);
     try {
       const resolved = await resolveIdentity(id, controller.signal); const key = identityKey(resolved);
-      const [current, decision] = await Promise.all([
-        readProofLock(key, controller.signal).catch((cause) => {
+      const current = await readProofLockDetail(key, controller.signal).catch((cause) => {
           if (cause instanceof ProofLockApiError && cause.detail.code === "NOT_FOUND") return null; throw cause;
-        }), readGateDecision(id).catch(() => null),
-      ]);
-      setIdentity(resolved); setLock(current); setGate(decision as GateDecision | null); setStatus("resolved");
+        });
+      const decision = current?.detail.gate.status === "VERIFIED" ? current.detail.gate : null;
+      setIdentity(resolved); setLock(current?.proofLock ?? null); setGate(decision as GateDecision | null); setStatus("resolved");
     } catch (cause) {
       setError(cause instanceof ProofLockApiError ? cause.detail : clientError("IDENTITY_UNAVAILABLE", "Canonical identity could not be resolved.")); setStatus("error");
     }

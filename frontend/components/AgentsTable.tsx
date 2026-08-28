@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { canonicalAgentHref } from "@/lib/agents";
-import { gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
+import { computeProofId } from "@/lib/prooflock-client";
+import { admittedConsumerState, gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
 import type { ProofLockInventoryItem } from "@/lib/prooflock-types";
 
 export function AgentsTable({ items }: { items: readonly ProofLockInventoryItem[] }) {
@@ -25,14 +26,22 @@ function InventoryCard({ item }: { item: ProofLockInventoryItem }) {
 function values(item: ProofLockInventoryItem) {
   const lease = leaseStatus(item.proofLock); const gate = item.detail.gate;
   const gateText = gate.status === "VERIFIED" ? gateReasonMeta(gate.reason) : null;
+  const proofHref = historicalProofHref(item);
   const identity = item.detail.status === "VERIFIED"
     ? <Link className="identity-link" href={canonicalAgentHref(item.detail.identity.agentId)}><b>Agent #{item.detail.identity.agentId}</b><span className="mono">{short(item.detail.identity.agentWallet)}</span></Link>
-    : <div><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code}</small></div>;
-  const admitted = lease === "ACTIVE" && gate.status === "VERIFIED" && gate.allowed;
+    : proofHref ? <Link className="identity-link" href={proofHref}><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code} · verify stored proof</small></Link>
+      : <div><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code}</small></div>;
+  const admitted = lease === "ACTIVE" && item.detail.status === "VERIFIED" &&
+    admittedConsumerState(item.proofLock, gate, item.detail.consumer, item.detail.identity.agentWallet);
   return { identity, coverage: <span className="mono">0x{item.proofLock.coverage.toString(16).padStart(2, "0")} / 0x7f</span>,
     seal: <span>v{item.proofLock.version} · {short(item.proofLock.envelopeDigest)}</span>, lease,
     gate: <span className={admitted ? "state-good" : "state-bad"}>{gateText ? gateText.code : "UNKNOWN"}</span>,
     last: <span className="mono">block {item.blockNumber}</span>, tone: admitted ? "state-good" : lease === "EXPIRING" || lease === "INCOMPLETE" ? "state-warn" : "state-bad" };
 }
+function historicalProofHref(item: ProofLockInventoryItem): string | null {
+  const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
+  if (!registry) return null;
+  try { return `/proof/${computeProofId(registry, item.proofLock)}?identityKey=${item.identityKey}`; }
+  catch { return null; }
+}
 function short(value: string): string { return `${value.slice(0, 8)}…${value.slice(-6)}`; }
-

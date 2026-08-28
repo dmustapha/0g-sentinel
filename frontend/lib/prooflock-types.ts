@@ -54,6 +54,116 @@ export type GateDecision = Readonly<{
 export type LeaseStatus = "ACTIVE" | "EXPIRING" | "EXPIRED" | "REVOKED" | "DRIFTED" | "INCOMPLETE";
 export type ProofVerificationState = "IDLE" | "VERIFYING" | "MATCH" | "MISMATCH" | "UNAVAILABLE" | "TIMEOUT" | "RETRYING";
 
+export type ObservationScope = "HISTORICAL" | "CURRENT";
+export type ObservationStatus = "VERIFIED" | "BLOCKED" | "UNAVAILABLE" | "STALE" | "MISMATCH" | "NOT_APPLICABLE";
+export type ObservationSubsystem =
+  | "identity" | "checks" | "compute" | "storage"
+  | "registry" | "lease" | "gate" | "consumer";
+export type ObservationReasonCode =
+  | GateReasonCode | "EVIDENCE_UNAVAILABLE" | "EVIDENCE_MISMATCH";
+export type BlockingObservationReasonCode = Exclude<ObservationReasonCode, "ALLOWED">;
+
+export type CurrentObservationMetadata = Readonly<{
+  scope: "CURRENT";
+  observedAt: string;
+  observationBlockNumber: string;
+  observationBlockHash: Bytes32;
+  serverIssuedAt: string;
+  ttlMs: number;
+  freshnessExpiresAt: string;
+}>;
+
+export type HistoricalObservationMetadata = Readonly<{
+  scope: "HISTORICAL";
+  observedAt: string;
+}>;
+
+export type ComputeVerificationCapability = Readonly<{
+  sdkVersion: string;
+  method: string;
+  provider: HexAddress;
+  model: string;
+  proofClass: "DECENTRALIZED_MODEL_TEE";
+  processResponseVerified: true;
+  boundHashes: Readonly<{
+    receiptDigest: Bytes32;
+    requestDigest: Bytes32;
+    responseDigest: Bytes32;
+    signedTextSha256: Bytes32;
+    requestSha256: Bytes32;
+    rawResponseSha256: Bytes32;
+    responseHeadersSha256: Bytes32;
+    artifactHash: Bytes32;
+  }>;
+}>;
+
+export type StorageVerificationCapability = Readonly<{
+  proofClass: "ROOT_MATCHED_NO_NETWORK_PROOF";
+  retrievalVerified: true;
+  networkProofVerified: false;
+}>;
+
+type ObservationIdentity = Readonly<{
+  registrySourceTxHash: Bytes32;
+}>;
+type ObservationCompute = Readonly<{
+  capability: ComputeVerificationCapability;
+}>;
+type ObservationStorage = Readonly<{
+  storageRoot: Bytes32;
+  artifactHash: Bytes32;
+  storageUploadTxHash: Bytes32;
+  registrySourceTxHash?: Bytes32;
+  capability: StorageVerificationCapability;
+}>;
+type HistoricalVerifiedObservation = HistoricalObservationMetadata & Readonly<{ status: "VERIFIED" }> & (
+  | Readonly<{ subsystem: "identity" | "checks" }>
+  | (Readonly<{ subsystem: "registry" }> & ObservationIdentity)
+  | (Readonly<{ subsystem: "compute" }> & ObservationCompute)
+  | (Readonly<{ subsystem: "storage" }> & ObservationStorage)
+);
+type CurrentVerifiedObservation = CurrentObservationMetadata & Readonly<{ status: "VERIFIED" }> & (
+  | Readonly<{ subsystem: "identity" }>
+  | Readonly<{ subsystem: "lease" }>
+  | Readonly<{ subsystem: "consumer"; accepted: true }>
+  | Readonly<{ subsystem: "gate"; allowed: true; reasonCode: "ALLOWED" }>
+  | Readonly<{ subsystem: "registry"; operation: "CURRENT_RECORD_READ"; registrySourceTxHash: Bytes32 }>
+);
+type HistoricalNonVerifiedObservation = HistoricalObservationMetadata & Readonly<{
+  subsystem: ObservationSubsystem;
+  status: Exclude<ObservationStatus, "VERIFIED" | "BLOCKED" | "STALE">;
+  reasonCode?: ObservationReasonCode;
+}>;
+type CurrentBlockedObservation = CurrentObservationMetadata & Readonly<{
+  subsystem: "lease" | "gate" | "consumer";
+  status: "BLOCKED";
+  reasonCode?: BlockingObservationReasonCode;
+}>;
+type CurrentNonVerifiedObservation = CurrentObservationMetadata & Readonly<{
+  subsystem: ObservationSubsystem;
+  status: Exclude<ObservationStatus, "VERIFIED" | "BLOCKED">;
+  reasonCode?: ObservationReasonCode;
+}>;
+
+export type ProofLockObservation =
+  | HistoricalVerifiedObservation | CurrentVerifiedObservation
+  | HistoricalNonVerifiedObservation | CurrentBlockedObservation | CurrentNonVerifiedObservation;
+export type HistoricalVerifiedStorageObservation = Extract<ProofLockObservation, {
+  scope: "HISTORICAL"; status: "VERIFIED"; subsystem: "storage";
+}>;
+export type CurrentVerifiedLeaseObservation = Extract<ProofLockObservation, {
+  scope: "CURRENT"; status: "VERIFIED"; subsystem: "lease";
+}>;
+export type CurrentVerifiedGateObservation = Extract<ProofLockObservation, {
+  scope: "CURRENT"; status: "VERIFIED"; subsystem: "gate";
+}>;
+export type CurrentVerifiedConsumerObservation = Extract<ProofLockObservation, {
+  scope: "CURRENT"; status: "VERIFIED"; subsystem: "consumer";
+}>;
+export type CurrentVerifiedRegistryObservation = Extract<ProofLockObservation, {
+  scope: "CURRENT"; status: "VERIFIED"; subsystem: "registry";
+}>;
+
 export type StorageVerification = Readonly<{
   retrievalVerified: true;
   networkProofVerified: false;

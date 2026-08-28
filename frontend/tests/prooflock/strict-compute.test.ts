@@ -1,5 +1,5 @@
 import { sha256 } from "ethers";
-import { mkdir, mkdtemp, rm, utimes } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { EventEmitter } from "node:events";
@@ -830,6 +830,93 @@ describe("strict 0G Compute", () => {
           1_000,
         ),
       ).resolves.toMatch(/^0x[0-9a-f]+$/);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("fences an original holder after its stale lock is replaced", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    let entered!: () => void;
+    let resume!: () => void;
+    const atWrite = new Promise<void>((resolve) => (entered = resolve));
+    const resumed = new Promise<void>((resolve) => (resume = resolve));
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    const store = new FileReceiptClaimStore({
+      stateDirectory: directory,
+      testBeforeRecordWrite: async () => {
+        entered();
+        await resumed;
+      },
+    } as never);
+    try {
+      const pending = store.claim("fenced", metadata, 60_000);
+      await atWrite;
+      const lock = join(directory, ".store.lock");
+      await rm(lock, { recursive: true, force: true });
+      await mkdir(lock, { mode: 0o700 });
+      await writeFile(join(lock, "replacement-owner"), "replacement-owner", { mode: 0o600 });
+      resume();
+      await expect(pending).rejects.toMatchObject({ code: "COMPUTE_BROKER_ERROR" });
+      expect((await readdir(directory)).filter((name) => name.endsWith(".json"))).toEqual([]);
+    } finally {
+      resume();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces byte capacity when commit expands an existing record", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    const metadata = {
+      model: "m".repeat(256),
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    try {
+      const seed = new FileReceiptClaimStore({ stateDirectory: directory, maximumRecords: 100 });
+      const claims: Array<{ key: string; token: string }> = [];
+      for (let index = 0; index < 20; index += 1) {
+        const key = `capacity-${index}`;
+        claims.push({ key, token: (await seed.claim(key, metadata, 60_000))! });
+      }
+      const files = (await readdir(directory)).filter((name) => name.endsWith(".json"));
+      let exactBytes = 0;
+      for (const file of files) exactBytes += (await lstat(join(directory, file))).size;
+      const bounded = new FileReceiptClaimStore({
+        stateDirectory: directory,
+        maximumRecords: 100,
+        maximumBytes: exactBytes,
+      });
+      await expect(
+        bounded.commit(claims[0].key, claims[0].token, 7 * 24 * 60 * 60 * 1_000),
+      ).rejects.toMatchObject({ code: "COMPUTE_REPLAY_STORE_FULL" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("safely removes crash temp residue before capacity accounting", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
+    const residue = join(directory, `${"a".repeat(64)}.dead.tmp`);
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    try {
+      await writeFile(residue, "x".repeat(5_000), { mode: 0o600 });
+      await expect(
+        new FileReceiptClaimStore({ stateDirectory: directory, maximumBytes: 4_096 }).claim(
+          "after-crash-temp",
+          metadata,
+          60_000,
+        ),
+      ).resolves.toMatch(/^0x[0-9a-f]+$/);
+      expect((await readdir(directory)).some((name) => name.endsWith(".tmp"))).toBe(false);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

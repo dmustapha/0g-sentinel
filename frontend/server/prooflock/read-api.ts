@@ -12,7 +12,7 @@ import { computeZeroGLayout, STORAGE_VERIFICATION_CAPABILITY } from "./storage";
 import { assertZeroGMainnetRpc } from "./rpc";
 import { StorageRecoveryMismatchError, recoverStorageCommitment } from "./storage-recovery";
 import { ERC8004_IDENTITY_REGISTRY, type EvidenceEnvelopeV1, type ResolvedAgentIdentity } from "./types";
-import { ProofMismatchError } from "./errors";
+import { ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { HistoricalProofLock, ProofLockDetail, ProofLockReadDependencies } from "./api";
 import type { RegistryProofLockRecord } from "./chain";
 import { StrictComputeError } from "./compute/strict-error";
@@ -20,8 +20,8 @@ import { StrictComputeError } from "./compute/strict-error";
 const CHAIN_ID = 16661;
 const MAX_EVIDENCE_BYTES = 1_048_576;
 const ZERO = "0x0000000000000000000000000000000000000001";
-const LOG_CHUNK = 2_000;
 const GATE = new Interface([
+  "function registry() view returns (address)", "function identityRegistry() view returns (address)",
   "function checkAgent(uint256 agentId) view returns (bool allowed,uint8 reason,address subject,uint64 version)",
 ]);
 const CONSUMER = new Interface([
@@ -49,6 +49,18 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
     : undefined;
   const resolveIdentity = (agentId: string, signal: AbortSignal) =>
     resolveProductionIdentity(rpcUrl, provider, agentId, signal);
+  const proofLocator = registryAddress ? createHistoricalProofLocator(provider as unknown as HistoricalProofProvider, registryAddress, {
+    fromBlock: requiredInteger(env.PROOFLOCK_REGISTRY_V2_FROM_BLOCK,
+      "PROOFLOCK_REGISTRY_V2_FROM_BLOCK", 0),
+    confirmations: requiredInteger(env.PROOFLOCK_REGISTRY_V2_CONFIRMATIONS ?? "5",
+      "PROOFLOCK_REGISTRY_V2_CONFIRMATIONS", 1),
+    lookbackBlocks: requiredInteger(env.PROOFLOCK_PROOF_LOOKBACK_BLOCKS ?? "250000",
+      "PROOFLOCK_PROOF_LOOKBACK_BLOCKS", 1),
+    chunkBlocks: requiredInteger(env.PROOFLOCK_PROOF_LOG_CHUNK_BLOCKS ?? "50000",
+      "PROOFLOCK_PROOF_LOG_CHUNK_BLOCKS", 1),
+    queryBudget: requiredInteger(env.PROOFLOCK_PROOF_QUERY_BUDGET ?? "5",
+      "PROOFLOCK_PROOF_QUERY_BUDGET", 1), negativeTtlMs: 10_000, negativeMaxEntries: 256,
+  }) : undefined;
   return Object.freeze({
     registryAddress,
     resolveIdentity,
@@ -60,12 +72,10 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       signal.throwIfAborted();
       return record;
     },
-    readProofById: async (identityKey, proofId, signal) => {
-      if (!registryAddress) throw new Error("PROOFLOCK_REGISTRY_V2_ADDRESS is not configured");
+    readProofById: async (identityKey, proofId, sourceTxHash, signal) => {
+      if (!proofLocator) throw new Error("PROOFLOCK_REGISTRY_V2_ADDRESS is not configured");
       await assertZeroGMainnetRpc(rpcUrl, signal);
-      return findHistoricalProofLock(provider, registryAddress, identityKey, proofId,
-        requiredInteger(env.PROOFLOCK_REGISTRY_V2_FROM_BLOCK,
-          "PROOFLOCK_REGISTRY_V2_FROM_BLOCK", 0), signal);
+      return proofLocator.locate(identityKey, proofId, sourceTxHash, signal);
     },
     readProofLockDetail: (record, signal) => enrichProofLockDetail(record, {
       downloadEvidence: (root, innerSignal) => downloadEvidence(
@@ -74,7 +84,8 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       resolveIdentity,
       checkGate: (agentId, innerSignal) => checkAgentGate(
         rpcUrl, provider, requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS,
-          "PROOFLOCK_AGENT_GATE_V2_ADDRESS"), agentId, innerSignal),
+          "PROOFLOCK_AGENT_GATE_V2_ADDRESS"), requiredAddress(env.PROOFLOCK_REGISTRY_V2_ADDRESS,
+          "PROOFLOCK_REGISTRY_V2_ADDRESS"), agentId, innerSignal),
       simulateConsumer: (agentId, subject, innerSignal) => simulateProofLockConsumer(
         rpcUrl, provider, requiredAddress(env.PROOFLOCK_CONSUMER_ADDRESS,
           "PROOFLOCK_CONSUMER_ADDRESS"), requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS,
@@ -224,25 +235,148 @@ async function verifyStorageEvidence(
     networkProofVerified: STORAGE_VERIFICATION_CAPABILITY.networkProofVerified });
 }
 
-async function findHistoricalProofLock(
-  provider: JsonRpcProvider,
+export type HistoricalLog = Readonly<{ address: string; topics: readonly string[]; data: string;
+  transactionHash: string; blockNumber: number; blockHash: string; index: number; removed?: boolean }>;
+export type HistoricalProofProvider = Readonly<{
+  getBlockNumber(): Promise<number>;
+  getLogs(filter: Readonly<{ address: string; topics: readonly (string | readonly string[] | null)[];
+    fromBlock: number; toBlock: number }>): Promise<readonly HistoricalLog[]>;
+  getTransactionReceipt(hash: string): Promise<Readonly<{ status: number | null; to: string | null;
+    hash: string; blockNumber: number; blockHash: string; logs: readonly HistoricalLog[] }> | null>;
+  getBlock(blockNumber: number): Promise<Readonly<{ number: number; hash: string | null }> | null>;
+}>;
+export type ProofLocatorOptions = Readonly<{ fromBlock: number; confirmations: number; lookbackBlocks: number;
+  chunkBlocks: number; queryBudget: number; negativeTtlMs: number; negativeMaxEntries: number }>;
+type NegativeResult = "HINT_REQUIRED" | "NOT_FOUND";
+
+export function createHistoricalProofLocator(
+  provider: HistoricalProofProvider,
   registryAddress: `0x${string}`,
-  identityKey: string,
-  proofId: string,
-  fromBlock: number,
-  signal: AbortSignal,
+  options: ProofLocatorOptions,
+) {
+  const config = validateLocatorOptions(options);
+  const negative = new BoundedNegativeCache(config.negativeTtlMs, config.negativeMaxEntries);
+  return Object.freeze({ locate: (identityKey: string, proofId: string, sourceTxHash: string | undefined,
+    signal: AbortSignal) => locateHistoricalProof(provider, registryAddress, config, negative,
+      identityKey, proofId, sourceTxHash, signal) });
+}
+
+async function locateHistoricalProof(
+  provider: HistoricalProofProvider, registryAddress: `0x${string}`, config: ProofLocatorOptions,
+  negative: BoundedNegativeCache, identityKey: string, proofId: string,
+  sourceTxHash: string | undefined, signal: AbortSignal,
 ): Promise<HistoricalProofLock | null> {
   const latest = await raceAbort(provider.getBlockNumber(), signal);
+  const finalized = latest - config.confirmations + 1;
+  if (finalized < config.fromBlock) throw new Error("Registry finality is unavailable");
+  if (sourceTxHash) return locateHinted(provider, registryAddress, identityKey, proofId,
+    sourceTxHash, finalized, signal);
+  const cacheKey = `${identityKey}:${proofId}`.toLowerCase();
+  const cached = negative.get(cacheKey);
+  if (cached) return negativeResult(cached);
+  const lower = Math.max(config.fromBlock, finalized - config.lookbackBlocks + 1);
+  const match = await scanHistorical(provider, registryAddress, identityKey, proofId,
+    lower, finalized, config, signal);
+  if (match) return validateHistorical(provider, registryAddress, identityKey, proofId, match, finalized, signal);
+  const kind = lower > config.fromBlock ? "HINT_REQUIRED" : "NOT_FOUND";
+  negative.set(cacheKey, kind);
+  return negativeResult(kind);
+}
+
+async function locateHinted(
+  provider: HistoricalProofProvider, registryAddress: `0x${string}`, identityKey: string,
+  proofId: string, transactionHash: string, finalized: number, signal: AbortSignal,
+) {
+  const receipt = await raceAbort(provider.getTransactionReceipt(transactionHash), signal);
+  if (!receipt) return null;
+  const match = recoverHistoricalProofLock(registryAddress, identityKey, proofId, receipt.logs);
+  if (!match) return null;
+  return validateReceipt(provider, registryAddress, identityKey, proofId, match, receipt, finalized, signal);
+}
+
+async function scanHistorical(
+  provider: HistoricalProofProvider, registryAddress: `0x${string}`, identityKey: string,
+  proofId: string, lower: number, upper: number, config: ProofLocatorOptions, signal: AbortSignal,
+) {
   const topics = REGISTRY_V2_INTERFACE.encodeFilterTopics("ProofLocked", [identityKey]);
-  for (let end = latest; end >= fromBlock; end -= LOG_CHUNK) {
+  let queries = 0;
+  for (let end = upper; end >= lower && queries < config.queryBudget; end -= config.chunkBlocks) {
     signal.throwIfAborted();
-    const start = Math.max(fromBlock, end - LOG_CHUNK + 1);
+    const start = Math.max(lower, end - config.chunkBlocks + 1);
     const logs = await raceAbort(provider.getLogs({ address: registryAddress, topics,
       fromBlock: start, toBlock: end }), signal);
+    queries += 1;
     const match = recoverHistoricalProofLock(registryAddress, identityKey, proofId, logs);
     if (match) return match;
   }
   return null;
+}
+
+async function validateHistorical(
+  provider: HistoricalProofProvider, registryAddress: `0x${string}`, identityKey: string,
+  proofId: string, match: HistoricalProofLock, finalized: number, signal: AbortSignal,
+) {
+  const receipt = await raceAbort(provider.getTransactionReceipt(match.source.transactionHash), signal);
+  if (!receipt) throw new Error("Registry receipt is unavailable");
+  return validateReceipt(provider, registryAddress, identityKey, proofId, match, receipt, finalized, signal);
+}
+
+async function validateReceipt(
+  provider: HistoricalProofProvider, registryAddress: `0x${string}`, identityKey: string,
+  proofId: string, match: HistoricalProofLock,
+  receipt: Awaited<ReturnType<HistoricalProofProvider["getTransactionReceipt"]>> & {},
+  finalized: number, signal: AbortSignal,
+) {
+  if (match.source.blockNumber > finalized) throw new Error("Registry proof is not finalized");
+  if (receipt.status !== 1 || receipt.to?.toLowerCase() !== registryAddress.toLowerCase()
+    || receipt.hash.toLowerCase() !== match.source.transactionHash.toLowerCase()
+    || receipt.blockNumber !== match.source.blockNumber
+    || receipt.blockHash.toLowerCase() !== match.source.blockHash.toLowerCase()
+    || receipt.logs.length > 1_024) mismatch();
+  const receiptMatch = recoverHistoricalProofLock(registryAddress, identityKey, proofId, receipt.logs);
+  if (!receiptMatch || !sameHistoricalSource(match, receiptMatch)) mismatch();
+  const block = await raceAbort(provider.getBlock(receipt.blockNumber), signal);
+  if (!block) throw new Error("Registry block is unavailable");
+  if (block.number !== receipt.blockNumber || block.hash?.toLowerCase() !== receipt.blockHash.toLowerCase()) mismatch();
+  return match;
+}
+
+function sameHistoricalSource(left: HistoricalProofLock, right: HistoricalProofLock): boolean {
+  return left.source.transactionHash === right.source.transactionHash
+    && left.source.blockNumber === right.source.blockNumber && left.source.blockHash === right.source.blockHash
+    && left.source.logIndex === right.source.logIndex && left.source.registryAddress === right.source.registryAddress;
+}
+
+function negativeResult(kind: NegativeResult): null {
+  if (kind === "HINT_REQUIRED") throw new ProofLocatorHintRequiredError();
+  return null;
+}
+
+class BoundedNegativeCache {
+  private readonly values = new Map<string, Readonly<{ kind: NegativeResult; expiresAt: number }>>();
+  constructor(private readonly ttlMs: number, private readonly maxEntries: number) {}
+  get(key: string): NegativeResult | undefined {
+    const value = this.values.get(key);
+    if (!value || value.expiresAt <= Date.now()) { this.values.delete(key); return undefined; }
+    return value.kind;
+  }
+  set(key: string, kind: NegativeResult): void {
+    if (this.values.size >= this.maxEntries) this.values.delete(this.values.keys().next().value as string);
+    this.values.set(key, { kind, expiresAt: Date.now() + this.ttlMs });
+  }
+}
+
+function validateLocatorOptions(value: ProofLocatorOptions): ProofLocatorOptions {
+  const integers = [value.fromBlock, value.confirmations, value.lookbackBlocks, value.chunkBlocks,
+    value.queryBudget, value.negativeTtlMs, value.negativeMaxEntries];
+  if (integers.some((item) => !Number.isSafeInteger(item) || item < 0)
+    || value.confirmations < 1 || value.queryBudget < 1 || value.queryBudget > 32
+    || value.chunkBlocks < 1 || value.lookbackBlocks < 1
+    || value.lookbackBlocks > value.chunkBlocks * value.queryBudget
+    || value.negativeTtlMs < 1 || value.negativeMaxEntries < 1 || value.negativeMaxEntries > 4_096) {
+    throw new Error("Invalid proof locator configuration");
+  }
+  return Object.freeze({ ...value });
 }
 
 export function recoverHistoricalProofLock(
@@ -250,7 +384,7 @@ export function recoverHistoricalProofLock(
   identityKey: string,
   proofId: string,
   logs: readonly Readonly<{ address: string; topics: readonly string[]; data: string;
-    transactionHash: string; blockNumber: number }>[],
+    transactionHash: string; blockNumber: number; blockHash: string; index: number; removed?: boolean }>[],
 ): HistoricalProofLock | null {
   const matches = logs.flatMap((log) => {
     try {
@@ -261,9 +395,13 @@ export function recoverHistoricalProofLock(
       if (record.identityKey.toLowerCase() !== identityKey.toLowerCase()
         || computeProofLockId(registryAddress, record).toLowerCase() !== proofId.toLowerCase()
         || !/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)
-        || !Number.isSafeInteger(log.blockNumber) || log.blockNumber < 0) return [];
+        || !/^0x[0-9a-fA-F]{64}$/.test(log.blockHash) || log.removed === true
+        || !Number.isSafeInteger(log.blockNumber) || log.blockNumber < 0
+        || !Number.isSafeInteger(log.index) || log.index < 0) return [];
       return [{ record, source: { kind: "ProofLocked" as const,
-        transactionHash: log.transactionHash.toLowerCase() as `0x${string}`, blockNumber: log.blockNumber } }];
+        registryAddress: registryAddress.toLowerCase() as `0x${string}`,
+        transactionHash: log.transactionHash.toLowerCase() as `0x${string}`, blockNumber: log.blockNumber,
+        blockHash: log.blockHash.toLowerCase() as `0x${string}`, logIndex: log.index } }];
     } catch { return []; }
   });
   if (matches.length > 1) mismatch();
@@ -315,15 +453,30 @@ async function verifyDownloadedRoot(bytes: Uint8Array, root: string, signal: Abo
   if (layout.storageRoot.toLowerCase() !== root.toLowerCase()) throw new Error("Storage root mismatch");
 }
 
-async function checkAgentGate(
+type RpcFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+export async function checkAgentGate(
   rpcUrl: string,
-  provider: JsonRpcProvider,
+  provider: Pick<JsonRpcProvider, "getCode" | "call">,
   gateAddress: `0x${string}`,
+  registryAddress: `0x${string}`,
   agentId: string,
   signal: AbortSignal,
+  rpcFetch: RpcFetch = fetch,
 ) {
-  await assertZeroGMainnetRpc(rpcUrl, signal);
+  await assertZeroGMainnetRpc(rpcUrl, signal, rpcFetch);
   signal.throwIfAborted();
+  const code = await raceAbort(provider.getCode(gateAddress), signal);
+  if (code === "0x") throw new Error("AgentGate is unavailable");
+  const [registryRaw, identityRaw] = await Promise.all([
+    raceAbort(provider.call({ to: gateAddress, data: GATE.encodeFunctionData("registry") }), signal),
+    raceAbort(provider.call({ to: gateAddress, data: GATE.encodeFunctionData("identityRegistry") }), signal),
+  ]);
+  const registry = String(GATE.decodeFunctionResult("registry", registryRaw)[0]).toLowerCase();
+  const identity = String(GATE.decodeFunctionResult("identityRegistry", identityRaw)[0]).toLowerCase();
+  if (registry !== registryAddress.toLowerCase() || identity !== ERC8004_IDENTITY_REGISTRY) {
+    throw new Error("AgentGate pointer mismatch");
+  }
   const data = GATE.encodeFunctionData("checkAgent", [BigInt(agentId)]);
   const raw = await raceAbort(provider.call({ to: gateAddress, data }), signal);
   const decoded = GATE.decodeFunctionResult("checkAgent", raw);

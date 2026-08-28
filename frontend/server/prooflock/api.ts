@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 
 import type { RegistryProofLockRecord } from "./chain";
-import { IdentityError, ProofMismatchError } from "./errors";
+import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
-import { ProofLockStageError, type RunnerInput, type RunnerResult, type RunnerStage } from "./runner";
+import { ProofLockStageError, type RunnerResult, type RunnerStage } from "./runner";
 import { authenticateOperator } from "./auth";
 
 const BYTES32 = /^0x[0-9a-fA-F]{64}$/;
@@ -15,7 +15,8 @@ export type ApiStage = RunnerStage | "AUTHENTICATING" | "RESOLVING_IDENTITY" | "
 export type ApiErrorCode =
   | "INVALID_INPUT" | "UNAUTHORIZED" | "NOT_FOUND" | "GONE" | "METHOD_NOT_ALLOWED"
   | "AGENT_NOT_FOUND" | "AGENT_WALLET_UNSET" | "IDENTITY_UNAVAILABLE"
-  | "DEPENDENCY_UNAVAILABLE" | "COMPUTE_UNVERIFIED" | "MISMATCH" | "REQUEST_ABORTED" | "INTERNAL_ERROR";
+  | "DEPENDENCY_UNAVAILABLE" | "COMPUTE_UNVERIFIED" | "MISMATCH" | "HINT_REQUIRED"
+  | "REQUEST_ABORTED" | "INTERNAL_ERROR";
 
 export type ApiErrorOptions = Readonly<{
   code: ApiErrorCode; message: string; stage: ApiStage; retryable: boolean;
@@ -25,7 +26,8 @@ export type ApiErrorOptions = Readonly<{
 export type ProofLockReadDependencies = Readonly<{
   resolveIdentity(agentId: string, signal: AbortSignal): Promise<ResolvedAgentIdentity>;
   readProofLock(identityKey: string, signal: AbortSignal): Promise<RegistryProofLockRecord>;
-  readProofById(identityKey: string, proofId: string, signal: AbortSignal): Promise<HistoricalProofLock | null>;
+  readProofById(identityKey: string, proofId: string, sourceTxHash: string | undefined,
+    signal: AbortSignal): Promise<HistoricalProofLock | null>;
   readProofLockDetail(record: RegistryProofLockRecord, signal: AbortSignal): Promise<ProofLockDetail>;
   computeProofId(registryAddress: string, record: RegistryProofLockRecord): string;
   verifyStoredEvidence(record: RegistryProofLockRecord, signal: AbortSignal): Promise<Readonly<{
@@ -35,7 +37,8 @@ export type ProofLockReadDependencies = Readonly<{
 }>;
 
 export type HistoricalProofLock = Readonly<{ record: RegistryProofLockRecord;
-  source: Readonly<{ kind: "ProofLocked"; transactionHash: Bytes32; blockNumber: number }> }>;
+  source: Readonly<{ kind: "ProofLocked"; registryAddress: HexAddress; transactionHash: Bytes32;
+    blockNumber: number; blockHash: Bytes32; logIndex: number }> }>;
 
 export type ProofLockDetail =
   | Readonly<{ status: "VERIFIED"; identity: ProofLockIdentitySummary;
@@ -55,8 +58,11 @@ export type ProofLockResolutionSummary = Readonly<{ owner: HexAddress; agentWall
   agentURI: string; registrationDigest: Bytes32; sourceBlockNumber: string; sourceBlockHash: Bytes32 }>;
 
 export type StreamRunner = Readonly<{
-  run(input: RunnerInput, report?: (stage: RunnerStage) => void, signal?: AbortSignal): Promise<RunnerResult | unknown>;
+  run(input: OperatorRequestInput, report?: (stage: RunnerStage) => void,
+    signal?: AbortSignal): Promise<RunnerResult | unknown>;
 }>;
+export type OperatorRequestInput = Readonly<{ identity: AgentIdentity; mode: "SEAL" | "RESEAL";
+  expectedPriorVersion?: bigint; previousProofId?: Bytes32 }>;
 export type DriftRunner = Readonly<{ run(identityKey: string, mark: boolean): Promise<unknown> }>;
 type LinkedAbort = Readonly<{ controller: AbortController; cleanup(): void }>;
 
@@ -160,7 +166,8 @@ async function verifyProof(proof: string, request: Request, deps: ProofLockReadD
     const proofId = bytes32(proof);
     const identityKey = bytes32(new URL(request.url).searchParams.get("identityKey") ?? "");
     const signal = deadline(request.signal);
-    const historical = await deps.readProofById(identityKey, proofId, signal);
+    const sourceTxHash = optionalBytes32(new URL(request.url).searchParams.get("sourceTxHash"));
+    const historical = await deps.readProofById(identityKey, proofId, sourceTxHash, signal);
     if (!historical) notFound();
     const record = historical.record;
     assertRecord(identityKey, record);
@@ -171,7 +178,7 @@ async function verifyProof(proof: string, request: Request, deps: ProofLockReadD
   } catch (error) { return mapApiError(error, "VERIFYING_PROOF", requestId); }
 }
 
-function streamRun(runner: StreamRunner, input: RunnerInput, linked: LinkedAbort, requestId: string): Response {
+function streamRun(runner: StreamRunner, input: OperatorRequestInput, linked: LinkedAbort, requestId: string): Response {
   const encoder = new TextEncoder();
   let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
@@ -208,7 +215,7 @@ function streamRun(runner: StreamRunner, input: RunnerInput, linked: LinkedAbort
   } });
 }
 
-async function parseRunnerInput(request: Request, signal: AbortSignal): Promise<RunnerInput> {
+async function parseRunnerInput(request: Request, signal: AbortSignal): Promise<OperatorRequestInput> {
   const length = Number(request.headers.get("content-length") ?? "0");
   if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) {
     await request.body?.cancel();
@@ -218,12 +225,36 @@ async function parseRunnerInput(request: Request, signal: AbortSignal): Promise<
   let value: unknown;
   try { value = JSON.parse(text); } catch { invalid(); }
   if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
-  const input = { ...(value as Record<string, unknown>) };
-  if (input.expectedPriorVersion !== undefined) {
-    if (typeof input.expectedPriorVersion !== "string" || !/^[1-9]\d*$/.test(input.expectedPriorVersion)) invalid();
-    input.expectedPriorVersion = BigInt(input.expectedPriorVersion);
-  }
-  return input as RunnerInput;
+  const raw = value as Record<string, unknown>;
+  const allowed = new Set(["identity", "mode", "expectedPriorVersion", "previousProofId"]);
+  if (Object.keys(raw).some((key) => !allowed.has(key))) invalid();
+  const identity = parseOperatorIdentity(raw.identity);
+  if (raw.mode !== "SEAL" && raw.mode !== "RESEAL") invalid();
+  const expectedPriorVersion = parsePriorVersion(raw.expectedPriorVersion);
+  const previousProofId = raw.previousProofId === undefined ? undefined : bytes32(String(raw.previousProofId));
+  if (raw.mode === "SEAL" && (expectedPriorVersion !== undefined || previousProofId !== undefined)) invalid();
+  if (raw.mode === "RESEAL" && (expectedPriorVersion === undefined || previousProofId === undefined)) invalid();
+  return Object.freeze({ identity, mode: raw.mode, ...(expectedPriorVersion ? { expectedPriorVersion } : {}),
+    ...(previousProofId ? { previousProofId: previousProofId as Bytes32 } : {}) });
+}
+
+function parseOperatorIdentity(value: unknown): AgentIdentity {
+  if (!value || typeof value !== "object" || Array.isArray(value)) invalid();
+  const raw = value as Record<string, unknown>;
+  if (Object.keys(raw).some((key) => !["namespace", "chainId", "registryAddress", "agentId"].includes(key))
+    || raw.namespace !== "eip155" || raw.chainId !== 16661 || typeof raw.registryAddress !== "string"
+    || !/^0x[0-9a-fA-F]{40}$/.test(raw.registryAddress) || /^0x0{40}$/i.test(raw.registryAddress)
+    || typeof raw.agentId !== "string" || !DECIMAL.test(raw.agentId) || BigInt(raw.agentId) >= 1n << 256n) invalid();
+  return Object.freeze({ namespace: "eip155", chainId: 16661,
+    registryAddress: raw.registryAddress.toLowerCase() as HexAddress, agentId: raw.agentId });
+}
+
+function parsePriorVersion(value: unknown): bigint | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) invalid();
+  const version = BigInt(value);
+  if (version >= 1n << 64n) invalid();
+  return version;
 }
 
 async function parseSmallObject(request: Request, signal: AbortSignal): Promise<Record<string, unknown>> {
@@ -263,6 +294,9 @@ function mapApiError(error: unknown, stage: ApiStage, requestId: string): Respon
   if (error instanceof IdentityError) return identityErrorResponse(error, stage, requestId);
   if (error instanceof ProofMismatchError) return apiErrorResponse(error, { code: "MISMATCH",
     message: "Proof evidence does not match its onchain commitments", stage, retryable: false, status: 409, requestId });
+  if (error instanceof ProofLocatorHintRequiredError) return apiErrorResponse(error, { code: "HINT_REQUIRED",
+    message: "A source transaction hash is required for this historical proof",
+    stage, retryable: false, status: 422, requestId });
   if (isAbort(error)) return apiErrorResponse(error, { code: "REQUEST_ABORTED", message: "Request was aborted", stage, retryable: true, status: 499, requestId });
   return apiErrorResponse(error, { code: "DEPENDENCY_UNAVAILABLE", message: "Required dependency is unavailable", stage, retryable: true, status: 503, requestId });
 }
@@ -284,6 +318,7 @@ function assertRecord(identityKey: string, record: RegistryProofLockRecord): voi
   if (!record || record.identityKey.toLowerCase() !== identityKey || record.version < 1n) notFound();
 }
 function bytes32(value: string): string { if (!BYTES32.test(value) || /^0x0{64}$/i.test(value)) invalid(); return value.toLowerCase(); }
+function optionalBytes32(value: string | null): string | undefined { return value === null ? undefined : bytes32(value); }
 function requiredRegistry(deps: ProofLockReadDependencies): string { if (!deps.registryAddress) throw new Error("Registry is unavailable"); return deps.registryAddress; }
 function unauthorized(requestId: string): ApiErrorOptions { return { code: "UNAUTHORIZED", message: "Operator authorization required", stage: "AUTHENTICATING", retryable: false, status: 401, requestId }; }
 function createRequestId(): string { return `req_${randomUUID()}`; }

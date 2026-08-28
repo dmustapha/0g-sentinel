@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { authenticateOperator } from "../../server/prooflock/auth";
-import { IdentityError, ProofMismatchError } from "../../server/prooflock/errors";
+import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "../../server/prooflock/errors";
 import { ProofLockStageError, computeProofRoot } from "../../server/prooflock/runner";
 import { canonicalizeEvidence, hashCanonical, receiptDigest } from "../../server/prooflock/canonical";
 import { REGISTRY_V2_INTERFACE, computeIdentityKey, computeProofLockId } from "../../server/prooflock/chain";
@@ -147,7 +147,8 @@ describe("public read handlers", () => {
       resolveIdentity: vi.fn().mockResolvedValue(identity),
       readProofLock: vi.fn().mockResolvedValue(record),
       readProofById: vi.fn().mockResolvedValue({ record, source: {
-        kind: "ProofLocked", transactionHash: hex("90", 32), blockNumber: 9,
+        kind: "ProofLocked", registryAddress: hex("12", 20), transactionHash: hex("90", 32),
+        blockNumber: 9, blockHash: hex("92", 32), logIndex: 1,
       } }),
       readProofLockDetail: vi.fn().mockResolvedValue({ status: "VERIFIED", identity: { agentId: "7" },
         resolution: { agentWallet: record.subject }, gate: { status: "VERIFIED", allowed: true, reason: 0,
@@ -216,7 +217,26 @@ describe("public read handlers", () => {
     const body = await response.json();
     expect(body.proofId).toBe(proofId);
     expect(body.storage.networkProofVerified).toBe(false);
+    expect(deps.readProofById).toHaveBeenCalledWith(identityKey, proofId, undefined, expect.any(AbortSignal));
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("passes a bounded source transaction hint to historical recovery", async () => {
+    const deps = dependencies();
+    const sourceTxHash = hex("90", 32);
+    const response = await createProofLockReadHandlers(deps).verifyProof(proofId,
+      new Request(`https://sentinel.test?identityKey=${identityKey}&sourceTxHash=${sourceTxHash}`));
+    expect(response.status).toBe(200);
+    expect(deps.readProofById).toHaveBeenCalledWith(identityKey, proofId, sourceTxHash,
+      expect.any(AbortSignal));
+  });
+
+  it("returns stable HINT_REQUIRED when the proof is outside the bounded fallback window", async () => {
+    const deps = dependencies({ readProofById: vi.fn().mockRejectedValue(new ProofLocatorHintRequiredError()) });
+    const response = await createProofLockReadHandlers(deps).verifyProof(proofId,
+      new Request(`https://sentinel.test?identityKey=${identityKey}`));
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ error: { code: "HINT_REQUIRED", retryable: false } });
   });
 
   it("rejects a proofId mismatch without retrieving Storage", async () => {
@@ -235,7 +255,8 @@ describe("public read handlers", () => {
     const historicalId = computeProofLockId(hex("12", 20), historical);
     const deps = dependencies({ readProofLock: vi.fn().mockResolvedValue(current),
       readProofById: vi.fn().mockResolvedValue({ record: historical,
-        source: { kind: "ProofLocked", transactionHash: hex("91", 32), blockNumber: 8 } }),
+        source: { kind: "ProofLocked", registryAddress: hex("12", 20), transactionHash: hex("91", 32),
+          blockNumber: 8, blockHash: hex("92", 32), logIndex: 1 } }),
       computeProofId: computeProofLockId });
     const response = await createProofLockReadHandlers(deps).verifyProof(historicalId,
       new Request(`https://sentinel.test?identityKey=${identityKey}`));
@@ -243,7 +264,8 @@ describe("public read handlers", () => {
     expect(deps.readProofLock).not.toHaveBeenCalled();
     expect(deps.verifyStoredEvidence).toHaveBeenCalledWith(historical, expect.any(AbortSignal));
     expect(await response.json()).toMatchObject({ proofLock: { version: "1", envelopeDigest: hex("71", 32) },
-      source: { kind: "ProofLocked", transactionHash: hex("91", 32), blockNumber: 8 } });
+      source: { kind: "ProofLocked", registryAddress: hex("12", 20), transactionHash: hex("91", 32),
+        blockNumber: 8, blockHash: hex("92", 32), logIndex: 1 } });
   });
 
   it("maps cryptographic proof mismatch to stable non-retryable MISMATCH", async () => {
@@ -365,14 +387,15 @@ describe("historical ProofLocked recovery", () => {
       record.runtimeCodeHash, record.policyVersion, record.behavioralScore, record.codeRisk, record.coverage,
     ]);
     return { record, log: { address: hex("12", 20), topics: event.topics, data: event.data,
-      transactionHash: hex("93", 32), blockNumber: 123 } };
+      transactionHash: hex("93", 32), blockNumber: 123, blockHash: hex("94", 32), index: 2 } };
   }
 
   it("reconstructs the immutable record and source from the exact proofId event", () => {
     const { record, log } = historicalLog();
     const proof = recoverHistoricalProofLock(hex("12", 20), record.identityKey,
       computeProofLockId(hex("12", 20), record), [log]);
-    expect(proof).toEqual({ record, source: { kind: "ProofLocked", transactionHash: hex("93", 32), blockNumber: 123 } });
+    expect(proof).toEqual({ record, source: { kind: "ProofLocked", registryAddress: hex("12", 20),
+      transactionHash: hex("93", 32), blockNumber: 123, blockHash: hex("94", 32), logIndex: 2 } });
   });
 
   it("does not substitute another version when no event matches the requested proofId", () => {
@@ -392,6 +415,18 @@ describe("admin ProofLock stream", () => {
     expect(response.headers.get("content-type")).toContain("application/json");
   });
 
+  it("rejects operator-owned or unknown fields before loading the runner", async () => {
+    const loadRunner = vi.fn();
+    const body = { identity: detailEnvelope().identity, mode: "SEAL",
+      registryAddress: hex("12", 20), scanner: hex("13", 20), policyVersion: 1 };
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner })(new Request(
+      "https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` },
+        body: JSON.stringify(body) }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("INVALID_INPUT");
+    expect(loadRunner).not.toHaveBeenCalled();
+  });
+
   it("streams only stages and a terminal result for one synchronous run", async () => {
     const run = vi.fn(async (_input, report, _signal?: AbortSignal) => {
       report("VALIDATING_IDENTITY");
@@ -400,7 +435,8 @@ describe("admin ProofLock stream", () => {
     });
     const request = new Request("https://sentinel.test", {
         method: "POST", headers: { authorization: `Bearer ${operatorToken}`, "content-type": "application/json" },
-        body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661, registryAddress: hex("80", 20), agentId: "7" }, registryAddress: hex("12", 20), policyVersion: 1, scanner: hex("13", 20), scannerSoftwareVersion: "1.0.0", validForSeconds: 604800, mode: "SEAL" }),
+        body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661,
+          registryAddress: hex("80", 20), agentId: "7" }, mode: "SEAL" }),
       });
     const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(request);
     expect(response.status).toBe(200);
@@ -416,7 +452,9 @@ describe("admin ProofLock stream", () => {
   it("uses the runner stage and stable code for terminal Compute errors", async () => {
     const run = vi.fn().mockRejectedValue(new ProofLockStageError("RUNNING_COMPUTE", "private provider detail"));
     const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
-      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` }, body: JSON.stringify({ mode: "SEAL" }) }),
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` },
+        body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661,
+          registryAddress: ERC8004_IDENTITY_REGISTRY, agentId: "7" }, mode: "SEAL" }) }),
     );
     const frames = await response.text();
     expect(frames).toContain('"code":"COMPUTE_UNVERIFIED"');
@@ -435,7 +473,9 @@ describe("admin ProofLock stream", () => {
       throw new DOMException("Aborted", "AbortError");
     });
     const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
-      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` }, body: JSON.stringify({ mode: "SEAL" }) }),
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` },
+        body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661,
+          registryAddress: ERC8004_IDENTITY_REGISTRY, agentId: "7" }, mode: "SEAL" }) }),
     );
     const reader = response.body!.getReader();
     await reader.read();

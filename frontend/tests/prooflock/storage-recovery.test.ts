@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { canonicalizeStorageCommitment } from "../../server/prooflock/canonical";
 import type { RegistryProofLockRecord } from "../../server/prooflock/chain";
-import { recoverStorageCommitment, StorageRecoveryMismatchError,
+import { recoverStorageCommitment, StorageRecoveryDependencyError, StorageRecoveryMismatchError,
   type StorageRecoveryProvider } from "../../server/prooflock/storage-recovery";
 import type { Bytes32, StorageCommitment } from "../../server/prooflock/types";
 
@@ -35,13 +35,17 @@ function record(): RegistryProofLockRecord {
 
 function provider(calldataRoot = ROOT): StorageRecoveryProvider {
   const encoded = iface.encodeEventLog(iface.getEvent("Submit"), [SENDER, DIGEST, 7, 0, 7, submission().data]);
+  const log = { address: FLOW, topics: encoded.topics, data: encoded.data,
+    transactionHash: TX, blockNumber: 100, index: 0, transactionIndex: 0, blockHash: DIGEST,
+    removed: false } as never;
   return {
+    getCode: vi.fn(async () => "0x6000"),
     getBlockNumber: vi.fn(async () => 105),
-    getLogs: vi.fn(async () => [{ address: FLOW, topics: encoded.topics, data: encoded.data,
-      transactionHash: TX, blockNumber: 100, index: 0, transactionIndex: 0, blockHash: DIGEST,
-      removed: false } as never]),
-    getTransactionReceipt: vi.fn(async () => ({ status: 1, blockNumber: 100 } as never)),
-    getTransaction: vi.fn(async () => ({ to: FLOW, data: iface.encodeFunctionData("submit", [submission(calldataRoot)]), value: 0n } as never)),
+    getLogs: vi.fn(async () => [log]),
+    getTransactionReceipt: vi.fn(async () => ({ status: 1, to: FLOW, hash: TX, blockNumber: 100,
+      blockHash: DIGEST, logs: [log] } as never)),
+    getTransaction: vi.fn(async () => ({ to: FLOW, from: SENDER, hash: TX,
+      data: iface.encodeFunctionData("submit", [submission(calldataRoot)]), value: 0n } as never)),
   };
 }
 
@@ -59,6 +63,31 @@ describe("Storage commitment recovery", () => {
   it("rejects an otherwise valid Flow transaction when its canonical commitment differs onchain", async () => {
     await expect(recoverStorageCommitment(provider(), FLOW, 0, 3,
       { ...record(), artifactHash: WRONG_ROOT }, new AbortController().signal))
+      .rejects.toBeInstanceOf(StorageRecoveryMismatchError);
+  });
+
+  it("classifies missing Flow code or no indexed root candidate as dependency unavailable", async () => {
+    const missingCode = { ...provider(), getCode: vi.fn(async () => "0x") };
+    await expect(recoverStorageCommitment(missingCode, FLOW, 0, 3, record(), new AbortController().signal))
+      .rejects.toBeInstanceOf(StorageRecoveryDependencyError);
+    const noCandidate = { ...provider(), getLogs: vi.fn(async () => []) };
+    await expect(recoverStorageCommitment(noCandidate, FLOW, 0, 3, record(), new AbortController().signal))
+      .rejects.toBeInstanceOf(StorageRecoveryDependencyError);
+  });
+
+  it("rejects a candidate whose transaction origin is not the Submit sender", async () => {
+    const wrongOrigin = { ...provider(), getTransaction: vi.fn(async () => ({ to: FLOW,
+      from: `0x${"99".repeat(20)}`, hash: TX, data: iface.encodeFunctionData("submit", [submission()]),
+      value: 0n } as never)) };
+    await expect(recoverStorageCommitment(wrongOrigin, FLOW, 0, 3, record(), new AbortController().signal))
+      .rejects.toBeInstanceOf(StorageRecoveryMismatchError);
+  });
+
+  it("rejects a candidate whose receipt transaction identity conflicts with its Flow log", async () => {
+    const wrongReceipt = { ...provider(), getTransactionReceipt: vi.fn(async () => ({ status: 1,
+      to: FLOW, hash: WRONG_ROOT, blockNumber: 100, blockHash: DIGEST,
+      logs: (await provider().getLogs({})) } as never)) };
+    await expect(recoverStorageCommitment(wrongReceipt, FLOW, 0, 3, record(), new AbortController().signal))
       .rejects.toBeInstanceOf(StorageRecoveryMismatchError);
   });
 });

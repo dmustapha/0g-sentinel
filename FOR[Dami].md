@@ -31,3 +31,9 @@ The tests cover the full demo lifecycle: admitted action, drift block, expiry bl
 JSON objects can look identical to a person while producing different bytes because keys, address casing, numbers, or malformed Unicode differ. ProofLock validates one strict evidence-v1 schema, normalizes addresses, serializes with JCS, and Keccak-hashes the exact UTF-8 bytes. The same facts therefore create the same commitment; different facts create a different one.
 
 The pre-upload envelope explicitly says Storage is still pending. Only a separate `StorageCommitment`—with a real root, upload transaction, and retrieved digest equal to the envelope digest—can advance coverage from `0x5f` to the sealed `0x7f`. This prevents a content hash or failed retrieval from masquerading as verified 0G Storage.
+
+### Why ERC-8004 resolution is a security boundary
+
+ProofLock does not trust a wallet address typed into a form. It resolves the agent owner, metadata URI, and active agent wallet from the canonical 0G ERC-8004 registry at one finalized block. After downloading and validating the registration card, it reads that block again; if the block hash changed, the scan is rejected and retried instead of joining facts from two chain histories.
+
+Registration-card retrieval is intentionally hostile-input code. It rejects private-network destinations and mixed DNS answers, pins the validated public IP to the HTTPS request, disables connection reuse, follows only bounded safe redirects, enforces one absolute deadline and byte limit, and preserves very large agent IDs without JavaScript rounding. The returned card is normalized and immutable, and its digest commits to the exact bytes fetched.

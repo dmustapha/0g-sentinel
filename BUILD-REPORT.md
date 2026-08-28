@@ -18,7 +18,7 @@ In progress on `feature/sentinel-prooflock`.
 | Scope and isolation | Complete | Approved scope, global worktree, green baseline |
 | V2 contracts | Complete | 45 focused and 134 full Hardhat tests; spec and security reviews approved |
 | Canonical evidence | Complete | 106 tests; spec and code-quality reviews approved |
-| ERC-8004 identity | Pending | Pending |
+| ERC-8004 identity | Complete | 116 focused and 222 full ProofLock tests; spec and code-quality reviews approved |
 | Compute and Storage | Pending | Pending |
 | Runner and APIs | Pending | Pending |
 | Frontend | Pending | Pending |
@@ -38,4 +38,13 @@ In progress on `feature/sentinel-prooflock`.
 - Strict evidence-v1 and StorageCommitment schemas, JCS bytes, Keccak hashes, and receipt binding.
 - RED cycles exposed 63 cumulative missing invariants across coverage, provenance, hostile inputs, and cross-field joins.
 - Final GREEN: 106 tests, frontend typecheck, production build, diff check.
+- Reviews: specification compliant; no open Critical or Important code-quality findings.
+
+## ERC-8004 Identity Phase
+
+- Commits: `1c9d91e`, `ed035f5`, `0761b58`, `17a23a3`.
+- Resolves `ownerOf`, `tokenURI`, and `getAgentWallet` at one stable finalized block, then revalidates the block after registration-card loading to reject reorg split-brain.
+- Loads only strict HTTPS, IPFS, or bounded data URIs with DNS pinning, SSRF defenses, cumulative deadlines, transport cancellation, redirect limits, byte limits, and lossless `uint256` agent IDs.
+- Verifies the registration-v1 type and exact agent-ID backlink, hashes the retrieved bytes, and returns a normalized immutable card rather than mutable source bytes.
+- Final GREEN: 116 identity tests, 222 full ProofLock tests, frontend typecheck, and diff check.
 - Reviews: specification compliant; no open Critical or Important code-quality findings.

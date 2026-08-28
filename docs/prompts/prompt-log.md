@@ -24,3 +24,14 @@
 > so we need a proper scoping and planning out of this. was the audit as deep as possible? if it wasnt, go deeper. then we scope and plan out the exact fixes for each into an extensive plan
 
 **Action:** Deepened the frontend and design-system audit to implementation-grade coverage, reconciled it with provenance, current-observation, paid-write recovery, abuse-control, accessibility, and release risks, and produced a 28-work-package file-level execution plan with dependencies, acceptance criteria, tests, approval stops, and release gates.
+
+### Prompt 6
+> Resume the 0G Sentinel ProofLock work in `/Users/MAC/.config/superpowers/worktrees/0g-sentinel/sentinel-prooflock`.
+>
+> First read the complete handoff at `/Users/MAC/.config/superpowers/worktrees/0g-sentinel/sentinel-prooflock/docs/context/conversation_2026-08-28_1754.md`, then read the applicable `AGENTS.md` and the full implementation plan at `/Users/MAC/.config/superpowers/worktrees/0g-sentinel/sentinel-prooflock/docs/plans/2026-08-28-sentinel-proof-ledger-world-class-implementation.md`.
+>
+> Planning is complete and committed as `47e1a1d`. No tasks from the new 28-work-package remediation plan have been implemented. Start execution with Task 1 using the `executing-plans` and test-driven-development workflows. Continue in dependency order through Tasks 1 to 9C, 9E, and 9F. Produce Task 9D's no-code 1440/390/320 state specification, then stop for my explicit approval before any route styling or Task 10.
+>
+> Critical constraints: Tasks 5 and 6 are one atomic implementation/commit slice; the operation journal is phased; current observations must be pinned and independent; API changes must remain additive/version-compatible; public routes must stay secret-free; hostile-data safety must be applied before visual pilots; complete inventory remains a truthful signed deferral unless explicitly expanded. Do not claim world-class or submission-ready until the funded mainnet and deployed-URL Task 22 gates pass.
+
+**Action:** Resumed from the clean planning commit, reloaded the complete handoff and implementation plan, established green baselines, and began dependency-ordered TDD execution through the pre-styling approval gate.

@@ -1,6 +1,6 @@
 import { promises as dns } from "node:dns";
 import https from "node:https";
-import { isIP } from "node:net";
+import { isIP, type LookupFunction } from "node:net";
 import {
   isLosslessNumber,
   parse as parseLosslessJson,
@@ -164,16 +164,65 @@ function validateResponse(response: CardHttpResponse, maxBytes: number): Uint8Ar
 }
 
 function resolveRemoteUri(uri: string, gateway = "https://ipfs.io"): URL {
-  if (uri.startsWith("ipfs://")) {
-    const cidPath = uri.slice("ipfs://".length);
-    if (!cidPath || cidPath.includes("#") || cidPath.startsWith("/")) unsupported();
-    const base = parseUrl(gateway);
-    validateHttpsUrl(base);
-    return new URL(`/ipfs/${cidPath}`, `${base.origin}/`);
-  }
+  if (uri.startsWith("ipfs:")) return resolveIpfsUri(uri, gateway);
   const url = parseUrl(uri);
   if (url.protocol !== "https:") unsupported();
   return url;
+}
+
+function resolveIpfsUri(uri: string, gateway: string): URL {
+  const { cid, segments } = parseIpfsUri(uri);
+  const base = parseGateway(gateway);
+  const prefix = `/ipfs/${cid}`;
+  const suffix = segments.length
+    ? `/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`
+    : "";
+  const target = new URL(`${prefix}${suffix}`, base.origin);
+  if (target.origin !== base.origin || !isUnderPrefix(target.pathname, prefix)) unsupported();
+  return target;
+}
+
+function parseIpfsUri(uri: string): Readonly<{ cid: string; segments: string[] }> {
+  if (uri.length > 4096 || !uri.startsWith("ipfs://") || /[\\?#]/.test(uri)) unsupported();
+  const remainder = uri.slice("ipfs://".length);
+  const slash = remainder.indexOf("/");
+  const cid = slash === -1 ? remainder : remainder.slice(0, slash);
+  const rawPath = slash === -1 ? "" : remainder.slice(slash + 1);
+  if (!cid || cid.includes("@") || !isSupportedCid(cid)) unsupported();
+  const segments = rawPath ? rawPath.split("/").map(decodePathSegment) : [];
+  if (segments.some((segment) => segment.length === 0)) unsupported();
+  return { cid, segments };
+}
+
+function decodePathSegment(raw: string): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    unsupported();
+  }
+  if (!decoded || decoded === "." || decoded === ".." || /[\\/\0]/.test(decoded)) {
+    unsupported();
+  }
+  return decoded;
+}
+
+function isSupportedCid(cid: string): boolean {
+  return /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(cid)
+    || /^b[a-z2-7]{9,119}$/.test(cid)
+    || /^k[0-9a-z]{9,119}$/.test(cid);
+}
+
+function parseGateway(gateway: string): URL {
+  if (gateway.includes("\\")) unsupported();
+  const base = parseUrl(gateway);
+  validateHttpsUrl(base);
+  if (base.search || base.pathname !== "/") unsupported();
+  return base;
+}
+
+function isUnderPrefix(pathname: string, prefix: string): boolean {
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
 function decodeDataUri(uri: string, maxBytes: number): Uint8Array {
@@ -338,7 +387,7 @@ function defaultHttpsRequest(request: CardRequest): Promise<CardHttpResponse> {
     const req = https.request(request.url, {
       method: "GET",
       timeout: request.timeoutMs,
-      lookup: (_host, _options, callback) => callback(null, request.pinnedAddress, request.family),
+      lookup: createPinnedLookup(request.pinnedAddress, request.family),
       headers: { accept: "application/json" },
     }, async (response) => {
       const length = Number(response.headers["content-length"]);
@@ -362,6 +411,13 @@ function defaultHttpsRequest(request: CardRequest): Promise<CardHttpResponse> {
     req.on("error", reject);
     req.end();
   });
+}
+
+export function createPinnedLookup(
+  pinnedAddress: string,
+  family: 4 | 6,
+): LookupFunction {
+  return (_hostname, _options, callback) => callback(null, pinnedAddress, family);
 }
 
 export async function collectBoundedBody(

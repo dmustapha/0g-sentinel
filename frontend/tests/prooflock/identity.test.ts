@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   collectBoundedBody,
+  createPinnedLookup,
   loadRegistrationCard,
   REGISTRATION_V1_TYPE,
   validateRegistrationCard,
@@ -179,7 +180,7 @@ describe("ERC-8004 identity resolution", () => {
     ).rejects.toBe(expected);
   });
 
-  it("stops before URI, wallet, and card work when owner resolution fails", async () => {
+  it("stops before later identity/card stages; paid-stage fault injection belongs to the runner", async () => {
     const tokenURI = vi.fn(async () => cardUri());
     const getAgentWallet = vi.fn(async () => WALLET);
     const requestHttps = vi.fn(async () => response(JSON.stringify(card())));
@@ -315,7 +316,8 @@ describe("registration card URI loader", () => {
 
   it("maps IPFS through the configured HTTPS gateway", async () => {
     const seen: string[] = [];
-    const loaded = await loadRegistrationCard("ipfs://bafy/card.json", IDENTITY, {
+    const cid = "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3hzc5wmjzvkwsl3vpj4lr6d6i";
+    const loaded = await loadRegistrationCard(`ipfs://${cid}/card.json`, IDENTITY, {
       ipfsGateway: "https://gateway.example",
       resolveDns: async () => ["93.184.216.34"],
       requestHttps: async ({ url }) => {
@@ -323,8 +325,54 @@ describe("registration card URI loader", () => {
         return response(JSON.stringify(card()));
       },
     });
-    expect(seen).toEqual(["https://gateway.example/ipfs/bafy/card.json"]);
+    expect(seen).toEqual([`https://gateway.example/ipfs/${cid}/card.json`]);
     expect(loaded.card.name).toBe("Sentinel Canary");
+  });
+
+  it.each([
+    ["CIDv0", `Qm${"a".repeat(44)}`, "docs/card.json"],
+    ["CIDv1 base32", "bafybeigdyrzt5sfp7udm7hu76uh7y26nf3hzc5wmjzvkwsl3vpj4lr6d6i", "metadata.json"],
+    ["CIDv1 base36", `k${"a1".repeat(8)}`, "nested/card.json"],
+  ])("accepts strict %s IPFS URIs", async (_name, cid, path) => {
+    const seen: string[] = [];
+    await loadRegistrationCard(`ipfs://${cid}/${path}`, IDENTITY, {
+      ipfsGateway: "https://gateway.example",
+      resolveDns: async () => ["93.184.216.34"],
+      requestHttps: async ({ url }) => {
+        seen.push(url.href);
+        return response(JSON.stringify(card()));
+      },
+    });
+    expect(seen).toEqual([`https://gateway.example/ipfs/${cid}/${path}`]);
+  });
+
+  it.each([
+    ["userinfo", `ipfs://user@Qm${"a".repeat(44)}/card.json`],
+    ["query", `ipfs://Qm${"a".repeat(44)}/card.json?download=1`],
+    ["fragment", `ipfs://Qm${"a".repeat(44)}/card.json#proof`],
+    ["backslash", `ipfs://Qm${"a".repeat(44)}\\card.json`],
+    ["empty authority", "ipfs:///card.json"],
+    ["dot", `ipfs://Qm${"a".repeat(44)}/./card.json`],
+    ["dotdot encoded", `ipfs://Qm${"a".repeat(44)}/%2e%2e/card.json`],
+    ["decoded slash", `ipfs://Qm${"a".repeat(44)}/bad%2Fsegment`],
+    ["decoded backslash", `ipfs://Qm${"a".repeat(44)}/bad%5Csegment`],
+    ["decoded NUL", `ipfs://Qm${"a".repeat(44)}/bad%00segment`],
+    ["invalid CID", "ipfs://not-a-cid/card.json"],
+  ])("rejects malicious IPFS %s", async (_name, uri) => {
+    await expectCode(loadRegistrationCard(uri, IDENTITY), "CARD_URI_UNSUPPORTED");
+  });
+
+  it.each([
+    "http://gateway.example",
+    "https://user@gateway.example",
+    "https://gateway.example:444",
+    "https://gateway.example/base",
+    "https://gateway.example?x=1",
+    "https://gateway.example#x",
+  ])("rejects unsafe configured gateway %s", async (gateway) => {
+    await expectCode(loadRegistrationCard(`ipfs://Qm${"a".repeat(44)}`, IDENTITY, {
+      ipfsGateway: gateway,
+    }), "CARD_URI_UNSUPPORTED");
   });
 
   it.each(["http://example.com/a", "ftp://example.com/a", "https://user:pass@example.com/a", "https://example.com:444/a", "https://example.com/a#fragment"])(
@@ -374,6 +422,17 @@ describe("registration card URI loader", () => {
       pinnedAddress: "93.184.216.34",
       family: 4,
     }));
+  });
+
+  it("pinned lookup ignores the requested hostname and returns only the selected address", async () => {
+    const lookup = createPinnedLookup("2606:4700:4700::1111", 6);
+    const result = await new Promise<{ address: unknown; family: unknown }>((resolve, reject) => {
+      lookup("attacker-controlled.example", { family: 4 }, (error, address, family) => {
+        if (error) reject(error);
+        else resolve({ address, family });
+      });
+    });
+    expect(result).toEqual({ address: "2606:4700:4700::1111", family: 6 });
   });
 
   it.each(["localhost", "api.localhost", "foo.local", "foo.internal"])(

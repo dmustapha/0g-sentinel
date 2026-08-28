@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 
 import { canonicalizeStorageCommitment } from "../../server/prooflock/canonical";
 import type { RegistryProofLockRecord } from "../../server/prooflock/chain";
-import { recoverStorageCommitment, type StorageRecoveryProvider } from "../../server/prooflock/storage-recovery";
+import { recoverStorageCommitment, StorageRecoveryMismatchError,
+  type StorageRecoveryProvider } from "../../server/prooflock/storage-recovery";
 import type { Bytes32, StorageCommitment } from "../../server/prooflock/types";
 
 const FLOW = "0x62d4144db0f0a6fbbaeb6296c785c71b3d57c526" as const;
@@ -52,12 +53,12 @@ describe("Storage commitment recovery", () => {
 
   it("rejects a Submit event when the transaction calldata did not submit the stored root", async () => {
     await expect(recoverStorageCommitment(provider(WRONG_ROOT), FLOW, 0, 3, record(), new AbortController().signal))
-      .rejects.toThrow("could not be recovered");
+      .rejects.toBeInstanceOf(StorageRecoveryMismatchError);
   });
 
   it("rejects an otherwise valid Flow transaction when its canonical commitment differs onchain", async () => {
     await expect(recoverStorageCommitment(provider(), FLOW, 0, 3,
       { ...record(), artifactHash: WRONG_ROOT }, new AbortController().signal))
-      .rejects.toThrow("could not be recovered");
+      .rejects.toBeInstanceOf(StorageRecoveryMismatchError);
   });
 });

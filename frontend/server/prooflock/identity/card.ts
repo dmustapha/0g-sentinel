@@ -1,6 +1,11 @@
 import { promises as dns } from "node:dns";
 import https from "node:https";
 import { isIP } from "node:net";
+import {
+  isLosslessNumber,
+  parse as parseLosslessJson,
+  parseNumberAndBigInt,
+} from "lossless-json";
 
 import { IdentityError } from "../errors";
 import type { AgentIdentity, RegistrationCard } from "../types";
@@ -50,23 +55,39 @@ export async function loadRegistrationCard(
   options: CardLoaderOptions = {},
 ): Promise<LoadedRegistrationCard> {
   const maxBytes = boundedOption(options.maxBytes, DEFAULT_MAX_BYTES, 1, DEFAULT_MAX_BYTES);
+  const timeoutMs = boundedOption(options.timeoutMs, DEFAULT_TIMEOUT_MS, 1, 30_000);
+  const deadline = Date.now() + timeoutMs;
   const bytes = uri.startsWith("data:")
     ? decodeDataUri(uri, maxBytes)
-    : await loadRemoteCard(resolveRemoteUri(uri, options.ipfsGateway), options, maxBytes);
-  const parsed = parseJson(bytes);
-  return Object.freeze({ bytes, card: validateRegistrationCard(parsed, identity) });
+    : await loadRemoteCard(
+      resolveRemoteUri(uri, options.ipfsGateway),
+      options,
+      maxBytes,
+      deadline,
+    );
+  const { value, shadow } = parseJson(bytes);
+  return Object.freeze({
+    bytes,
+    card: validateRegistrationCard(value, identity, shadow),
+  });
 }
 
 export function validateRegistrationCard(
   value: unknown,
   identity: AgentIdentity,
+  losslessShadow: unknown = value,
 ): RegistrationCard {
   assertBoundedJson(value);
   if (!isRecord(value) || value.type !== REGISTRATION_V1_TYPE) malformed();
   if (value.active === false) fail("CARD_INACTIVE", false);
   if (value.active !== undefined && typeof value.active !== "boolean") malformed();
   if (!Array.isArray(value.registrations)) malformed();
-  const matches = value.registrations.filter((entry) => matchesIdentity(entry, identity));
+  const shadowRegistrations = isRecord(losslessShadow)
+    && Array.isArray(losslessShadow.registrations)
+    ? losslessShadow.registrations
+    : [];
+  const matches = value.registrations.filter((entry, index) =>
+    matchesIdentity(entry, shadowRegistrations[index], identity));
   if (matches.length !== 1) fail("CARD_BACKLINK_MISMATCH", false);
   return deepFreeze(value) as RegistrationCard;
 }
@@ -75,6 +96,7 @@ async function loadRemoteCard(
   initial: URL,
   options: CardLoaderOptions,
   maxBytes: number,
+  deadline: number,
 ): Promise<Uint8Array> {
   const redirects = boundedOption(options.maxRedirects, 3, 0, 3);
   const visited = new Set<string>();
@@ -83,7 +105,7 @@ async function loadRemoteCard(
     validateHttpsUrl(current);
     if (visited.has(current.href)) fail("CARD_REDIRECT_LOOP", false);
     visited.add(current.href);
-    const response = await requestValidated(current, options, maxBytes);
+    const response = await requestValidated(current, options, maxBytes, deadline);
     if (!REDIRECTS.has(response.status)) return validateResponse(response, maxBytes);
     const location = response.headers.location;
     if (!location || count === redirects) fail("CARD_REDIRECT_LOOP", false);
@@ -96,21 +118,37 @@ async function requestValidated(
   url: URL,
   options: CardLoaderOptions,
   maxBytes: number,
+  deadline: number,
 ): Promise<CardHttpResponse> {
   const hostname = cleanHostname(url.hostname);
-  const addresses = isIP(hostname)
-    ? [hostname]
-    : await (options.resolveDns ?? defaultResolveDns)(hostname).catch(() => fail("AGENT_URI_UNAVAILABLE", true));
+  const addresses = isIP(hostname) ? [hostname] : await resolveAddresses(
+    hostname,
+    options.resolveDns ?? defaultResolveDns,
+    deadline,
+  );
   if (addresses.length === 0 || addresses.some((address) => !isPublicIp(address))) {
     fail("CARD_PRIVATE_NETWORK", false);
   }
-  const timeoutMs = boundedOption(options.timeoutMs, DEFAULT_TIMEOUT_MS, 1, 30_000);
+  const timeoutMs = remainingTime(deadline);
   const request = options.requestHttps ?? defaultHttpsRequest;
   const pinnedAddress = addresses[0];
   return withTimeout(
     request({ url, pinnedAddress, family: isIP(pinnedAddress) as 4 | 6, timeoutMs, maxBytes }),
     timeoutMs,
   );
+}
+
+async function resolveAddresses(
+  hostname: string,
+  resolver: (hostname: string) => Promise<readonly string[]>,
+  deadline: number,
+): Promise<readonly string[]> {
+  try {
+    return await withTimeout(resolver(hostname), remainingTime(deadline));
+  } catch (error) {
+    if (error instanceof IdentityError) throw error;
+    return fail("AGENT_URI_UNAVAILABLE", true);
+  }
 }
 
 function validateResponse(response: CardHttpResponse, maxBytes: number): Uint8Array {
@@ -160,10 +198,10 @@ function decodeBase64(value: string): Uint8Array {
   return new Uint8Array(Buffer.from(value, "base64"));
 }
 
-function parseJson(bytes: Uint8Array): unknown {
+function parseJson(bytes: Uint8Array): Readonly<{ value: unknown; shadow: unknown }> {
   try {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return JSON.parse(text);
+    return { value: JSON.parse(text), shadow: parseLosslessJson(text) };
   } catch {
     malformed();
   }
@@ -190,11 +228,28 @@ function assertBoundedJson(root: unknown): void {
   }
 }
 
-function matchesIdentity(entry: unknown, identity: AgentIdentity): boolean {
-  if (!isRecord(entry)) return false;
-  if (!Number.isSafeInteger(entry.agentId) || entry.agentId !== Number(identity.agentId)) return false;
+function matchesIdentity(
+  entry: unknown,
+  shadow: unknown,
+  identity: AgentIdentity,
+): boolean {
+  if (!isRecord(entry) || !isRecord(shadow)) return false;
+  if (!matchesAgentId(entry.agentId, shadow.agentId, identity.agentId)) return false;
   const backlink = `eip155:16661:${identity.registryAddress.toLowerCase()}`;
-  return entry.agentRegistry === backlink;
+  return entry.agentRegistry === backlink && shadow.agentRegistry === backlink;
+}
+
+function matchesAgentId(value: unknown, shadow: unknown, expected: string): boolean {
+  if (isLosslessNumber(shadow)) {
+    if (!/^(0|[1-9]\d*)$/.test(shadow.value)) return false;
+    const parsed = parseNumberAndBigInt(shadow.value);
+    return typeof parsed === "bigint"
+      && parsed <= (1n << 256n) - 1n
+      && parsed.toString() === expected;
+  }
+  return Number.isSafeInteger(value)
+    && typeof value === "number"
+    && BigInt(value).toString() === expected;
 }
 
 function validateHttpsUrl(url: URL): void {
@@ -236,10 +291,17 @@ function isPublicV6(address: string): boolean {
   if (value === null || value === 0n || value === 1n) return false;
   const mapped = value >> 32n === 0xffffn;
   if (mapped) return isPublicV4([24n, 16n, 8n, 0n].map((shift) => Number((value >> shift) & 255n)).join("."));
-  return !inV6Range(value, 0xfc00n << 112n, 7)
-    && !inV6Range(value, 0xfe80n << 112n, 10)
-    && !inV6Range(value, 0xff00n << 112n, 8)
-    && !inV6Range(value, 0x20010db8n << 96n, 32);
+  if (!inV6Range(value, 0x2000n << 112n, 3)) return false;
+  const blocked: Array<[bigint, number]> = [
+    [0x20010000n << 96n, 32],
+    [0x20010002n << 96n, 48],
+    [0x20010010n << 96n, 28],
+    [0x20010020n << 96n, 28],
+    [0x20010db8n << 96n, 32],
+    [0x2002n << 112n, 16],
+    [0x3fffn << 112n, 20],
+  ];
+  return !blocked.some(([network, prefix]) => inV6Range(value, network, prefix));
 }
 
 function parseV6(address: string): bigint | null {
@@ -337,6 +399,12 @@ async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function remainingTime(deadline: number): number {
+  const remaining = deadline - Date.now();
+  if (remaining <= 0) fail("CARD_TIMEOUT", true);
+  return remaining;
 }
 
 function redirectUrl(location: string, current: URL): URL {

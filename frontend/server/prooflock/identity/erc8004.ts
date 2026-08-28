@@ -1,4 +1,4 @@
-import { Interface, keccak256, type Provider, type TransactionRequest } from "ethers";
+import { id, Interface, keccak256, type Provider, type TransactionRequest } from "ethers";
 
 import { IdentityError } from "../errors";
 import {
@@ -15,6 +15,7 @@ import {
 
 const UINT256_MAX = (1n << 256n) - 1n;
 const DEFAULT_FINALITY_CONFIRMATIONS = 5;
+const NONEXISTENT_TOKEN_SELECTOR = id("ERC721NonexistentToken(uint256)").slice(0, 10);
 const REGISTRY_INTERFACE = new Interface([
   "function ownerOf(uint256 agentId) view returns (address)",
   "function tokenURI(uint256 agentId) view returns (string)",
@@ -167,7 +168,9 @@ async function loadSourceBlock(adapter: IdentityChainAdapter, number: bigint) {
 async function requireRegistry(adapter: IdentityChainAdapter, blockTag: bigint): Promise<void> {
   try {
     const code = await adapter.getCode(ERC8004_IDENTITY_REGISTRY, blockTag);
-    if (!/^0x[0-9a-fA-F]+$/.test(code) || code === "0x") throw new Error("registry absent");
+    if (!/^0x[0-9a-fA-F]+$/.test(code) || /^0x0*$/i.test(code)) {
+      throw new Error("registry absent");
+    }
   } catch {
     throw new IdentityError("REGISTRY_UNAVAILABLE", "registry", true);
   }
@@ -175,11 +178,34 @@ async function requireRegistry(adapter: IdentityChainAdapter, blockTag: bigint):
 
 async function readOwner(adapter: IdentityChainAdapter, agentId: bigint, blockTag: bigint) {
   try {
-    return normalizeAddress(await adapter.ownerOf(agentId, blockTag), "AGENT_NOT_FOUND");
+    return normalizeAddress(
+      await adapter.ownerOf(agentId, blockTag),
+      "REGISTRY_UNAVAILABLE",
+      true,
+    );
   } catch (error) {
     if (error instanceof IdentityError) throw error;
-    throw new IdentityError("AGENT_NOT_FOUND", "registry", false);
+    if (hasRevertSelector(error, NONEXISTENT_TOKEN_SELECTOR)) {
+      throw new IdentityError("AGENT_NOT_FOUND", "registry", false);
+    }
+    throw new IdentityError("REGISTRY_UNAVAILABLE", "registry", true);
   }
+}
+
+function hasRevertSelector(error: unknown, selector: string): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<unknown>();
+  while (pending.length && seen.size < 32) {
+    const value = pending.pop();
+    if (typeof value === "string" && value.toLowerCase().startsWith(selector)) return true;
+    if (!value || typeof value !== "object" || seen.has(value)) continue;
+    seen.add(value);
+    const record = value as Record<string, unknown>;
+    for (const key of ["data", "error", "info", "revert"]) {
+      if (key in record) pending.push(record[key]);
+    }
+  }
+  return false;
 }
 
 async function readAgentUri(adapter: IdentityChainAdapter, agentId: bigint, blockTag: bigint) {
@@ -201,13 +227,17 @@ async function readAgentWallet(adapter: IdentityChainAdapter, agentId: bigint, b
   }
 }
 
-function normalizeAddress(value: string, zeroCode: "AGENT_NOT_FOUND" | "AGENT_WALLET_UNSET") {
+function normalizeAddress(
+  value: string,
+  zeroCode: "REGISTRY_UNAVAILABLE" | "AGENT_WALLET_UNSET",
+  retryable = false,
+) {
   if (!/^0x[0-9a-fA-F]{40}$/.test(value)) {
-    throw new IdentityError(zeroCode, "registry", false);
+    throw new IdentityError(zeroCode, "registry", retryable);
   }
   const normalized = value.toLowerCase() as HexAddress;
   if (normalized === "0x0000000000000000000000000000000000000000") {
-    throw new IdentityError(zeroCode, "registry", false);
+    throw new IdentityError(zeroCode, "registry", retryable);
   }
   return normalized;
 }

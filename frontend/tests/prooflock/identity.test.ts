@@ -1,4 +1,4 @@
-import { getBytes, Interface, keccak256, toUtf8Bytes } from "ethers";
+import { getBytes, id, Interface, keccak256, toUtf8Bytes } from "ethers";
 import { Readable } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 
@@ -23,6 +23,7 @@ import {
 const OWNER = "0x1111111111111111111111111111111111111111";
 const WALLET = "0x2222222222222222222222222222222222222222";
 const BLOCK_HASH = `0x${"ab".repeat(32)}`;
+const MISSING_TOKEN_DATA = id("ERC721NonexistentToken(uint256)").slice(0, 10);
 const BACKLINK = `eip155:16661:${ERC8004_IDENTITY_REGISTRY}`;
 const IDENTITY: AgentIdentity = {
   namespace: "eip155",
@@ -135,7 +136,7 @@ describe("ERC-8004 identity resolution", () => {
     );
     await expectCode(
       resolveAgentIdentity(IDENTITY, {
-        adapter: adapter({ ownerOf: async () => { throw new Error("ERC721NonexistentToken"); } }).value,
+        adapter: adapter({ ownerOf: async () => { throw { data: MISSING_TOKEN_DATA }; } }).value,
       }),
       "AGENT_NOT_FOUND",
     );
@@ -151,6 +152,54 @@ describe("ERC-8004 identity resolution", () => {
       }),
       "AGENT_URI_UNAVAILABLE",
     );
+  });
+
+  it("maps owner provider failures to retryable registry unavailability", async () => {
+    await expect(
+      resolveAgentIdentity(IDENTITY, {
+        adapter: adapter({ ownerOf: async () => { throw new Error("provider offline"); } }).value,
+      }),
+    ).rejects.toMatchObject({ code: "REGISTRY_UNAVAILABLE", retryable: true });
+  });
+
+  it("does not classify malformed owner return data as a missing agent", async () => {
+    await expect(
+      resolveAgentIdentity(IDENTITY, {
+        adapter: adapter({ ownerOf: async () => "0x0000000000000000000000000000000000000000" }).value,
+      }),
+    ).rejects.toMatchObject({ code: "REGISTRY_UNAVAILABLE", retryable: true });
+  });
+
+  it("preserves explicit owner IdentityErrors", async () => {
+    const expected = new IdentityError("WRONG_CHAIN", "identity", false);
+    await expect(
+      resolveAgentIdentity(IDENTITY, {
+        adapter: adapter({ ownerOf: async () => { throw expected; } }).value,
+      }),
+    ).rejects.toBe(expected);
+  });
+
+  it("stops before URI, wallet, and card work when owner resolution fails", async () => {
+    const tokenURI = vi.fn(async () => cardUri());
+    const getAgentWallet = vi.fn(async () => WALLET);
+    const requestHttps = vi.fn(async () => response(JSON.stringify(card())));
+    await expectCode(resolveAgentIdentity(IDENTITY, {
+      adapter: adapter({
+        ownerOf: async () => { throw new Error("provider offline"); },
+        tokenURI,
+        getAgentWallet,
+      }).value,
+      cardLoaderOptions: { requestHttps },
+    }), "REGISTRY_UNAVAILABLE");
+    expect(tokenURI).not.toHaveBeenCalled();
+    expect(getAgentWallet).not.toHaveBeenCalled();
+    expect(requestHttps).not.toHaveBeenCalled();
+  });
+
+  it.each(["0x", "0x00", "0x000000"])("rejects absent all-zero registry code %s", async (code) => {
+    await expectCode(resolveAgentIdentity(IDENTITY, {
+      adapter: adapter({ getCode: async () => code }).value,
+    }), "REGISTRY_UNAVAILABLE");
   });
 
   it("uses raw resolved JSON bytes for the digest", async () => {
@@ -222,6 +271,38 @@ describe("registration-v1 validation", () => {
   });
 });
 
+describe("lossless uint256 registration backlinks", () => {
+  const largeId = (BigInt(Number.MAX_SAFE_INTEGER) + 1n).toString();
+  const largeIdentity = { ...IDENTITY, agentId: largeId };
+
+  function rawLarge(agentIdToken: string) {
+    return `{"type":"${REGISTRATION_V1_TYPE}","registrations":[{"agentId":${agentIdToken},"agentRegistry":"${BACKLINK}"}]}`;
+  }
+
+  it("accepts a numeric MAX_SAFE+1 backlink without precision loss", async () => {
+    const result = await loadRegistrationCard(cardUri(rawLarge(largeId)), largeIdentity);
+    expect(result.card.registrations).toHaveLength(1);
+  });
+
+  it.each([
+    ["off by one", (BigInt(largeId) + 1n).toString()],
+    ["quoted", `"${largeId}"`],
+    ["decimal", `${largeId}.0`],
+    ["exponent", `${largeId}e0`],
+    ["negative", "-1"],
+  ])("rejects %s uint256 token", async (_name, token) => {
+    await expectCode(
+      loadRegistrationCard(cardUri(rawLarge(token)), largeIdentity),
+      "CARD_BACKLINK_MISMATCH",
+    );
+  });
+
+  it("rejects duplicate JSON object keys", async () => {
+    const raw = `{"type":"ignored","type":"${REGISTRATION_V1_TYPE}","registrations":[{"agentId":7,"agentRegistry":"${BACKLINK}"}]}`;
+    await expectCode(loadRegistrationCard(cardUri(raw), IDENTITY), "CARD_MALFORMED");
+  });
+});
+
 describe("registration card URI loader", () => {
   it("decodes base64 and percent-encoded data JSON", async () => {
     const json = JSON.stringify(card());
@@ -246,7 +327,7 @@ describe("registration card URI loader", () => {
     expect(loaded.card.name).toBe("Sentinel Canary");
   });
 
-  it.each(["http://example.com/a", "ftp://example.com/a", "https://user:pass@example.com/a", "https://example.com:444/a"])(
+  it.each(["http://example.com/a", "ftp://example.com/a", "https://user:pass@example.com/a", "https://example.com:444/a", "https://example.com/a#fragment"])(
     "rejects unsupported URI %s",
     async (uri) => expectCode(loadRegistrationCard(uri, IDENTITY), "CARD_URI_UNSUPPORTED"),
   );
@@ -254,12 +335,45 @@ describe("registration card URI loader", () => {
   it.each([
     "127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.0.1", "169.254.1.1",
     "100.64.0.1", "192.0.2.1", "224.0.0.1", "0.0.0.0", "::1", "::", "fc00::1",
-    "fe80::1", "2001:db8::1", "ff02::1", "::ffff:127.0.0.1",
+    "fe80::1", "2001:db8::1", "ff02::1", "::ffff:127.0.0.1", "100::1",
+    "fec0::1", "64:ff9b::1", "64:ff9b:1::1", "2001::1", "2001:2::1",
+    "2001:10::1", "2001:20::1", "2002::1", "3fff::1",
   ])("blocks private/reserved address %s", async (address) => {
     await expectCode(loadRegistrationCard("https://example.com/card", IDENTITY, {
       resolveDns: async () => [address],
       requestHttps: async () => response(JSON.stringify(card())),
     }), "CARD_PRIVATE_NETWORK");
+  });
+
+  it("accepts a real global-unicast IPv6 address and pins its family", async () => {
+    const requests: Array<{ pinnedAddress: string; family: number }> = [];
+    await loadRegistrationCard("https://example.com/card", IDENTITY, {
+      resolveDns: async () => ["2606:4700:4700::1111"],
+      requestHttps: async ({ pinnedAddress, family }) => {
+        requests.push({ pinnedAddress, family });
+        return response(JSON.stringify(card()));
+      },
+    });
+    expect(requests).toEqual([{ pinnedAddress: "2606:4700:4700::1111", family: 6 }]);
+  });
+
+  it("rejects mixed public and private DNS answers", async () => {
+    await expectCode(loadRegistrationCard("https://example.com/card", IDENTITY, {
+      resolveDns: async () => ["93.184.216.34", "127.0.0.1"],
+      requestHttps: async () => response(JSON.stringify(card())),
+    }), "CARD_PRIVATE_NETWORK");
+  });
+
+  it("passes the exact selected public IPv4 and family to the request transport", async () => {
+    const requestHttps = vi.fn(async () => response(JSON.stringify(card())));
+    await loadRegistrationCard("https://example.com/card", IDENTITY, {
+      resolveDns: async () => ["93.184.216.34", "1.1.1.1"],
+      requestHttps,
+    });
+    expect(requestHttps).toHaveBeenCalledWith(expect.objectContaining({
+      pinnedAddress: "93.184.216.34",
+      family: 4,
+    }));
   });
 
   it.each(["localhost", "api.localhost", "foo.local", "foo.internal"])(
@@ -278,11 +392,56 @@ describe("registration card URI loader", () => {
     }), "CARD_REDIRECT_LOOP");
   });
 
+  it("rejects finite non-loop redirect exhaustion", async () => {
+    let hop = 0;
+    await expectCode(loadRegistrationCard("https://example.com/a", IDENTITY, {
+      maxRedirects: 2,
+      resolveDns: async () => ["93.184.216.34"],
+      requestHttps: async () => ({
+        status: 302,
+        headers: { location: `https://example.com/${++hop}` },
+        body: new Uint8Array(),
+      }),
+    }), "CARD_REDIRECT_LOOP");
+    expect(hop).toBe(3);
+  });
+
+  it("uses one cumulative timeout budget across redirects", async () => {
+    vi.useFakeTimers();
+    try {
+      const budgets: number[] = [];
+      let hop = 0;
+      const action = loadRegistrationCard("https://example.com/a", IDENTITY, {
+        timeoutMs: 30,
+        resolveDns: async () => ["93.184.216.34"],
+        requestHttps: ({ timeoutMs }) => new Promise((resolve) => {
+          budgets.push(timeoutMs);
+          setTimeout(() => resolve({
+            status: 302,
+            headers: { location: `https://example.com/${++hop}` },
+            body: new Uint8Array(),
+          }), 20);
+        }),
+      });
+      const timeoutAssertion = expectCode(action, "CARD_TIMEOUT");
+      await vi.advanceTimersByTimeAsync(50);
+      await timeoutAssertion;
+      expect(budgets[0]).toBeLessThanOrEqual(30);
+      expect(budgets[1]).toBeLessThanOrEqual(10);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("enforces content type, size, timeout, UTF-8, and JSON", async () => {
     const options = { resolveDns: async () => ["93.184.216.34"] };
     await expectCode(loadRegistrationCard("https://example.com/a", IDENTITY, {
       ...options, requestHttps: async () => response("{}", { "content-type": "text/plain" }),
     }), "CARD_CONTENT_TYPE");
+    await expectCode(loadRegistrationCard("https://example.com/a", IDENTITY, {
+      ...options,
+      requestHttps: async () => response(JSON.stringify(card()), { "content-length": "999999" }),
+    }), "CARD_TOO_LARGE");
     await expectCode(loadRegistrationCard("data:application/json," + "x".repeat(140_000), IDENTITY), "CARD_TOO_LARGE");
     await expectCode(loadRegistrationCard("https://example.com/a", IDENTITY, {
       ...options, timeoutMs: 1, requestHttps: async () => new Promise(() => undefined),

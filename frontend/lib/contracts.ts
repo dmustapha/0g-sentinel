@@ -5,13 +5,6 @@ const ATTESTATION_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_ATTESTATION_REGISTR
 const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS ?? "";
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
 
-if (!ATTESTATION_REGISTRY_ADDRESS) {
-  console.warn("[contracts] NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS is not set");
-}
-if (!AGENT_REGISTRY_ADDRESS) {
-  console.warn("[contracts] NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS is not set");
-}
-
 const ATTESTATION_ABI = [
   "function getAttestation(address agentAddress) view returns (tuple(uint8 behavioral_score, uint8 threat_level, uint8 code_risk, string code_findings, string reasoning, bytes32 behavioral_receipt_hash, bytes32 code_receipt_hash, bytes32 evidence_hash, uint256 attestation_timestamp))",
   "function hasAttestation(address agentAddress) view returns (bool)",
@@ -35,6 +28,7 @@ export const PROOFLOCK_REGISTRY_V2_ABI = [
 export const AGENT_GATE_V2_ABI = [
   "function checkAgent(uint256 agentId) view returns (bool allowed,uint8 reason,address subject,uint64 version)",
 ] as const;
+const PROOFLOCK_CONSUMER_ABI = ["function acceptAgent(uint256 agentId)"] as const;
 
 export async function readGateDecision(agentId: string) {
   if (!/^(0|[1-9]\d*)$/.test(agentId)) throw new Error("Invalid ERC-8004 agent ID");
@@ -43,6 +37,14 @@ export async function readGateDecision(agentId: string) {
   const result = await new ethers.Contract(address, AGENT_GATE_V2_ABI, getProvider()).checkAgent(BigInt(agentId));
   return Object.freeze({ allowed: result.allowed === true, reason: Number(result.reason),
     subject: String(result.subject).toLowerCase(), version: BigInt(result.version).toString() });
+}
+
+export async function simulateConsumerAction(agentId: string, subject: string): Promise<boolean> {
+  const consumer = process.env.NEXT_PUBLIC_PROOFLOCK_CONSUMER_ADDRESS;
+  if (!consumer || !ethers.isAddress(consumer) || !ethers.isAddress(subject)) throw new Error("ProofLock consumer is not configured");
+  const iface = new ethers.Interface(PROOFLOCK_CONSUMER_ABI);
+  try { await getProvider().call({ to: consumer, from: subject, data: iface.encodeFunctionData("acceptAgent", [BigInt(agentId)]) }); return true; }
+  catch { return false; }
 }
 
 // Module-level singleton — avoids creating a new HTTP connection per RPC call

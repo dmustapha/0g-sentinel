@@ -1,8 +1,10 @@
 import { z } from "zod";
+import { keccak256, toUtf8Bytes } from "ethers";
+import { canonicalize } from "json-canonicalize";
 
 import type {
   ApiErrorShape, CanonicalIdentity, DiscoveryRecord, HealthSnapshot, OperatorRunInput,
-  ProofLockRecord, RunnerStage, VerifiedProof,
+  ProofLockDetailResponse, ProofLockRecord, RunnerStage, VerifiedProof,
 } from "./prooflock-types";
 
 const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
@@ -20,6 +22,19 @@ const lockSchema = z.object({
   codeRisk: z.number().int().min(0).max(2), coverage: z.number().int().min(0).max(255),
   state: z.number().int().min(0).max(255), stateReason: z.number().int().min(0).max(255),
 });
+const unknownGateSchema = z.object({ status: z.literal("UNKNOWN"), allowed: z.literal(false), reason: z.null() });
+const verifiedGateSchema = z.object({ status: z.literal("VERIFIED"), allowed: z.boolean(), reason: z.number().int().min(0).max(255) });
+const identitySummarySchema = z.object({ identityKey: hex32, namespace: z.literal("eip155"), chainId: z.literal(16661),
+  registryAddress: hex20, agentId: decimal, owner: hex20, agentWallet: hex20, registrationUri: z.string(),
+  registrationDigest: hex32, sourceBlockNumber: decimal, sourceBlockHash: hex32 });
+const resolutionSummarySchema = z.object({ owner: hex20, agentWallet: hex20, agentURI: z.string(),
+  registrationDigest: hex32, sourceBlockNumber: decimal, sourceBlockHash: hex32 });
+const detailSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("VERIFIED"), identity: identitySummarySchema, resolution: resolutionSummarySchema,
+    gate: z.union([verifiedGateSchema, unknownGateSchema]) }),
+  z.object({ status: z.literal("UNAVAILABLE"), code: z.enum(["EVIDENCE_UNAVAILABLE", "EVIDENCE_INVALID", "IDENTITY_UNAVAILABLE", "IDENTITY_INVALID"]),
+    identity: z.null(), resolution: z.null(), gate: unknownGateSchema }),
+]);
 const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string(), stage: z.string(),
   retryable: z.boolean(), requestId: z.string() }) });
 
@@ -35,6 +50,11 @@ export async function resolveIdentity(agentId: string, signal?: AbortSignal): Pr
 export async function readProofLock(identityKey: string, signal?: AbortSignal): Promise<ProofLockRecord> {
   const body = await requestJson(`/api/v1/prooflocks/${encodeURIComponent(identityKey)}`, { signal });
   return lockSchema.parse(z.object({ identityKey: hex32, proofLock: lockSchema }).parse(body).proofLock) as ProofLockRecord;
+}
+
+export async function readProofLockDetail(identityKey: string, signal?: AbortSignal): Promise<ProofLockDetailResponse> {
+  const body = await requestJson(`/api/v1/prooflocks/${encodeURIComponent(identityKey)}`, { signal });
+  return z.object({ identityKey: hex32, proofLock: lockSchema, detail: detailSchema }).parse(body) as ProofLockDetailResponse;
 }
 
 export async function discoverProofLocks(signal?: AbortSignal): Promise<readonly DiscoveryRecord[]> {
@@ -90,6 +110,23 @@ export async function runProofLock(
   throw new Error("ProofLock stream ended without a terminal result");
 }
 
+export async function markOnDemandDrift(identityKey: string, token: string, signal?: AbortSignal): Promise<unknown> {
+  return requestJson(`/api/admin/prooflocks/${encodeURIComponent(identityKey)}/drift`, { method: "POST", signal,
+    cache: "no-store", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ mark: true }) });
+}
+
+export function computeProofId(registryAddress: string, record: ProofLockRecord): `0x${string}` {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(registryAddress) || !/^0x[0-9a-fA-F]{64}$/.test(record.identityKey)) throw new Error("Invalid proof identifier input");
+  const value = { schema: "sentinel.prooflock/id-v1", chainId: 16661, registryAddress: registryAddress.toLowerCase(),
+    identityKey: record.identityKey.toLowerCase(), subject: record.subject.toLowerCase(), version: record.version,
+    issuedAt: record.issuedAt, validUntil: record.validUntil, envelopeDigest: record.envelopeDigest.toLowerCase(),
+    storageRoot: record.storageRoot.toLowerCase(), computeRoot: record.computeRoot.toLowerCase(), artifactHash: record.artifactHash.toLowerCase(),
+    runtimeCodeHash: record.runtimeCodeHash.toLowerCase(), policyVersion: record.policyVersion,
+    behavioralScore: record.behavioralScore, codeRisk: record.codeRisk, coverage: record.coverage };
+  return keccak256(toUtf8Bytes(canonicalize(value)!)) as `0x${string}`;
+}
+
 async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, headers: { accept: "application/json", ...init?.headers } });
   if (!response.ok) await throwResponse(response);
@@ -102,4 +139,3 @@ async function throwResponse(response: Response): Promise<never> {
   if (parsed.success) throw new ProofLockApiError(parsed.data.error as ApiErrorShape, response.status);
   throw new Error(`ProofLock request failed (${response.status})`);
 }
-

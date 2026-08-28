@@ -75,6 +75,21 @@ export type DiscoveryRecord = Readonly<{
   blockNumber: number;
 }>;
 
+export type ProofLockDetail =
+  | Readonly<{ status: "VERIFIED"; identity: Readonly<{
+      identityKey: Bytes32; namespace: "eip155"; chainId: 16661; registryAddress: HexAddress; agentId: string;
+      owner: HexAddress; agentWallet: HexAddress; registrationUri: string; registrationDigest: Bytes32;
+      sourceBlockNumber: string; sourceBlockHash: Bytes32;
+    }>; resolution: Readonly<{ owner: HexAddress; agentWallet: HexAddress; agentURI: string;
+      registrationDigest: Bytes32; sourceBlockNumber: string; sourceBlockHash: Bytes32 }>;
+      gate: Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number }>
+        | Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }> }>
+  | Readonly<{ status: "UNAVAILABLE"; code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID";
+      identity: null; resolution: null; gate: Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }> }>;
+
+export type ProofLockDetailResponse = Readonly<{ identityKey: Bytes32; proofLock: ProofLockRecord; detail: ProofLockDetail }>;
+export type ProofLockInventoryItem = ProofLockDetailResponse & Readonly<{ transactionHash: Bytes32; blockNumber: number }>;
+
 export type SubsystemName = "rpc" | "identity" | "registry" | "gate" | "compute" | "storage";
 export type SubsystemHealth = Readonly<{
   status: "HEALTHY" | "UNHEALTHY" | "UNKNOWN";
@@ -111,4 +126,3 @@ export type OperatorRunInput = Readonly<{
   expectedPriorVersion?: string;
   previousProofId?: Bytes32;
 }>;
-

@@ -1,82 +1,48 @@
 "use client";
-// File: frontend/components/RescanButton.tsx
-// Isolated client component for per-row rescan on the risk board.
-// Kept separate so the pages can stay server components with ISR.
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
-import { THREAT_LABELS } from "@/lib/types";
 
-interface Props {
-  address: string;
-}
+import { useState } from "react";
+import { markOnDemandDrift, runProofLock } from "@/lib/prooflock-client";
+import type { CanonicalIdentity, ProofLockRecord, RunnerStage } from "@/lib/prooflock-types";
+import { StreamingScanPanel } from "./StreamingScanPanel";
 
-export function RescanButton({ address }: Props) {
-  const router = useRouter();
-  const [scanning, setScanning] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<{ label: string; score: number } | null>(null);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+export function RescanButton({ identity, record, previousProofId, onComplete }: Readonly<{
+  identity: CanonicalIdentity; record: ProofLockRecord; previousProofId: `0x${string}`; onComplete(): void;
+}>) {
+  const [token, setToken] = useState(""); const [busy, setBusy] = useState<"drift" | "reseal" | null>(null);
+  const [stages, setStages] = useState<readonly RunnerStage[]>([]); const [error, setError] = useState("");
+  const [drift, setDrift] = useState<Readonly<{ expected?: string; current?: string; drifted?: boolean; marked?: boolean }>>();
 
-  useEffect(() => {
-    if (scanning) {
-      setElapsed(0);
-      timerRef.current = setInterval(() => setElapsed((s) => s + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [scanning]);
-
-  async function handleRescan() {
-    setScanning(true);
-    setError(null);
-    setResult(null);
-    try {
-      const res = await fetch("/api/scan/behavioral", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentAddress: address }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setError(data.error || `Scan failed (HTTP ${res.status})`);
-      } else {
-        const data = await res.json();
-        const label = THREAT_LABELS[data.threat_level as 0 | 1 | 2] ?? "UNKNOWN";
-        setResult({ label, score: data.behavioral_score ?? 0 });
-        router.refresh();
-      }
-    } catch {
-      setError("Scan failed. Check network connection.");
-    } finally {
-      setScanning(false);
-    }
+  async function checkDrift() {
+    if (!token) return; setBusy("drift"); setError("");
+    try { const raw = await markOnDemandDrift(record.identityKey, token) as Record<string, unknown>;
+      const result = raw.result as Record<string, unknown> | undefined;
+      setDrift({ expected: string(result?.expectedDigest), current: string(result?.currentDigest), drifted: result?.drifted === true, marked: result?.marked === true });
+      setToken(""); onComplete();
+    } catch { setError("On-demand drift check failed safely. No lifecycle claim was changed by the UI."); setToken(""); }
+    finally { setBusy(null); }
   }
-
-  const resultColor =
-    result?.label === "FLAGGED" ? "var(--bad)" : result?.label === "CAUTION" ? "var(--warn)" : "var(--good)";
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5 }}>
-      {error && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: "var(--bad)", maxWidth: 130, textAlign: "right", lineHeight: 1.3 }}>
-          {error}
-        </span>
-      )}
-      {result && !scanning && (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.6rem", color: resultColor, textAlign: "right", lineHeight: 1.3 }}>
-          ✓ {result.label} ({result.score})
-        </span>
-      )}
-      <button
-        className="rescan"
-        disabled={scanning}
-        onClick={handleRescan}
-        aria-label={`Rescan ${address.slice(0, 6)}…${address.slice(-4)}`}
-      >
-        {scanning ? `Scanning… ${elapsed}s` : "Rescan"}
-      </button>
-    </div>
-  );
+  async function reseal() {
+    const registryAddress = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
+    const scanner = process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS;
+    if (!token || !validAddress(registryAddress) || !validAddress(scanner)) { setError("Operator configuration is unavailable."); return; }
+    setBusy("reseal"); setError(""); setStages([]);
+    try { await runProofLock({ identity: identity.identity, registryAddress, scanner,
+      scannerSoftwareVersion: process.env.NEXT_PUBLIC_PROOFLOCK_VALIDATOR_VERSION ?? "sentinel-prooflock-v2",
+      policyVersion: Number(process.env.NEXT_PUBLIC_PROOFLOCK_POLICY_VERSION ?? "1"), validForSeconds: 604800,
+      mode: "RESEAL", expectedPriorVersion: record.version, previousProofId }, token,
+      (stage) => setStages((value) => value.includes(stage) ? value : [...value, stage])); setToken(""); onComplete();
+    } catch { setError("Reseal stopped safely. The previous version remains append-preserved."); setToken(""); }
+    finally { setBusy(null); }
+  }
+  return <section className="operator-panel lifecycle-controls"><div><span className="card-kicker">Operator controls</span><h3>On-demand drift · reseal</h3>
+    <p>These authenticated actions use the real drift and synchronous ProofLock routes. The token is cleared after each request.</p></div>
+    <label htmlFor="detail-token">One-time operator token</label><input id="detail-token" type="password" value={token} onChange={(event) => setToken(event.target.value)} autoComplete="off" />
+    <div className="action-row"><button className="button" disabled={!token || !!busy} onClick={checkDrift}>{busy === "drift" ? "Checking…" : "Run on-demand drift"}</button>
+      <button className="button primary" disabled={!token || !!busy} onClick={reseal}>{busy === "reseal" ? "Resealing…" : "Reseal new version"}</button></div>
+    {drift && <div className={drift.drifted ? "drift-diff state-bad" : "drift-diff state-good"}><b>{drift.drifted ? "DRIFT DETECTED" : "NO DRIFT"}</b>
+      <span>Before <code>{drift.expected}</code></span><span>After <code>{drift.current}</code></span><span>{drift.marked ? "Lifecycle marked on-chain; consumer action is blocked." : "No drift mark written."}</span></div>}
+    {error && <p className="inline-state state-bad">{error}</p>}{stages.length > 0 && <StreamingScanPanel stages={stages} />}
+  </section>;
 }
+function validAddress(value?: string): value is `0x${string}` { return !!value && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value); }
+function string(value: unknown): string | undefined { return typeof value === "string" ? value : undefined; }

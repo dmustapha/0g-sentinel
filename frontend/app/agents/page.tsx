@@ -1,77 +1,31 @@
-// File: frontend/app/agents/page.tsx
-// Server component with ISR — no loading spinner on initial render.
-// Rescan / scan interactivity is isolated to the client child components.
-import Link from "next/link";
-import { AgentWithAttestation } from "@/lib/types";
-import { ScanInput } from "@/components/ScanInput";
-import { ChainDiscovery } from "@/components/ChainDiscovery";
+"use client";
+
+import { useEffect, useState } from "react";
 import { AgentsTable } from "@/components/AgentsTable";
-import { QueueBanner } from "@/components/QueueBanner";
-import { RadarHero } from "@/components/RadarHero";
-import { fetchRankedAgents } from "@/lib/agents";
+import { discoverProofLocks, readProofLockDetail } from "@/lib/prooflock-client";
+import { proofLockUrgency } from "@/lib/prooflock-status";
+import type { ProofLockInventoryItem } from "@/lib/prooflock-types";
 
-export const revalidate = 30;
+export default function ProofLocksPage() {
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [items, setItems] = useState<readonly ProofLockInventoryItem[]>([]);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => { const controller = new AbortController(); void load(controller.signal).then((next) => {
+    setItems(next); setState("ready");
+  }).catch(() => { if (!controller.signal.aborted) setState("error"); }); return () => controller.abort(); }, [retry]);
+  return <section className="workspace-section inventory-page"><div className="wrap"><div className="page-heading"><span className="eyebrow">Current chain state</span><h1>ProofLocks</h1>
+    <p>Lease inventory ordered by operational urgency—drifted and denied first. This is not a risk leaderboard.</p></div>
+    <div className="inventory-legend"><span>Identity</span><span>Coverage</span><span>Seal</span><span>Lease</span><span>Gate</span></div>
+    {state === "loading" && <div className="loading-ledger" aria-live="polite"><i /><i /><i /><span>Reading RegistryV2 and verified identity detail…</span></div>}
+    {state === "error" && <div className="empty-ledger state-bad"><h2>ProofLock inventory unavailable</h2><p>The public read path failed. No records are inferred from legacy V1.</p><button className="button" onClick={() => { setState("loading"); setRetry((value) => value + 1); }}>Retry read</button></div>}
+    {state === "ready" && items.length === 0 && <div className="empty-ledger"><h2>No V2 ProofLocks discovered</h2><p>The current 2,000-block RegistryV2 window contains no lease events. Legacy records are excluded.</p></div>}
+    {state === "ready" && items.length > 0 && <AgentsTable items={items} />}
+    <aside className="legacy-banner"><b>LEGACY V1 · excluded</b><span>Older AttestationRegistry and AgentRegistry deployments do not satisfy ProofLock V2 admission.</span></aside>
+  </div></section>;
+}
 
-export default async function AgentsPage() {
-  let agents: AgentWithAttestation[] = [];
-  let attestedAddresses: string[] = [];
-  let fetchError = false;
-
-  try {
-    const result = await fetchRankedAgents();
-    agents = result.agents;
-    attestedAddresses = result.addresses;
-  } catch {
-    fetchError = true;
-  }
-
-  const safeCount = agents.filter((a) => a.has_attestation && a.threat_level === 0 && a.code_risk === 0).length;
-  const threatCount = agents.filter((a) => a.has_attestation && (a.threat_level === 2 || a.code_risk === 2)).length;
-
-  return (
-    <>
-      {/* ============ COMPACT HERO ============ */}
-      <section className="hero">
-        <div className="hero-grid" aria-hidden="true" />
-        <div className="hero-inner" style={{ padding: "48px 24px 52px" }}>
-          <div className="hero-copy">
-            <span className="eyebrow rise">Watchlist · riskiest first · 0G Aristotle</span>
-            <h1 className="rise" style={{ fontSize: "var(--fs-h2)", marginTop: 12 }}>
-              Verify every AI agent <span className="accent">on-chain.</span>
-            </h1>
-            <p className="identity-sub rise" style={{ marginTop: 10 }}>
-              Behavioral audit · Code scan · AttestationRegistry · every row a real on-chain attestation
-            </p>
-            <div className="rise" style={{ marginTop: 20 }}>
-              <ScanInput />
-            </div>
-          </div>
-          <RadarHero compact />
-        </div>
-      </section>
-
-      {/* ============ RISK BOARD ============ */}
-      <section className="pad" id="board">
-        <div className="wrap">
-          <QueueBanner />
-
-          {fetchError ? (
-            <div className="board"><div className="board-empty" style={{ color: "var(--bad)" }}>Failed to load agents. Check RPC connection.</div></div>
-          ) : (
-            <AgentsTable agents={agents} />
-          )}
-
-          <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", marginTop: 18 }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-xs)", color: "var(--tx-lo)" }}>
-              {agents.length} attested · {safeCount} verified safe · {threatCount} threats detected
-            </span>
-            <Link href="/proof" className="explorer-link">Integration Proof →</Link>
-          </div>
-
-          {/* Chain-discovered contracts — client-rendered, non-blocking */}
-          <ChainDiscovery attestedAddresses={attestedAddresses} />
-        </div>
-      </section>
-    </>
-  );
+async function load(signal: AbortSignal): Promise<readonly ProofLockInventoryItem[]> {
+  const discovered = await discoverProofLocks(signal);
+  const details = await Promise.all(discovered.map(async (entry) => ({ ...(await readProofLockDetail(entry.identityKey, signal)), ...entry })));
+  return details.sort((a, b) => proofLockUrgency(a.proofLock) - proofLockUrgency(b.proofLock));
 }

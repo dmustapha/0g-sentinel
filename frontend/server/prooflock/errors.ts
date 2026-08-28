@@ -8,6 +8,13 @@ export class EvidenceValidationError extends Error {
   }
 }
 
+export class ProofMismatchError extends Error {
+  constructor() {
+    super("Proof evidence does not match its onchain commitments");
+    this.name = "ProofMismatchError";
+  }
+}
+
 export type IdentityErrorCode =
   | "INVALID_IDENTITY"
   | "WRONG_CHAIN"

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { RegistryProofLockRecord } from "./chain";
-import { IdentityError } from "./errors";
+import { IdentityError, ProofMismatchError } from "./errors";
 import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
 import { ProofLockStageError, type RunnerInput, type RunnerResult, type RunnerStage } from "./runner";
 import { authenticateOperator } from "./auth";
@@ -9,13 +9,13 @@ import { authenticateOperator } from "./auth";
 const BYTES32 = /^0x[0-9a-fA-F]{64}$/;
 const DECIMAL = /^(0|[1-9]\d*)$/;
 const MAX_BODY_BYTES = 16_384;
-const PUBLIC_CACHE = "public, max-age=15, stale-while-revalidate=45";
+const READ_CACHE = "no-store";
 
 export type ApiStage = RunnerStage | "AUTHENTICATING" | "RESOLVING_IDENTITY" | "READING_PROOF" | "VERIFYING_PROOF" | "HEALTH_CHECK";
 export type ApiErrorCode =
   | "INVALID_INPUT" | "UNAUTHORIZED" | "NOT_FOUND" | "GONE" | "METHOD_NOT_ALLOWED"
   | "AGENT_NOT_FOUND" | "AGENT_WALLET_UNSET" | "IDENTITY_UNAVAILABLE"
-  | "DEPENDENCY_UNAVAILABLE" | "COMPUTE_UNVERIFIED" | "REQUEST_ABORTED" | "INTERNAL_ERROR";
+  | "DEPENDENCY_UNAVAILABLE" | "COMPUTE_UNVERIFIED" | "MISMATCH" | "REQUEST_ABORTED" | "INTERNAL_ERROR";
 
 export type ApiErrorOptions = Readonly<{
   code: ApiErrorCode; message: string; stage: ApiStage; retryable: boolean;
@@ -25,6 +25,7 @@ export type ApiErrorOptions = Readonly<{
 export type ProofLockReadDependencies = Readonly<{
   resolveIdentity(agentId: string, signal: AbortSignal): Promise<ResolvedAgentIdentity>;
   readProofLock(identityKey: string, signal: AbortSignal): Promise<RegistryProofLockRecord>;
+  readProofById(identityKey: string, proofId: string, signal: AbortSignal): Promise<HistoricalProofLock | null>;
   readProofLockDetail(record: RegistryProofLockRecord, signal: AbortSignal): Promise<ProofLockDetail>;
   computeProofId(registryAddress: string, record: RegistryProofLockRecord): string;
   verifyStoredEvidence(record: RegistryProofLockRecord, signal: AbortSignal): Promise<Readonly<{
@@ -33,13 +34,20 @@ export type ProofLockReadDependencies = Readonly<{
   registryAddress?: string;
 }>;
 
+export type HistoricalProofLock = Readonly<{ record: RegistryProofLockRecord;
+  source: Readonly<{ kind: "ProofLocked"; transactionHash: Bytes32; blockNumber: number }> }>;
+
 export type ProofLockDetail =
   | Readonly<{ status: "VERIFIED"; identity: ProofLockIdentitySummary;
-    resolution: ProofLockResolutionSummary; gate: GateDetail }>
+    resolution: ProofLockResolutionSummary; gate: GateDetail; consumer: ConsumerDetail }>
   | Readonly<{ status: "UNAVAILABLE"; code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID";
-    identity: null; resolution: null; gate: UnknownGateDetail }>;
-export type GateDetail = Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number }> | UnknownGateDetail;
+    identity: null; resolution: null; gate: UnknownGateDetail; consumer: UnknownConsumerDetail }>;
+export type GateDetail = Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number;
+  subject: HexAddress; version: string }> | UnknownGateDetail;
 type UnknownGateDetail = Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
+export type ConsumerDetail = Readonly<{ status: "VERIFIED"; accepted: boolean; address: HexAddress;
+  subject: HexAddress; version: string }> | UnknownConsumerDetail;
+type UnknownConsumerDetail = Readonly<{ status: "UNKNOWN"; accepted: false }>;
 export type ProofLockIdentitySummary = AgentIdentity & Readonly<{ identityKey: Bytes32; owner: HexAddress;
   agentWallet: HexAddress; registrationUri: string; registrationDigest: Bytes32;
   sourceBlockNumber: string; sourceBlockHash: Bytes32 }>;
@@ -130,7 +138,7 @@ async function resolveIdentity(request: Request, deps: ProofLockReadDependencies
     const agentId = new URL(request.url).searchParams.get("agentId") ?? "";
     if (!DECIMAL.test(agentId) || BigInt(agentId) >= 1n << 256n) invalid();
     const identity = await deps.resolveIdentity(agentId, deadline(request.signal));
-    return json({ identity }, 200, PUBLIC_CACHE);
+    return json({ identity }, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "RESOLVING_IDENTITY", requestId); }
 }
 
@@ -142,7 +150,7 @@ async function readProofLock(key: string, request: Request, deps: ProofLockReadD
     const proofLock = await deps.readProofLock(identityKey, signal);
     assertRecord(identityKey, proofLock);
     const detail = await deps.readProofLockDetail(proofLock, signal);
-    return json({ identityKey, proofLock, detail }, 200, PUBLIC_CACHE);
+    return json({ identityKey, proofLock, detail }, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "READING_PROOF", requestId); }
 }
 
@@ -152,12 +160,14 @@ async function verifyProof(proof: string, request: Request, deps: ProofLockReadD
     const proofId = bytes32(proof);
     const identityKey = bytes32(new URL(request.url).searchParams.get("identityKey") ?? "");
     const signal = deadline(request.signal);
-    const record = await deps.readProofLock(identityKey, signal);
+    const historical = await deps.readProofById(identityKey, proofId, signal);
+    if (!historical) notFound();
+    const record = historical.record;
     assertRecord(identityKey, record);
     const expected = deps.computeProofId(requiredRegistry(deps), record).toLowerCase();
     if (expected !== proofId) notFound();
     const storage = await deps.verifyStoredEvidence(record, signal);
-    return json({ proofId, identityKey, proofLock: record, storage }, 200, PUBLIC_CACHE);
+    return json({ proofId, identityKey, proofLock: record, source: historical.source, storage }, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "VERIFYING_PROOF", requestId); }
 }
 
@@ -251,6 +261,8 @@ async function readBoundedBody(request: Request, signal: AbortSignal): Promise<s
 function mapApiError(error: unknown, stage: ApiStage, requestId: string): Response {
   if (error instanceof ApiInputError) return apiErrorResponse(error, { code: error.code, message: error.message, stage, retryable: false, status: error.status, requestId });
   if (error instanceof IdentityError) return identityErrorResponse(error, stage, requestId);
+  if (error instanceof ProofMismatchError) return apiErrorResponse(error, { code: "MISMATCH",
+    message: "Proof evidence does not match its onchain commitments", stage, retryable: false, status: 409, requestId });
   if (isAbort(error)) return apiErrorResponse(error, { code: "REQUEST_ABORTED", message: "Request was aborted", stage, retryable: true, status: 499, requestId });
   return apiErrorResponse(error, { code: "DEPENDENCY_UNAVAILABLE", message: "Required dependency is unavailable", stage, retryable: true, status: 503, requestId });
 }

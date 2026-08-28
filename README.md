@@ -60,6 +60,21 @@ NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS
 
 See the example files for the complete server, health-canary, version, policy, and optional labeled-demo configuration.
 
+### Deploy ProofLock V2 to 0G mainnet
+
+Set the nine `PROOFLOCK_*` deployment values documented in both environment examples, keep the admin,
+scanner, and guardian under distinct custody, configure `DEPLOYER_PRIVATE_KEY`, then run:
+
+```bash
+npm run deploy:mainnet
+```
+
+Preflight rejects non-mainnet Chain, Storage indexer, and Flow settings, requires at least three
+confirmations, budgets the full three-contract graph before transaction one, and writes a resumable
+deployment journal plus a machine-readable artifact under `deployments/16661/`. The ERC-8004 registry
+is fixed to its canonical address rather than accepted from operator input. Canonical 0G endpoints and
+the Flow address come from the [official 0G Mainnet overview](https://docs.0g.ai/developer-hub/mainnet/mainnet-overview).
+
 ## Run and verify
 
 ```bash

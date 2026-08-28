@@ -1,7 +1,8 @@
 import { sha256 } from "ethers";
-import { lstat, mkdir, mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { describe, expect, it, vi } from "vitest";
@@ -780,12 +781,13 @@ describe("strict 0G Compute", () => {
     };
     const options = { stateDirectory: directory, maximumRecords: 1 };
     try {
-      const outcomes = await Promise.allSettled([
-        new FileReceiptClaimStore(options).claim("one", metadata, 60_000),
-        new FileReceiptClaimStore(options).claim("two", metadata, 60_000),
-      ]);
+      const outcomes = await Promise.allSettled(
+        Array.from({ length: 8 }, (_, index) =>
+          new FileReceiptClaimStore(options).claim(`receipt-${index}`, metadata, 60_000),
+        ),
+      );
       expect(outcomes.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
-      expect(outcomes.filter(({ status }) => status === "rejected")).toHaveLength(1);
+      expect(outcomes.filter(({ status }) => status === "rejected")).toHaveLength(7);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -811,60 +813,18 @@ describe("strict 0G Compute", () => {
     }
   });
 
-  it("recovers a crashed stale global store lock", async () => {
+  it("persists through one transactional SQLite database without lease artifacts", async () => {
     const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
-    const lock = join(directory, ".store.lock");
     const metadata = {
       model: MODEL,
       requestSha256: `0x${"1".repeat(64)}` as const,
       responseSha256: `0x${"2".repeat(64)}` as const,
     };
     try {
-      await mkdir(lock, { mode: 0o700 });
-      const stale = new Date(Date.now() - 31_000);
-      await utimes(lock, stale, stale);
-      await expect(
-        new FileReceiptClaimStore({ stateDirectory: directory }).claim(
-          "after-crash",
-          metadata,
-          1_000,
-        ),
-      ).resolves.toMatch(/^0x[0-9a-f]+$/);
+      await new FileReceiptClaimStore({ stateDirectory: directory }).claim("sqlite", metadata, 1_000);
+      await expect(access(join(directory, "receipts.sqlite"))).resolves.toBeUndefined();
+      expect((await readdir(directory)).some((name) => name.endsWith(".lock"))).toBe(false);
     } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("fences an original holder after its stale lock is replaced", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
-    let entered!: () => void;
-    let resume!: () => void;
-    const atWrite = new Promise<void>((resolve) => (entered = resolve));
-    const resumed = new Promise<void>((resolve) => (resume = resolve));
-    const metadata = {
-      model: MODEL,
-      requestSha256: `0x${"1".repeat(64)}` as const,
-      responseSha256: `0x${"2".repeat(64)}` as const,
-    };
-    const store = new FileReceiptClaimStore({
-      stateDirectory: directory,
-      testBeforeRecordWrite: async () => {
-        entered();
-        await resumed;
-      },
-    } as never);
-    try {
-      const pending = store.claim("fenced", metadata, 60_000);
-      await atWrite;
-      const lock = join(directory, ".store.lock");
-      await rm(lock, { recursive: true, force: true });
-      await mkdir(lock, { mode: 0o700 });
-      await writeFile(join(lock, "replacement-owner"), "replacement-owner", { mode: 0o600 });
-      resume();
-      await expect(pending).rejects.toMatchObject({ code: "COMPUTE_BROKER_ERROR" });
-      expect((await readdir(directory)).filter((name) => name.endsWith(".json"))).toEqual([]);
-    } finally {
-      resume();
       await rm(directory, { recursive: true, force: true });
     }
   });
@@ -883,9 +843,11 @@ describe("strict 0G Compute", () => {
         const key = `capacity-${index}`;
         claims.push({ key, token: (await seed.claim(key, metadata, 60_000))! });
       }
-      const files = (await readdir(directory)).filter((name) => name.endsWith(".json"));
-      let exactBytes = 0;
-      for (const file of files) exactBytes += (await lstat(join(directory, file))).size;
+      const database = new DatabaseSync(join(directory, "receipts.sqlite"), { readOnly: true });
+      const { bytes: exactBytes } = database
+        .prepare("SELECT SUM(payload_bytes) AS bytes FROM receipts")
+        .get() as { bytes: number };
+      database.close();
       const bounded = new FileReceiptClaimStore({
         stateDirectory: directory,
         maximumRecords: 100,
@@ -894,29 +856,6 @@ describe("strict 0G Compute", () => {
       await expect(
         bounded.commit(claims[0].key, claims[0].token, 7 * 24 * 60 * 60 * 1_000),
       ).rejects.toMatchObject({ code: "COMPUTE_REPLAY_STORE_FULL" });
-    } finally {
-      await rm(directory, { recursive: true, force: true });
-    }
-  });
-
-  it("safely removes crash temp residue before capacity accounting", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "sentinel-receipts-"));
-    const residue = join(directory, `${"a".repeat(64)}.dead.tmp`);
-    const metadata = {
-      model: MODEL,
-      requestSha256: `0x${"1".repeat(64)}` as const,
-      responseSha256: `0x${"2".repeat(64)}` as const,
-    };
-    try {
-      await writeFile(residue, "x".repeat(5_000), { mode: 0o600 });
-      await expect(
-        new FileReceiptClaimStore({ stateDirectory: directory, maximumBytes: 4_096 }).claim(
-          "after-crash-temp",
-          metadata,
-          60_000,
-        ),
-      ).resolves.toMatch(/^0x[0-9a-f]+$/);
-      expect((await readdir(directory)).some((name) => name.endsWith(".tmp"))).toBe(false);
     } finally {
       await rm(directory, { recursive: true, force: true });
     }

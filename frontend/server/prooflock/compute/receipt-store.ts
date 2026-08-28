@@ -1,14 +1,13 @@
 import { hexlify, randomBytes, sha256, toUtf8Bytes } from "ethers";
-import { constants as fsConstants } from "node:fs";
-import { chmod, lstat, mkdir, open, readdir, rename, rm, unlink, utimes } from "node:fs/promises";
+import { chmod, lstat, mkdir } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { z } from "zod";
 
 import { computeFailure } from "./strict-error";
 
 export const MIN_COMMITTED_RETENTION_MS = 7 * 24 * 60 * 60 * 1_000;
 const MAX_PENDING_LEASE_MS = 15 * 60 * 1_000;
-const LOCK_STALE_MS = 30_000;
 
 export type ReceiptClaimMetadata = Readonly<{
   model: string;
@@ -31,12 +30,14 @@ type MemoryRecord = {
   retentionUntil?: number;
 };
 
-/** Bounded process-local helper for tests; production must use the file store. */
+/** Bounded process-local helper for tests; production uses the SQLite store. */
 export class MemoryReceiptClaimStore implements ReceiptClaimStore {
   private readonly records = new Map<string, MemoryRecord>();
 
   constructor(private readonly maximum = 10_000, private readonly clock = Date.now) {
-    if (!Number.isInteger(maximum) || maximum < 1 || maximum > 100_000) throw new TypeError("MemoryReceiptClaimStore maximum is out of bounds");
+    if (!Number.isInteger(maximum) || maximum < 1 || maximum > 100_000) {
+      throw new TypeError("MemoryReceiptClaimStore maximum is out of bounds");
+    }
   }
 
   async claim(key: string, metadata: ReceiptClaimMetadata, leaseMs: number) {
@@ -46,8 +47,13 @@ export class MemoryReceiptClaimStore implements ReceiptClaimStore {
     if (existing && !expired(existing, now)) return null;
     if (existing) this.records.delete(key);
     if (this.records.size >= this.maximum) storeFull("test-only receipt store is full");
-    const token = hexlify(randomBytes(32));
-    this.records.set(key, { token, state: "CLAIMED", metadata: Object.freeze({ ...metadata }), expiresAt: now + leaseMs });
+    const token = randomToken();
+    this.records.set(key, {
+      token,
+      state: "CLAIMED",
+      metadata: Object.freeze({ ...metadata }),
+      expiresAt: now + leaseMs,
+    });
     return token;
   }
 
@@ -72,7 +78,9 @@ export class MemoryReceiptClaimStore implements ReceiptClaimStore {
 
   private pending(key: string, token: string, now: number): MemoryRecord {
     const record = this.records.get(key);
-    if (!record || record.token !== token || record.state !== "CLAIMED" || record.expiresAt <= now) storeConflict();
+    if (!record || record.token !== token || record.state !== "CLAIMED" || record.expiresAt <= now) {
+      storeConflict();
+    }
     return record;
   }
 }
@@ -98,311 +106,283 @@ type FileReceiptClaimStoreOptions = Readonly<{
   maximumRecords?: number;
   maximumBytes?: number;
   clock?: () => number;
-  /** Deterministic fencing test seam; never configured by production. */
-  testBeforeRecordWrite?: () => Promise<void>;
 }>;
 
+/** Durable transactional store. The historical class name is retained for API compatibility. */
 export class FileReceiptClaimStore implements ReceiptClaimStore {
   private readonly maximumRecords: number;
   private readonly maximumBytes: number;
   private readonly clock: () => number;
+  private readonly databasePath: string;
 
   constructor(private readonly options: FileReceiptClaimStoreOptions) {
     if (!isAbsolute(options.stateDirectory)) throw new TypeError("state directory must be absolute");
     this.maximumRecords = options.maximumRecords ?? 10_000;
     this.maximumBytes = options.maximumBytes ?? 16 * 1_024 * 1_024;
     this.clock = options.clock ?? Date.now;
+    this.databasePath = join(options.stateDirectory, "receipts.sqlite");
     validateCapacity(this.maximumRecords, this.maximumBytes);
   }
 
   async claim(key: string, metadata: ReceiptClaimMetadata, leaseMs: number) {
     validateLeaseDuration(leaseMs);
-    return this.withGlobalLock(async (fence) => {
+    return this.transaction((database) => {
       const now = this.clock();
-      await this.collectResidue(fence);
-      await this.collectExpired(now, fence);
+      collectExpired(database, now);
       const keyHash = stableHash(key);
-      const current = await this.read(keyHash, fence);
-      if (current) return null;
-      const record = this.newRecord(keyHash, metadata, now + leaseMs);
-      await this.write(record, fence);
+      if (selectRecord(database, keyHash)) return null;
+      const record = newRecord(keyHash, metadata, now + leaseMs);
+      this.assertCapacity(database, null, record);
+      insertRecord(database, record);
       return record.token;
     });
   }
 
   async renew(key: string, token: string, leaseMs: number) {
     validateLeaseDuration(leaseMs);
-    await this.withGlobalLock(async (fence) => {
+    await this.transaction((database) => {
       const now = this.clock();
-      await this.collectResidue(fence);
-      const record = await this.pending(stableHash(key), token, now, fence);
-      await this.write({ ...record, expiresAt: now + leaseMs }, fence);
+      collectExpired(database, now);
+      const current = pendingRecord(database, stableHash(key), token, now);
+      const updated = { ...current, expiresAt: now + leaseMs };
+      this.assertCapacity(database, current, updated);
+      replaceRecord(database, updated);
     });
   }
 
   async commit(key: string, token: string, retentionMs: number) {
     validateRetention(retentionMs);
-    await this.withGlobalLock(async (fence) => {
+    await this.transaction((database) => {
       const now = this.clock();
-      await this.collectResidue(fence);
-      const record = await this.pending(stableHash(key), token, now, fence);
-      await this.write({ ...record, state: "COMMITTED", retentionUntil: now + retentionMs }, fence);
+      collectExpired(database, now);
+      const current = pendingRecord(database, stableHash(key), token, now);
+      const updated = recordSchema.parse({
+        ...current,
+        state: "COMMITTED",
+        retentionUntil: now + retentionMs,
+      });
+      this.assertCapacity(database, current, updated);
+      replaceRecord(database, updated);
     });
   }
 
   async release(key: string, token: string) {
-    await this.withGlobalLock(async (fence) => {
-      await this.collectResidue(fence);
-      const record = await this.read(stableHash(key), fence);
-      if (record?.state === "CLAIMED" && record.token === token) await this.removeRecord(record.keyHash, fence);
+    await this.transaction((database) => {
+      collectExpired(database, this.clock());
+      database.prepare(
+        "DELETE FROM receipts WHERE key_hash = ? AND token = ? AND state = 'CLAIMED'",
+      ).run(stableHash(key), token);
     });
   }
 
-  private async pending(keyHash: string, token: string, now: number, fence: LockFence) {
-    const record = await this.read(keyHash, fence);
-    if (!record || record.state !== "CLAIMED" || record.token !== token || record.expiresAt <= now) storeConflict();
-    return record;
-  }
-
-  private newRecord(keyHash: string, metadata: ReceiptClaimMetadata, expiresAt: number) {
-    return recordSchema.parse({ version: 1, keyHash, token: hexlify(randomBytes(32)), state: "CLAIMED", metadata, expiresAt });
-  }
-
-  private async withGlobalLock<T>(operation: (fence: LockFence) => Promise<T>): Promise<T> {
-    await this.ensureDirectory();
-    const lock = await acquireGlobalLock(this.options.stateDirectory);
+  private async transaction<T>(operation: (database: DatabaseSync) => T): Promise<T> {
+    await ensureStateDirectory(this.options.stateDirectory, this.databasePath);
+    const database = openDatabase(this.databasePath);
+    await chmod(this.databasePath, 0o600);
+    database.exec("BEGIN IMMEDIATE");
     try {
-      return await operation(lock);
-    } finally {
-      await lock.release();
-    }
-  }
-
-  private async ensureDirectory() {
-    await mkdir(this.options.stateDirectory, { recursive: true, mode: 0o700 });
-    const info = await lstat(this.options.stateDirectory);
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new TypeError("unsafe state directory");
-    await chmod(this.options.stateDirectory, 0o700);
-  }
-
-  private path(keyHash: string) { return join(this.options.stateDirectory, `${keyHash}.json`); }
-
-  private async read(keyHash: string, fence: LockFence): Promise<ReceiptRecord | null> {
-    let handle;
-    try {
-      await fence.assertOwner();
-      handle = await open(this.path(keyHash), fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      const info = await handle.stat();
-      if (!info.isFile() || info.size > 8_192) throw new TypeError("unsafe receipt record");
-      const record = recordSchema.parse(JSON.parse(await handle.readFile({ encoding: "utf8" })));
-      if (record.keyHash !== keyHash) throw new TypeError("receipt key hash mismatch");
-      return record;
+      const result = operation(database);
+      database.exec("COMMIT");
+      return result;
     } catch (error) {
-      if (errorCode(error) === "ENOENT") return null;
+      rollback(database);
       throw error;
-    } finally { await handle?.close(); }
-  }
-
-  private async write(record: ReceiptRecord, fence: LockFence) {
-    const target = this.path(record.keyHash);
-    const temporary = `${target}.${record.token.slice(2)}.tmp`;
-    const serialized = JSON.stringify(record);
-    let handle;
-    let renamed = false;
-    try {
-      await this.assertReplacementCapacity(record.keyHash, Buffer.byteLength(serialized), fence);
-      await this.options.testBeforeRecordWrite?.();
-      await fence.assertOwner();
-      handle = await open(temporary, writeFlags(), 0o600);
-      await handle.writeFile(serialized, { encoding: "utf8" });
-      await handle.sync();
-      await handle.close();
-      handle = undefined;
-      await fence.assertOwner();
-      await rename(temporary, target);
-      renamed = true;
-      await syncDirectory(this.options.stateDirectory);
     } finally {
-      await handle?.close();
-      if (!renamed) {
-        await fence.assertOwner();
-        await unlink(temporary)
-          .then(() => syncDirectory(this.options.stateDirectory))
-          .catch((error) => {
-            if (errorCode(error) !== "ENOENT") throw error;
-          });
-      }
+      database.close();
     }
   }
 
-  private async removeRecord(keyHash: string, fence: LockFence) {
-    await fence.assertOwner();
-    await unlink(this.path(keyHash));
-    await syncDirectory(this.options.stateDirectory);
-  }
-
-  private async collectExpired(now: number, fence: LockFence) {
-    await fence.assertOwner();
-    const entries = await readdir(this.options.stateDirectory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!/^[0-9a-f]{64}\.json$/.test(entry.name)) continue;
-      if (!entry.isFile() || entry.isSymbolicLink()) throw new TypeError("unsafe state entry");
-      const record = await this.read(entry.name.slice(0, 64), fence);
-      if (record && expired(record, now)) await this.removeRecord(record.keyHash, fence);
-    }
-  }
-
-  private async assertReplacementCapacity(keyHash: string, incomingBytes: number, fence: LockFence) {
-    await fence.assertOwner();
-    const entries = await readdir(this.options.stateDirectory, { withFileTypes: true });
-    const records = entries.filter((entry) => /^[0-9a-f]{64}\.json$/.test(entry.name));
-    let bytes = 0;
-    let replacedBytes = 0;
-    for (const entry of records) {
-      if (!entry.isFile() || entry.isSymbolicLink()) throw new TypeError("unsafe state entry");
-      await fence.assertOwner();
-      const size = (await lstat(join(this.options.stateDirectory, entry.name))).size;
-      bytes += size;
-      if (entry.name === `${keyHash}.json`) replacedBytes = size;
-    }
-    const recordDelta = replacedBytes === 0 ? 1 : 0;
-    if (records.length + recordDelta > this.maximumRecords || bytes - replacedBytes + incomingBytes > this.maximumBytes) storeFull("durable receipt store is full");
-  }
-
-  private async collectResidue(fence: LockFence) {
-    await fence.assertOwner();
-    const entries = await readdir(this.options.stateDirectory, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.name.endsWith(".tmp")) continue;
-      if (!entry.isFile() || entry.isSymbolicLink()) throw new TypeError("unsafe temp residue");
-      await fence.assertOwner();
-      await unlink(join(this.options.stateDirectory, entry.name));
-      await syncDirectory(this.options.stateDirectory);
-    }
-  }
-}
-
-async function acquireGlobalLock(directory: string) {
-  const lock = join(directory, ".store.lock");
-  for (let attempt = 0; attempt < 1_000; attempt += 1) {
-    const token = hexlify(randomBytes(16)).slice(2);
-    try {
-      await mkdir(lock, { mode: 0o700 });
-      const owner = join(lock, token);
-      const handle = await open(owner, writeFlags(), 0o600);
-      await handle.writeFile(token);
-      await handle.sync();
-      await handle.close();
-      await syncDirectory(lock);
-      return new LockFence(directory, lock, owner, token);
-    } catch (error) {
-      if (errorCode(error) !== "EEXIST") throw error;
-      await recoverStaleLock(directory, lock);
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-  }
-  throw computeFailure("COMPUTE_BROKER_ERROR", "receipt store lock is unavailable");
-}
-
-class LockFence {
-  private valid = true;
-  private readonly heartbeat: NodeJS.Timeout;
-
-  constructor(
-    private readonly directory: string,
-    private readonly lock: string,
-    private readonly owner: string,
-    private readonly token: string,
+  private assertCapacity(
+    database: DatabaseSync,
+    oldRecord: ReceiptRecord | null,
+    newRecord: ReceiptRecord,
   ) {
-    this.heartbeat = setInterval(() => void this.touch(), LOCK_STALE_MS / 3);
-    this.heartbeat.unref();
-  }
-
-  async assertOwner(): Promise<void> {
-    if (!this.valid) return fenceFailure();
-    let handle;
-    try {
-      const lockInfo = await lstat(this.lock);
-      if (!lockInfo.isDirectory() || lockInfo.isSymbolicLink()) return fenceFailure();
-      handle = await open(this.owner, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-      if ((await handle.readFile({ encoding: "utf8" })) !== this.token) return fenceFailure();
-    } catch (error) {
-      this.valid = false;
-      throw computeFailure("COMPUTE_BROKER_ERROR", "receipt store lock ownership was lost", error);
-    } finally {
-      await handle?.close();
-    }
-  }
-
-  async release(): Promise<void> {
-    clearInterval(this.heartbeat);
-    if (!this.valid) return;
-    try {
-      await this.assertOwner();
-      await releaseGlobalLock(this.directory, this.lock, this.owner, this.token);
-    } finally {
-      this.valid = false;
-    }
-  }
-
-  private async touch() {
-    try {
-      await this.assertOwner();
-      const now = new Date();
-      await utimes(this.owner, now, now);
-      await utimes(this.lock, now, now);
-    } catch {
-      this.valid = false;
+    const totals = database.prepare(
+      "SELECT COUNT(*) AS records, COALESCE(SUM(payload_bytes), 0) AS bytes FROM receipts",
+    ).get() as { records: number; bytes: number };
+    const oldBytes = oldRecord ? serializedBytes(oldRecord) : 0;
+    const recordDelta = oldRecord ? 0 : 1;
+    if (
+      Number(totals.records) + recordDelta > this.maximumRecords ||
+      Number(totals.bytes) - oldBytes + serializedBytes(newRecord) > this.maximumBytes
+    ) {
+      storeFull("durable receipt store is full");
     }
   }
 }
 
-async function recoverStaleLock(directory: string, lock: string) {
-  let info;
-  try { info = await lstat(lock); } catch (error) { if (errorCode(error) === "ENOENT") return; throw error; }
-  if (Date.now() - info.mtimeMs <= LOCK_STALE_MS) return;
-  const stale = join(directory, `.store.stale-${hexlify(randomBytes(8)).slice(2)}`);
+async function ensureStateDirectory(directory: string, databasePath: string) {
+  await mkdir(directory, { recursive: true, mode: 0o700 });
+  const directoryInfo = await lstat(directory);
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) {
+    throw new TypeError("unsafe state directory");
+  }
+  await chmod(directory, 0o700);
   try {
-    await rename(lock, stale);
-    await syncDirectory(directory);
-    await rm(stale, { recursive: true, force: true });
-    await syncDirectory(directory);
-  } catch (error) { if (errorCode(error) !== "ENOENT") throw error; }
+    const databaseInfo = await lstat(databasePath);
+    if (!databaseInfo.isFile() || databaseInfo.isSymbolicLink()) {
+      throw new TypeError("unsafe receipt database");
+    }
+  } catch (error) {
+    if (errorCode(error) !== "ENOENT") throw error;
+  }
 }
 
-async function releaseGlobalLock(directory: string, lock: string, _owner: string, token: string) {
-  const released = join(directory, `.store.release-${token}`);
+function openDatabase(path: string): DatabaseSync {
+  const database = new DatabaseSync(path, { timeout: 5_000 });
+  database.exec("PRAGMA journal_mode = WAL");
+  database.exec("PRAGMA synchronous = FULL");
+  database.exec("PRAGMA foreign_keys = ON");
+  database.exec("PRAGMA trusted_schema = OFF");
+  database.exec(schema);
+  return database;
+}
+
+const schema = `
+  CREATE TABLE IF NOT EXISTS receipts (
+    key_hash TEXT PRIMARY KEY CHECK(
+      length(key_hash) = 64 AND key_hash NOT GLOB '*[^0-9a-f]*'
+    ),
+    token TEXT NOT NULL CHECK(
+      length(token) = 66 AND substr(token, 1, 2) = '0x' AND
+      substr(token, 3) NOT GLOB '*[^0-9a-f]*'
+    ),
+    state TEXT NOT NULL CHECK(state IN ('CLAIMED', 'COMMITTED')),
+    expires_at INTEGER NOT NULL CHECK(expires_at >= 0),
+    retention_until INTEGER,
+    payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+    payload_bytes INTEGER NOT NULL CHECK(payload_bytes = length(CAST(payload_json AS BLOB))),
+    CHECK(json_extract(payload_json, '$.keyHash') = key_hash),
+    CHECK(json_extract(payload_json, '$.token') = token),
+    CHECK(json_extract(payload_json, '$.state') = state),
+    CHECK(json_extract(payload_json, '$.expiresAt') = expires_at),
+    CHECK(json_extract(payload_json, '$.retentionUntil') IS retention_until),
+    CHECK(
+      (state = 'CLAIMED' AND retention_until IS NULL) OR
+      (state = 'COMMITTED' AND retention_until IS NOT NULL)
+    )
+  ) STRICT;
+  PRAGMA user_version = 1;
+`;
+
+function collectExpired(database: DatabaseSync, now: number) {
+  database.prepare(`
+    DELETE FROM receipts
+    WHERE (state = 'CLAIMED' AND expires_at <= ?)
+       OR (state = 'COMMITTED' AND retention_until <= ?)
+  `).run(now, now);
+}
+
+function selectRecord(database: DatabaseSync, keyHash: string): ReceiptRecord | null {
+  const row = database.prepare("SELECT payload_json FROM receipts WHERE key_hash = ?").get(keyHash) as
+    | { payload_json: string }
+    | undefined;
+  return row ? recordSchema.parse(JSON.parse(row.payload_json)) : null;
+}
+
+function pendingRecord(database: DatabaseSync, keyHash: string, token: string, now: number) {
+  const record = selectRecord(database, keyHash);
+  if (!record || record.state !== "CLAIMED" || record.token !== token || record.expiresAt <= now) {
+    storeConflict();
+  }
+  return record;
+}
+
+function insertRecord(database: DatabaseSync, record: ReceiptRecord) {
+  const serialized = JSON.stringify(record);
+  database.prepare(`
+    INSERT INTO receipts
+      (key_hash, token, state, expires_at, retention_until, payload_json, payload_bytes)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(...recordValues(record, serialized));
+}
+
+function replaceRecord(database: DatabaseSync, record: ReceiptRecord) {
+  const serialized = JSON.stringify(record);
+  const result = database.prepare(`
+    UPDATE receipts SET
+      token = ?, state = ?, expires_at = ?, retention_until = ?, payload_json = ?, payload_bytes = ?
+    WHERE key_hash = ?
+  `).run(
+    record.token,
+    record.state,
+    record.expiresAt,
+    record.retentionUntil ?? null,
+    serialized,
+    Buffer.byteLength(serialized),
+    record.keyHash,
+  );
+  if (result.changes !== 1) storeConflict();
+}
+
+function recordValues(record: ReceiptRecord, serialized: string): SQLInputValue[] {
+  return [
+    record.keyHash,
+    record.token,
+    record.state,
+    record.expiresAt,
+    record.retentionUntil ?? null,
+    serialized,
+    Buffer.byteLength(serialized),
+  ];
+}
+
+function rollback(database: DatabaseSync) {
   try {
-    await rename(lock, released);
-    await syncDirectory(directory);
-    await rm(released, { recursive: true, force: true });
-    await syncDirectory(directory);
-  } catch (error) { if (errorCode(error) !== "ENOENT") throw error; }
+    database.exec("ROLLBACK");
+  } catch {
+    // Preserve the transaction's original failure.
+  }
 }
 
-function fenceFailure(): never {
-  throw computeFailure("COMPUTE_BROKER_ERROR", "receipt store lock ownership was lost");
+function newRecord(keyHash: string, metadata: ReceiptClaimMetadata, expiresAt: number) {
+  return recordSchema.parse({
+    version: 1,
+    keyHash,
+    token: randomToken(),
+    state: "CLAIMED",
+    metadata,
+    expiresAt,
+  });
 }
 
-async function syncDirectory(path: string) {
-  const handle = await open(path, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
-  try { await handle.sync(); } finally { await handle.close(); }
-}
-
-const writeFlags = () => fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_NOFOLLOW;
+const randomToken = () => hexlify(randomBytes(32));
 const stableHash = (key: string) => sha256(toUtf8Bytes(key)).slice(2);
-const expired = (record: MemoryRecord | ReceiptRecord, now: number) => record.state === "CLAIMED" ? record.expiresAt <= now : (record.retentionUntil ?? Number.MAX_SAFE_INTEGER) <= now;
+const serializedBytes = (record: ReceiptRecord) => Buffer.byteLength(JSON.stringify(record));
+const expired = (record: MemoryRecord, now: number) =>
+  record.state === "CLAIMED"
+    ? record.expiresAt <= now
+    : (record.retentionUntil ?? Number.MAX_SAFE_INTEGER) <= now;
 
 function validateCapacity(records: number, bytes: number) {
   if (records < 1 || records > 100_000) throw new TypeError("record capacity out of bounds");
-  if (bytes < 4_096 || bytes > 256 * 1_024 * 1_024) throw new TypeError("byte capacity out of bounds");
+  if (bytes < 4_096 || bytes > 256 * 1_024 * 1_024) {
+    throw new TypeError("byte capacity out of bounds");
+  }
 }
+
 function validateLeaseDuration(duration: number) {
-  if (!Number.isSafeInteger(duration) || duration < 1 || duration > MAX_PENDING_LEASE_MS) throw new TypeError("receipt claim lease is out of bounds");
+  if (!Number.isSafeInteger(duration) || duration < 1 || duration > MAX_PENDING_LEASE_MS) {
+    throw new TypeError("receipt claim lease is out of bounds");
+  }
 }
+
 function validateRetention(duration: number) {
-  if (!Number.isSafeInteger(duration) || duration < MIN_COMMITTED_RETENTION_MS) throw new TypeError("committed receipt retention must be at least 7 days");
+  if (!Number.isSafeInteger(duration) || duration < MIN_COMMITTED_RETENTION_MS) {
+    throw new TypeError("committed receipt retention must be at least 7 days");
+  }
 }
-function storeConflict(): never { throw computeFailure("COMPUTE_RECEIPT_REPLAY", "receipt claim token is stale or invalid"); }
-function storeFull(message: string): never { throw computeFailure("COMPUTE_REPLAY_STORE_FULL", message); }
-function errorCode(error: unknown) { return typeof error === "object" && error !== null && "code" in error ? String((error as { code: unknown }).code) : undefined; }
+
+function storeConflict(): never {
+  throw computeFailure("COMPUTE_RECEIPT_REPLAY", "receipt claim token is stale or invalid");
+}
+
+function storeFull(message: string): never {
+  throw computeFailure("COMPUTE_REPLAY_STORE_FULL", message);
+}
+
+function errorCode(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error
+    ? String((error as { code: unknown }).code)
+    : undefined;
+}

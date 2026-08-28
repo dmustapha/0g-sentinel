@@ -35,6 +35,7 @@ const H4 = `0x${"44".repeat(32)}` as Bytes32;
 const H5 = `0x${"55".repeat(32)}` as Bytes32;
 const H6 = `0x${"66".repeat(32)}` as Bytes32;
 const BLOCK = `0x${"77".repeat(32)}` as Bytes32;
+const ZERO_BYTES32 = `0x${"00".repeat(32)}` as Bytes32;
 
 function identity(): ResolvedAgentIdentity {
   return {
@@ -308,7 +309,7 @@ function chainAdapter(overrides: Partial<RegistryChainAdapter> = {}): RegistryCh
     [H1, B, 1n, 100n, 604900n, H2, H3, H4, H5, `0x${"00".repeat(32)}`, 1, 10, 0, 0x7f],
   );
   const transactionData = REGISTRY_V2_INTERFACE.encodeFunctionData("seal", [
-    H1, B, [H2, H3, H4, H5, 604800, 1, 10, 0, 0x7f],
+    H1, B, [H2, H3, H4, H5, `0x${"00".repeat(32)}`, 604800, 1, 10, 0, 0x7f],
   ]);
   return {
     registryAddress: REGISTRY,
@@ -363,6 +364,28 @@ describe("strict registry chain writer", () => {
     const read = await readProofLockBack(readAdapter, chainRequest, written);
     expect(written).toEqual({ transactionHash: H6, expectedVersion: 1n });
     expect(read).toEqual(record());
+  });
+
+  it("encodes the analyzed runtime hash and atomic prior version in reseal calldata", async () => {
+    const request = { ...chainRequest, mode: "RESEAL" as const, expectedPriorVersion: 4n };
+    const proof = record({ version: 4n });
+    const event = REGISTRY_V2_INTERFACE.encodeEventLog(
+      REGISTRY_V2_INTERFACE.getEvent("ProofLocked")!,
+      [H1, B, 5n, 100n, 604900n, H2, H3, H4, H5, ZERO_BYTES32, 1, 10, 0, 0x7f],
+    );
+    const expectedData = REGISTRY_V2_INTERFACE.encodeFunctionData("reseal", [
+      H1, B, 4n, [H2, H3, H4, H5, ZERO_BYTES32, 604800, 1, 10, 0, 0x7f],
+    ]);
+    const adapter = chainAdapter({
+      getProofLock: vi.fn(async () => proof),
+      waitForReceipt: vi.fn(async () => ({
+        transactionHash: H6, status: 1, blockNumber: 456n, blockHash: BLOCK,
+        confirmations: 3, logs: [{ address: REGISTRY, topics: event.topics, data: event.data }],
+      })),
+      getTransaction: vi.fn(async () => ({ hash: H6, to: REGISTRY, data: expectedData })),
+    });
+    await writeProofLock(adapter, request, { confirmations: 3, timeoutMs: 10_000 });
+    expect(adapter.sendTransaction).toHaveBeenCalledWith({ to: REGISTRY, data: expectedData });
   });
 
   it.each([

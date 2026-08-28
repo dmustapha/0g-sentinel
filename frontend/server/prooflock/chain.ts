@@ -9,8 +9,8 @@ const MAX_CONFIRMATIONS = 64;
 const MAX_TIMEOUT_MS = 120_000;
 
 export const REGISTRY_V2_INTERFACE = new Interface([
-  "function seal(bytes32 identityKey,address subject,(bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,uint48 validForSeconds,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage) input)",
-  "function reseal(bytes32 identityKey,address subject,(bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,uint48 validForSeconds,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage) input)",
+  "function seal(bytes32 identityKey,address subject,(bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,bytes32 expectedRuntimeCodeHash,uint48 validForSeconds,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage) input)",
+  "function reseal(bytes32 identityKey,address subject,uint64 expectedPriorVersion,(bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,bytes32 expectedRuntimeCodeHash,uint48 validForSeconds,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage) input)",
   "function markDrift(bytes32 identityKey,uint8 reason,uint64 expectedVersion)",
   "function getProofLock(bytes32 identityKey) view returns ((bytes32 identityKey,address subject,bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,bytes32 runtimeCodeHash,uint64 version,uint48 issuedAt,uint48 validUntil,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage,uint8 state,uint8 stateReason))",
   "event ProofLocked(bytes32 indexed identityKey,address indexed subject,uint64 indexed version,uint48 issuedAt,uint48 validUntil,bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,bytes32 runtimeCodeHash,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage)",
@@ -251,9 +251,13 @@ function requireWriteState(request: ChainWriteRequest, version: bigint): bigint 
 
 function encodeWrite(request: ChainWriteRequest): string {
   const input = [request.envelopeDigest, request.storageRoot, request.computeRoot, request.artifactHash,
-    request.validForSeconds, request.policyVersion, request.behavioralScore, request.codeRisk, request.coverage];
+    request.runtimeCodeHash, request.validForSeconds, request.policyVersion,
+    request.behavioralScore, request.codeRisk, request.coverage];
+  const prefix = request.mode === "SEAL"
+    ? [request.identityKey, request.subject]
+    : [request.identityKey, request.subject, request.expectedPriorVersion!];
   return REGISTRY_V2_INTERFACE.encodeFunctionData(request.mode === "SEAL" ? "seal" : "reseal", [
-    request.identityKey, request.subject, input,
+    ...prefix, input,
   ]);
 }
 

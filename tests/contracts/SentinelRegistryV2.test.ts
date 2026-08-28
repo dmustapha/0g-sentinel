@@ -1,5 +1,5 @@
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, network } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 import type { SentinelRegistryV2 } from "../../typechain-types";
 
@@ -17,6 +17,7 @@ function lockInput(overrides: Record<string, unknown> = {}) {
     storageRoot: HASH_B,
     computeRoot: HASH_C,
     artifactHash: HASH_D,
+    expectedRuntimeCodeHash: ZERO,
     validForSeconds: 7 * DAY,
     policyVersion: 1,
     behavioralScore: 10,
@@ -130,7 +131,7 @@ describe("SentinelRegistryV2", () => {
 
   it("allows seal only for absent identities and reseal only for existing identities", async () => {
     const { registry, scanner, subject } = await deployRegistry();
-    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, lockInput()))
+    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, 1, lockInput()))
       .to.be.revertedWithCustomError(registry, "ProofNotFound");
     await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
     await expect(registry.connect(scanner).seal(HASH_A, subject.address, lockInput()))
@@ -140,7 +141,7 @@ describe("SentinelRegistryV2", () => {
   it("reseals with the next version and emits supersession", async () => {
     const { registry, scanner, subject } = await deployRegistry();
     await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
-    const tx = await registry.connect(scanner).reseal(HASH_A, subject.address, lockInput({ envelopeDigest: HASH_B }));
+    const tx = await registry.connect(scanner).reseal(HASH_A, subject.address, 1, lockInput({ envelopeDigest: HASH_B }));
     const receipt = await tx.wait();
     const block = await ethers.provider.getBlock(receipt!.blockNumber);
     await expect(tx)
@@ -190,7 +191,7 @@ describe("SentinelRegistryV2", () => {
       .to.be.revertedWithCustomError(registry, "InvalidState");
     await expect(registry.connect(guardian).markDrift(HASH_A, 3, 1))
       .to.be.revertedWithCustomError(registry, "InvalidState");
-    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, lockInput()))
+    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, 1, lockInput()))
       .to.be.revertedWithCustomError(registry, "InvalidState");
   });
 
@@ -198,11 +199,11 @@ describe("SentinelRegistryV2", () => {
     const { registry, scanner, guardian, subject } = await deployRegistry();
     await registry.connect(scanner).seal(HASH_A, subject.address, lockInput({ validForSeconds: 1 }));
     await time.increase(2);
-    await registry.connect(scanner).reseal(HASH_A, subject.address, lockInput());
+    await registry.connect(scanner).reseal(HASH_A, subject.address, 1, lockInput());
     expect((await registry.getProofLock(HASH_A)).version).to.equal(2n);
     await registry.connect(scanner).seal(HASH_B, subject.address, lockInput());
     await registry.connect(guardian).markDrift(HASH_B, 3, 1);
-    await registry.connect(scanner).reseal(HASH_B, subject.address, lockInput());
+    await registry.connect(scanner).reseal(HASH_B, subject.address, 1, lockInput());
     expect((await registry.getProofLock(HASH_B)).state).to.equal(1);
   });
 
@@ -230,18 +231,112 @@ describe("SentinelRegistryV2", () => {
       .to.be.revertedWithCustomError(registry, "PageLimitExceeded");
   });
 
-  it("stores the contract runtime code hash computed by the registry", async () => {
+  it("stores and emits the expected live contract runtime code hash", async () => {
     const { registry, scanner } = await deployRegistry();
     const contractSubject = await (await ethers.getContractFactory("MutableSubjectV1")).deploy();
     const address = await contractSubject.getAddress();
     const expected = ethers.keccak256(await ethers.provider.getCode(address));
-    await registry.connect(scanner).seal(HASH_A, address, lockInput());
+    const tx = await registry.connect(scanner).seal(HASH_A, address, lockInput({ expectedRuntimeCodeHash: expected }));
+    const receipt = await tx.wait();
+    const block = await ethers.provider.getBlock(receipt!.blockNumber);
     expect((await registry.getProofLock(HASH_A)).runtimeCodeHash).to.equal(expected);
+    await expect(tx).to.emit(registry, "ProofLocked").withArgs(
+      HASH_A, address, 1, block!.timestamp, block!.timestamp + 7 * DAY,
+      HASH_A, HASH_B, HASH_C, HASH_D, expected, 1, 10, 0, REQUIRED_COVERAGE,
+    );
   });
 
   it("stores zero runtime code hash for an EOA", async () => {
     const { registry, scanner, subject } = await deployRegistry();
     await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
     expect((await registry.getProofLock(HASH_A)).runtimeCodeHash).to.equal(ZERO);
+  });
+
+  it("rejects a nonzero expected runtime for an EOA without indexing or events", async () => {
+    const { registry, scanner, subject } = await deployRegistry();
+    const filter = registry.filters.ProofLocked(HASH_A);
+    await expect(registry.connect(scanner).seal(
+      HASH_A, subject.address, lockInput({ expectedRuntimeCodeHash: HASH_B }),
+    )).to.be.revertedWithCustomError(registry, "RuntimeCodeHashMismatch").withArgs(HASH_B, ZERO);
+    expect((await registry.getProofLock(HASH_A)).version).to.equal(0n);
+    expect(await registry.getIdentityCount()).to.equal(0n);
+    expect(await registry.queryFilter(filter)).to.deep.equal([]);
+  });
+
+  it("rejects zero and wrong expected hashes for a contract without state", async () => {
+    const { registry, scanner } = await deployRegistry();
+    const contractSubject = await (await ethers.getContractFactory("MutableSubjectV1")).deploy();
+    const address = await contractSubject.getAddress();
+    const actual = ethers.keccak256(await ethers.provider.getCode(address));
+    for (const expected of [ZERO, HASH_B]) {
+      await expect(registry.connect(scanner).seal(
+        HASH_A, address, lockInput({ expectedRuntimeCodeHash: expected }),
+      )).to.be.revertedWithCustomError(registry, "RuntimeCodeHashMismatch").withArgs(expected, actual);
+      expect((await registry.getProofLock(HASH_A)).version).to.equal(0n);
+      expect(await registry.getIdentityCount()).to.equal(0n);
+    }
+  });
+
+  it("rejects when analyzed V1 runtime mutates to V2 before seal", async () => {
+    const { registry, scanner } = await deployRegistry();
+    const v1 = await (await ethers.getContractFactory("MutableSubjectV1")).deploy();
+    const v2 = await (await ethers.getContractFactory("MutableSubjectV2")).deploy();
+    const address = await v1.getAddress();
+    const analyzed = ethers.keccak256(await ethers.provider.getCode(address));
+    await network.provider.send("hardhat_setCode", [address, await ethers.provider.getCode(await v2.getAddress())]);
+    const live = ethers.keccak256(await ethers.provider.getCode(address));
+    await expect(registry.connect(scanner).seal(
+      HASH_A, address, lockInput({ expectedRuntimeCodeHash: analyzed }),
+    )).to.be.revertedWithCustomError(registry, "RuntimeCodeHashMismatch").withArgs(analyzed, live);
+    expect((await registry.getProofLock(HASH_A)).state).to.equal(0);
+  });
+
+  it("preserves a prior proof on stale-runtime reseal and accepts the fresh runtime once", async () => {
+    const { registry, scanner } = await deployRegistry();
+    const v1 = await (await ethers.getContractFactory("MutableSubjectV1")).deploy();
+    const v2 = await (await ethers.getContractFactory("MutableSubjectV2")).deploy();
+    const address = await v1.getAddress();
+    const v1Hash = ethers.keccak256(await ethers.provider.getCode(address));
+    await registry.connect(scanner).seal(HASH_A, address, lockInput({ expectedRuntimeCodeHash: v1Hash }));
+    await network.provider.send("hardhat_setCode", [address, await ethers.provider.getCode(await v2.getAddress())]);
+    const v2Hash = ethers.keccak256(await ethers.provider.getCode(address));
+    await expect(registry.connect(scanner).reseal(
+      HASH_A, address, 1, lockInput({ expectedRuntimeCodeHash: v1Hash }),
+    )).to.be.revertedWithCustomError(registry, "RuntimeCodeHashMismatch").withArgs(v1Hash, v2Hash);
+    expect((await registry.getProofLock(HASH_A)).version).to.equal(1n);
+    expect((await registry.getProofLock(HASH_A)).runtimeCodeHash).to.equal(v1Hash);
+    expect((await registry.getProofLock(HASH_A)).state).to.equal(1);
+    await registry.connect(scanner).reseal(HASH_A, address, 1, lockInput({ expectedRuntimeCodeHash: v2Hash }));
+    expect((await registry.getProofLock(HASH_A)).version).to.equal(2n);
+    expect((await registry.getProofLock(HASH_A)).runtimeCodeHash).to.equal(v2Hash);
+  });
+
+  it("binds an EOA-to-EIP-7702 designator transition to the exact designator hash", async () => {
+    const { registry, scanner, subject } = await deployRegistry();
+    const designator = `0xef0100${scanner.address.slice(2)}`;
+    try {
+      await network.provider.send("hardhat_setCode", [subject.address, designator]);
+      const expected = ethers.keccak256(designator);
+      await expect(registry.connect(scanner).seal(HASH_A, subject.address, lockInput()))
+        .to.be.revertedWithCustomError(registry, "RuntimeCodeHashMismatch").withArgs(ZERO, expected);
+      await registry.connect(scanner).seal(HASH_A, subject.address, lockInput({ expectedRuntimeCodeHash: expected }));
+      expect((await registry.getProofLock(HASH_A)).runtimeCodeHash).to.equal(expected);
+    } finally {
+      await network.provider.send("hardhat_setCode", [subject.address, "0x"]);
+    }
+  });
+
+  it("rejects a stale reseal version without a successor and accepts the current version once", async () => {
+    const { registry, scanner, subject } = await deployRegistry();
+    await registry.connect(scanner).seal(HASH_A, subject.address, lockInput());
+    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, 2, lockInput()))
+      .to.be.revertedWithCustomError(registry, "StaleVersion").withArgs(2, 1);
+    expect((await registry.getProofLock(HASH_A)).version).to.equal(1n);
+    expect(await registry.queryFilter(registry.filters.ProofSuperseded(HASH_A))).to.deep.equal([]);
+    await registry.connect(scanner).reseal(HASH_A, subject.address, 1, lockInput());
+    await expect(registry.connect(scanner).reseal(HASH_A, subject.address, 1, lockInput()))
+      .to.be.revertedWithCustomError(registry, "StaleVersion").withArgs(1, 2);
+    expect((await registry.getProofLock(HASH_A)).version).to.equal(2n);
+    expect(await registry.queryFilter(registry.filters.ProofSuperseded(HASH_A))).to.have.length(1);
   });
 });

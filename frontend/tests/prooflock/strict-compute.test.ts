@@ -398,21 +398,38 @@ describe("strict 0G Compute", () => {
     });
   });
 
-  it("keys replay claims by chain, provider, model, chat ID, and signed response digest", async () => {
+  it("keys replay claims by chain, provider, and chat ID with transcript metadata", async () => {
     const receiptStore: ReceiptClaimStore = {
       claim: vi.fn(async () => "claim-token"),
       commit: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     await runStrictCompute(input(), harness({ receiptStore }).dependencies);
-    const key = vi.mocked(receiptStore.claim).mock.calls[0][0];
-    expect(JSON.parse(key)).toEqual([
-      16661,
-      PROVIDER,
-      MODEL,
-      "header-chat-id",
-      expect.stringMatching(/^0x[0-9a-f]{64}$/),
-    ]);
+    const [key, metadata] = vi.mocked(receiptStore.claim).mock.calls[0];
+    expect(JSON.parse(key)).toEqual([16661, PROVIDER, "header-chat-id"]);
+    expect(metadata).toEqual({
+      model: MODEL,
+      requestSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+      responseSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
+    });
+  });
+
+  it("rejects the same receipt with a different separately valid signed response", async () => {
+    const receiptStore = new MemoryReceiptClaimStore();
+    await runStrictCompute(input(), harness({ receiptStore }).dependencies);
+    const equivocated = inferenceResponse(
+      body({
+        choices: [
+          { message: { content: '{"riskScore":99,"label":"FLAGGED"}' } },
+        ],
+      })
+    );
+    await expect(
+      runStrictCompute(
+        input(),
+        harness({ receiptStore, inference: equivocated }).dependencies
+      )
+    ).rejects.toMatchObject({ code: "COMPUTE_RECEIPT_REPLAY" });
   });
 
   it("releases a failed claim so the same shared store can retry", async () => {
@@ -577,12 +594,17 @@ describe("strict 0G Compute", () => {
 
   it("bounds the test-only memory store rather than evicting replay history", async () => {
     const store = new MemoryReceiptClaimStore(1);
-    const first = await store.claim("one");
+    const metadata = {
+      model: MODEL,
+      requestSha256: `0x${"1".repeat(64)}` as const,
+      responseSha256: `0x${"2".repeat(64)}` as const,
+    };
+    const first = await store.claim("one", metadata);
     await store.commit("one", first!);
-    await expect(store.claim("two")).rejects.toMatchObject({
+    await expect(store.claim("two", metadata)).rejects.toMatchObject({
       code: "COMPUTE_REPLAY_STORE_FULL",
     });
-    await expect(store.claim("one")).resolves.toBeNull();
+    await expect(store.claim("one", metadata)).resolves.toBeNull();
   });
 
   it("rejects private literal endpoints before opening a socket", async () => {

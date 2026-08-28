@@ -66,6 +66,30 @@ function resolver(source = "contract Verified {}", overrides: Record<string, unk
   return value;
 }
 
+function proxyMetadataResolver(overrides: Record<string, unknown> = {}) {
+  return {
+    resolve: vi.fn(async (request: any) => ({
+      chainId: 16661,
+      subjectAddress: request.subjectAddress,
+      sourceBlockNumber: request.sourceBlock.number.toString(),
+      sourceBlockHash: request.sourceBlock.hash,
+      subjectRuntimeCodeHash: request.subjectRuntimeCodeHash,
+      kind: request.proxyCandidate.kind,
+      implementationAddress: request.proxyCandidate.implementationAddress,
+      implementationCodeHash: request.proxyCandidate.implementationCodeHash,
+      ...(request.proxyCandidate.kind === "EIP1967_BEACON" ? {
+        beaconAddress: request.proxyCandidate.beaconAddress,
+        beaconCodeHash: request.proxyCandidate.beaconCodeHash,
+      } : {}),
+      provider: "independent-proxy-indexer",
+      uri: "https://proxy-metadata.example/record/1",
+      rawResponseDigest: `0x${"88".repeat(32)}`,
+      verifiedProxyMatch: true,
+      ...overrides,
+    })),
+  };
+}
+
 function envelopeSubject(subject: ReturnType<typeof toEvidenceSubject>) {
   const chatId = "subject-hardening";
   return {
@@ -232,6 +256,60 @@ describe("resolver-bound verified source", () => {
 });
 
 describe("fail-closed proxy and delegation provenance", () => {
+  it("does not let a live EIP-1967 slot redirect source or canonical evidence", async () => {
+    const sourceResolver = resolver("contract OrdinaryWithBenignSlot {}");
+    const adapter = chain({
+      getCode: vi.fn(async (address) =>
+        address.toLowerCase() === TARGET.toLowerCase() ? "0x6002" : "0x6001",
+      ),
+      getStorage: vi.fn(async (_address, slot) =>
+        slot === EIP1967_IMPLEMENTATION_SLOT ? storageAddress(TARGET) : ZERO_WORD,
+      ),
+    });
+    const subject = await classifySubject(adapter, SUBJECT, SOURCE_BLOCK);
+    const report = await inspectContract(adapter, subject, {
+      sourceBlock: SOURCE_BLOCK,
+      sourceResolver,
+    } as never);
+    const evidenceSubject = toEvidenceSubject(subject, report);
+
+    expect(report.proxy).toBeUndefined();
+    expect(report.proxyCandidate).toMatchObject({ kind: "EIP1967_IMPLEMENTATION" });
+    expect(sourceResolver.resolve).toHaveBeenCalledWith(expect.objectContaining({
+      address: getAddress(SUBJECT),
+      runtimeCodeHash: subject.runtimeCodeHash,
+    }));
+    expect(evidenceSubject).not.toHaveProperty("proxyImplementation");
+  });
+
+  it("promotes a slot candidate only with independently bound proxy metadata", async () => {
+    const metadataResolver = proxyMetadataResolver();
+    const adapter = chain({
+      getCode: vi.fn(async (address) =>
+        address.toLowerCase() === TARGET.toLowerCase() ? "0x6002" : "0x6001",
+      ),
+      getStorage: vi.fn(async (_address, slot) =>
+        slot === EIP1967_IMPLEMENTATION_SLOT ? storageAddress(TARGET) : ZERO_WORD,
+      ),
+    });
+    const subject = await classifySubject(adapter, SUBJECT, SOURCE_BLOCK);
+    const report = await inspectContract(adapter, subject, {
+      sourceBlock: SOURCE_BLOCK,
+      proxyMetadataResolver: metadataResolver,
+    } as never);
+    const evidenceSubject = toEvidenceSubject(subject, report);
+
+    expect(report.boundProxyMetadata).toMatchObject({ verifiedProxyMatch: true });
+    expect(report.proxy).toMatchObject({
+      kind: "EIP1967_IMPLEMENTATION",
+      implementationAddress: getAddress(TARGET),
+    });
+    expect(evidenceSubject).toMatchObject({
+      proxyImplementation: getAddress(TARGET),
+      proxyImplementationCodeHash: keccak256("0x6002"),
+    });
+  });
+
   it.each([
     ["self implementation", SUBJECT, "0x6001"],
     ["dead implementation", TARGET, "0x"],
@@ -410,9 +488,11 @@ describe("strict evidence subject adapter", () => {
     expect(Object.keys(evidenceSubject).sort()).toEqual(
       expect.arrayContaining(["address", "kind", "runtimeCodeHash"]),
     );
-    if (proxyKind) {
+    if (proxyKind === "minimal") {
       expect(validated.subject.proxyImplementation).toBe(getAddress(TARGET).toLowerCase());
       expect(validated.subject.proxyImplementationCodeHash).toBe(keccak256("0x6002"));
+    } else if (proxyKind) {
+      expect(validated.subject).not.toHaveProperty("proxyImplementation");
     }
     if (variant === "EIP7702_DELEGATED_EOA") {
       expect(validated.subject.delegationTarget).toBe(getAddress(TARGET).toLowerCase());

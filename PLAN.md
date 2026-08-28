@@ -17,7 +17,7 @@ Ship a mandatory Wave 3 cut: a verified 0G Compute result and retrievable 0G Sto
 ## Phases
 
 - [x] 1. SentinelRegistryV2, AgentGateV2, and consumer contract with reason-coded tests.
-- [ ] 2. Canonical evidence types, hashing, and structured errors.
+- [x] 2. Canonical evidence types, hashing, and structured errors.
 - [ ] 3. ERC-8004 identity and registration-card resolution.
 - [ ] 4. Subject classification and deterministic analysis consolidation.
 - [ ] 5. Strict verified Compute and independently verified Storage.

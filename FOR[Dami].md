@@ -25,3 +25,9 @@ One authorized wallet still issues and can revoke leases in this hackathon relea
 - `ProofLockConsumerDemo` proves enforcement. The admitted agent must be the caller; knowing a safe agent ID is not enough to borrow its permission.
 
 The tests cover the full demo lifecycle: admitted action, drift block, expiry block, and resealed admission. They also exercise malformed registry data, hostile constructor settings, caller spoofing, state-transition conflicts, and exact timestamp boundaries.
+
+### Why canonical evidence matters
+
+JSON objects can look identical to a person while producing different bytes because keys, address casing, numbers, or malformed Unicode differ. ProofLock validates one strict evidence-v1 schema, normalizes addresses, serializes with JCS, and Keccak-hashes the exact UTF-8 bytes. The same facts therefore create the same commitment; different facts create a different one.
+
+The pre-upload envelope explicitly says Storage is still pending. Only a separate `StorageCommitment`—with a real root, upload transaction, and retrieved digest equal to the envelope digest—can advance coverage from `0x5f` to the sealed `0x7f`. This prevents a content hash or failed retrieval from masquerading as verified 0G Storage.

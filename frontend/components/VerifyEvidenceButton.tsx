@@ -1,7 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, type ReactNode, type RefObject } from "react";
+import { Button } from "@/components/ui/Button";
+import { StateMessage, type StateMessageState } from "@/components/ui/StateMessage";
+import { VERIFIER_CLAIM_COPY } from "@/lib/prooflock-claims";
 import { ProofLockApiError, readProofLockDetail, verifyProof } from "@/lib/prooflock-client";
 import { admittedConsumerState, gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
 import { createVerificationCoordinator, initialVerificationState, verificationReducer } from "@/lib/verification-state";
@@ -28,18 +31,47 @@ function StatefulVerifyEvidenceButton({ proofId, identityKey, sourceTxHash }: { 
   const verification = useVerification(proofId, identityKey, sourceTxHash);
   const historical = verification.state.historical;
   const current = verification.state.current;
+  const historicalStatusRef = useRef<HTMLHeadingElement>(null);
+  const currentStatusRef = useRef<HTMLHeadingElement>(null);
+  const focusCurrentOnSettle = useRef(false);
+  const priorHistoricalStatus = useRef(historical.status);
   const historicalBusy = historical.status === "VERIFYING" || historical.status === "RETRYING";
   const currentBusy = current.status === "READING";
-  const busy = historicalBusy || currentBusy;
-  const retryable = historical.status === "UNAVAILABLE" ||
+  const retryable = historical.status === "MISMATCH" || historical.status === "UNAVAILABLE" ||
     historical.status === "TIMEOUT" || historical.status === "CANCELED";
-  return <div className="verification-control"><div className="action-row"><button className="button primary" disabled={busy} onClick={() => verification.run(false)}>Verify exact evidence</button>
-    {retryable && <button className="button" onClick={() => verification.run(true)}>Retry</button>}
-    {historicalBusy && <button className="button" onClick={verification.cancelHistorical}>Cancel historical verification</button>}
-    {currentBusy && <button className="button" onClick={verification.cancelCurrent}>Cancel current access read</button>}</div>
-    <VerificationResult state={historical.status} current={current.status} reasonCode={"reason" in current ? current.reason : undefined} busy={busy} />
-    {historical.status === "MATCH" && <HistoricalProofDetails proof={historical.proof} explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />}
+  const retryMode = retryable || historical.status === "RETRYING";
+  useEffect(() => {
+    const changed = priorHistoricalStatus.current !== historical.status;
+    priorHistoricalStatus.current = historical.status;
+    if (changed && terminalHistoricalStatus(historical.status)) historicalStatusRef.current?.focus();
+  }, [historical.status]);
+  useEffect(() => {
+    if (focusCurrentOnSettle.current && current.status !== "READING" && current.status !== "IDLE") {
+      focusCurrentOnSettle.current = false; currentStatusRef.current?.focus();
+    }
+  }, [current.status]);
+  const cancelCurrent = () => {
+    focusCurrentOnSettle.current = true; verification.cancelCurrent();
+  };
+  const retryAction = retryMode ? <Button pending={historical.status === "RETRYING"}
+    pendingLabel={VERIFIER_CLAIM_COPY.actions.retrying} onClick={() => verification.run(true)}>{VERIFIER_CLAIM_COPY.actions.retry}</Button> : undefined;
+  return <div className="verification-control"><div className="action-row">
+    {!retryMode ? <Button variant="primary" pending={historicalBusy}
+      pendingLabel={VERIFIER_CLAIM_COPY.actions.verifying} disabled={currentBusy}
+      onClick={() => verification.run(false)}>{VERIFIER_CLAIM_COPY.actions.verify}</Button> : null}
+    {historicalBusy && <Button onClick={verification.cancelHistorical}>{VERIFIER_CLAIM_COPY.actions.cancelHistorical}</Button>}
+    {currentBusy && <Button onClick={cancelCurrent}>{VERIFIER_CLAIM_COPY.actions.cancelCurrent}</Button>}</div>
+    <VerificationResult historicalRef={historicalStatusRef} state={historical.status} current={current.status}
+      currentRef={currentStatusRef} reasonCode={"reason" in current ? current.reason : undefined}
+      busy={historicalBusy || currentBusy} proof={historical.status === "MATCH" ? historical.proof : undefined}
+      explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"}
+      historicalAction={retryAction} />
   </div>;
+}
+
+function terminalHistoricalStatus(status: ProofVerificationState): boolean {
+  return status === "MATCH" || status === "MISMATCH" || status === "HINT_REQUIRED" ||
+    status === "UNAVAILABLE" || status === "TIMEOUT" || status === "CANCELED";
 }
 
 function useVerification(proofId: string, identityKey: string, sourceTxHash?: string) {
@@ -102,16 +134,16 @@ export function HistoricalProofDetails({ proof, explorerBase }: Readonly<{
 }>) {
   const compute = firstCompute(proof.storage.envelope);
   const uploadTx = stringField(proof.storage.storageCommitment, "uploadTxHash");
-  const provider = compute && configuredDisplayText(compute.provider, "Provider not provided", { maxGraphemes: 96 });
-  const model = compute && configuredDisplayText(compute.model, "Model not provided", { maxGraphemes: 120 });
+  const provider = compute && configuredDisplayText(compute.provider, VERIFIER_CLAIM_COPY.evidence.providerFallback, { maxGraphemes: 96 });
+  const model = compute && configuredDisplayText(compute.model, VERIFIER_CLAIM_COPY.evidence.modelFallback, { maxGraphemes: 120 });
   const version = displayValue(proof.proofLock.version, { maxGraphemes: 80 });
   return <div className="verification-proof"><dl className="proof-list"><div><dt>Registry source transaction</dt><dd><ExplorerValue base={explorerBase} kind="tx" value={proof.source.transactionHash} /></dd></div>
     <div><dt>Source block</dt><dd aria-label={`block ${proof.source.blockNumber}`}>block <bdi dir="ltr">{proof.source.blockNumber}</bdi></dd></div><div><dt>Lease version</dt><dd aria-label={`Version ${version.display}`}>Version <bdi dir="ltr">{version.display}</bdi></dd></div>
     <div><dt>Registry</dt><dd><ExplorerValue base={explorerBase} kind="address" value={proof.source.registryAddress} /></dd></div>
     <div><dt>Source block hash</dt><dd className="mono break"><bdi dir="ltr">{proof.source.blockHash}</bdi></dd></div><div><dt>Log index</dt><dd><bdi dir="ltr">{proof.source.logIndex}</bdi></dd></div>
-    <div><dt>Storage root</dt><dd className="mono break"><bdi dir="ltr">{proof.proofLock.storageRoot}</bdi></dd></div><div><dt>Storage upload transaction</dt><dd>{uploadTx ? <ExplorerValue base={explorerBase} kind="tx" value={uploadTx} /> : "Unavailable"}</dd></div>
-    <div><dt>Compute provider</dt><dd className="mono break"><bdi>{provider ?? "Unavailable"}</bdi></dd></div><div><dt>Compute model</dt><dd><bdi>{model ?? "Unavailable"}</bdi></dd></div>
-    <div><dt>Retrieval</dt><dd>Exact bytes, digest, and recomputed 0G root match</dd></div><div><dt>Capability</dt><dd className="mono">networkProofVerified: false</dd></div></dl></div>;
+    <div><dt>Storage root</dt><dd className="mono break"><bdi dir="ltr">{proof.proofLock.storageRoot}</bdi></dd></div><div><dt>Storage upload transaction</dt><dd>{uploadTx ? <ExplorerValue base={explorerBase} kind="tx" value={uploadTx} /> : VERIFIER_CLAIM_COPY.evidence.unavailableValue}</dd></div>
+    <div><dt>Compute provider</dt><dd className="mono break"><bdi>{provider ?? VERIFIER_CLAIM_COPY.evidence.unavailableValue}</bdi></dd></div><div><dt>Compute model</dt><dd><bdi>{model ?? VERIFIER_CLAIM_COPY.evidence.unavailableValue}</bdi></dd></div>
+    <div><dt>{VERIFIER_CLAIM_COPY.evidence.storageFlagLabel}</dt><dd className="mono">{VERIFIER_CLAIM_COPY.evidence.storageFlagValue}</dd></div></dl></div>;
 }
 
 function ExplorerValue({ base, kind, value }: Readonly<{
@@ -129,15 +161,15 @@ export function ProofLocatorNotice({ status, currentHref }: Readonly<{
   currentHref: string;
 }>) {
   if (status === "MATCH") return null;
-  if (status === "STALE_LINK") return <div className="inline-state state-warn"><b>Stale proof link</b>
-    <p>The supplied Registry source transaction does not identify the current record. No historical match is claimed.</p>
-    <Link className="text-link" href={currentHref}>Retry current record without source locator</Link></div>;
-  if (status === "MISMATCH") return <div className="inline-state state-bad"><b>Historical proof mismatch</b>
-    <p>The linked artifact failed cryptographic or finalized provenance checks. No historical match is claimed.</p></div>;
-  if (status === "HINT_REQUIRED") return <div className="inline-state state-warn"><b>Source transaction required</b>
-    <p>This proof is outside the bounded historical lookup. Open a link carrying its exact Registry source transaction.</p></div>;
-  return <div className="inline-state state-warn"><b>Historical evidence unavailable</b>
-    <p>The current record remains visible, but its historical artifact was not verified.</p></div>;
+  if (status === "STALE_LINK") return <div className="inline-state state-warn"><b>{VERIFIER_CLAIM_COPY.locator.staleTitle}</b>
+    <p>{VERIFIER_CLAIM_COPY.locator.staleDetail}</p>
+    <Link className="text-link" href={currentHref}>{VERIFIER_CLAIM_COPY.locator.staleAction}</Link></div>;
+  if (status === "MISMATCH") return <div className="inline-state state-bad"><b>{VERIFIER_CLAIM_COPY.locator.mismatchTitle}</b>
+    <p>{VERIFIER_CLAIM_COPY.locator.mismatchDetail}</p></div>;
+  if (status === "HINT_REQUIRED") return <div className="inline-state state-warn"><b>{VERIFIER_CLAIM_COPY.locator.hintTitle}</b>
+    <p>{VERIFIER_CLAIM_COPY.locator.hintDetail}</p></div>;
+  return <div className="inline-state state-warn"><b>{VERIFIER_CLAIM_COPY.locator.unavailableTitle}</b>
+    <p>{VERIFIER_CLAIM_COPY.locator.unavailableDetail}</p></div>;
 }
 
 function firstCompute(envelope: Readonly<Record<string, unknown>>): { provider: string; model: string } | undefined {
@@ -151,14 +183,53 @@ function stringField(value: Readonly<Record<string, unknown>> | undefined, key: 
   return typeof value?.[key] === "string" ? value[key] as string : undefined;
 }
 
-export function VerificationResult({ state, current, reasonCode, busy = false }: { state: ProofVerificationState; current?: CurrentVerification["status"]; reasonCode?: string; busy?: boolean }) {
-  const labels: Record<ProofVerificationState, string> = { IDLE: "Ready to verify", VERIFYING: "Verifying exact stored bytes…", MATCH: "Historical artifact matches",
-    MISMATCH: "Historical artifact mismatch", HINT_REQUIRED: "Source transaction required", UNAVAILABLE: "Evidence unavailable",
-    TIMEOUT: "Verification timed out", CANCELED: "Verification canceled", RETRYING: "Retrying verification" };
-  const tone = state === "MATCH" ? "state-good" : state === "IDLE" || state === "VERIFYING" || state === "RETRYING" ? "state-warn" : "state-bad";
+export function VerificationResult({ state, current, reasonCode, busy = false, historicalRef, currentRef,
+  proof, explorerBase, historicalAction }: {
+  state: ProofVerificationState; current?: CurrentVerification["status"]; reasonCode?: string;
+  busy?: boolean; historicalRef?: RefObject<HTMLHeadingElement>; currentRef?: RefObject<HTMLHeadingElement>;
+  proof?: VerifiedProof; explorerBase?: string; historicalAction?: ReactNode;
+}) {
+  const labels: Record<ProofVerificationState, string> = VERIFIER_CLAIM_COPY.historical.labels;
   const currentVisible = current && current !== "IDLE";
-  return <div className={`verification-result ${tone}`} role="status" aria-live="polite" aria-busy={busy}><b>{labels[state]}</b>{state === "MATCH" && <p>Canonical envelope, record bindings, verified Compute transcript, finalized Storage commitment, and retrieval match at verification time.</p>}
-    {currentVisible && <p><strong>Current access: {current}</strong>{reasonCode
-      ? <> · <bdi>{safeDisplayText(reasonCode, { maxGraphemes: 80 })}</bdi></> : ""}</p>}
-    {state === "MATCH" && <small>Historical artifact validity is independent of the current lease and Gate state.</small>}</div>;
+  const historicalBusy = state === "VERIFYING" || state === "RETRYING";
+  return <div className="verification-result">
+    <section data-plane="historical">
+      <h2 ref={historicalRef} tabIndex={-1}>{labels[state]}</h2>
+      <PlaneAnnouncement busy={historicalBusy || (busy && !currentVisible)} text={labels[state]} />
+      <StateMessage announce="off" state={historicalMessageState(state)} title={VERIFIER_CLAIM_COPY.historical.boundaryTitle}>
+        {VERIFIER_CLAIM_COPY.historical.boundaryDetail}
+      </StateMessage>
+      {historicalAction ? <div className="action-row verification-result__action">{historicalAction}</div> : null}
+      {proof ? <HistoricalProofDetails proof={proof}
+        explorerBase={explorerBase ?? "https://chainscan.0g.ai"} /> : null}
+    </section>
+    {currentVisible ? <section data-plane="current">
+      <h2 ref={currentRef} tabIndex={-1}>{VERIFIER_CLAIM_COPY.current.headingPrefix}: {current}</h2>
+      <PlaneAnnouncement busy={current === "READING"}
+        text={`${VERIFIER_CLAIM_COPY.current.headingPrefix}: ${current}`} />
+      <StateMessage announce="off" state={currentMessageState(current)} title={VERIFIER_CLAIM_COPY.current.boundaryTitle}>
+        {reasonCode ? <>{VERIFIER_CLAIM_COPY.current.reasonPrefix}: <bdi>{safeDisplayText(reasonCode, { maxGraphemes: 80 })}</bdi></> : VERIFIER_CLAIM_COPY.current.noReason}
+      </StateMessage>
+    </section> : null}
+  </div>;
+}
+
+function PlaneAnnouncement({ busy, text }: Readonly<{ busy: boolean; text: string }>) {
+  return <span className="sr-only" role="status" aria-live="polite" aria-atomic="true"
+    aria-busy={busy}>{text}</span>;
+}
+
+function historicalMessageState(state: ProofVerificationState): StateMessageState {
+  if (state === "MATCH") return "success";
+  if (state === "VERIFYING" || state === "RETRYING") return "loading";
+  if (state === "IDLE") return "empty";
+  if (state === "HINT_REQUIRED" || state === "UNAVAILABLE") return "unavailable";
+  return "error";
+}
+
+function currentMessageState(state: Exclude<CurrentVerification["status"], "IDLE">): StateMessageState {
+  if (state === "READING") return "loading";
+  if (state === "ADMITTED") return "success";
+  if (state === "UNAVAILABLE") return "unavailable";
+  return "error";
 }

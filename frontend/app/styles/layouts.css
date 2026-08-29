@@ -41,12 +41,13 @@
   .lifecycle-controls { margin-top: 18px; grid-template-columns: 1fr; }
   .drift-diff { display: grid; gap: 7px; }
   .verify-sheet { display: grid; gap: 10px; max-width: var(--measure-verify); }
+  .proof-page .verify-sheet { max-width: var(--measure-prose); }
   .health-heading { margin-top: 70px; }
   .health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
   .health-cell dl { margin-top: 18px; display: grid; gap: var(--space-1); }
   .health-cell dl div { display: flex; justify-content: space-between; gap: var(--space-1); }
   .verification-control { margin-top: 18px; display: grid; gap: 14px; }
-  .verification-result { display: grid; gap: 6px; }
+  .verification-result { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4.4fr); gap: var(--space-5); align-items: start; }
   .centered-state { min-height: calc(100vh - 70px); display: grid; place-content: center; justify-items: center; gap: var(--space-2); padding: 30px; text-align: center; }
   .foot-inner { min-height: 90px; display: flex; align-items: center; gap: var(--space-2); }
   .flink { margin-left: auto; }
@@ -62,6 +63,7 @@
     .inventory-cards { display: grid; }
     .inventory-card .card-row > div { min-width: 0; }
     .decision-grid, .health-grid { grid-template-columns: 1fr 1fr; }
+    .verification-result { grid-template-columns: 1fr; gap: var(--space-3); }
   }
 
   @media (max-width: 600px) {

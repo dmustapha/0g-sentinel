@@ -1,32 +1,84 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { SubsystemHealthGrid } from "@/components/SubsystemHealthGrid";
+import { Button } from "@/components/ui/Button";
+import { Field } from "@/components/ui/Field";
+import { StateMessage } from "@/components/ui/StateMessage";
+import { VERIFIER_CLAIM_COPY, assertClaimAllowed, claimFor } from "@/lib/prooflock-claims";
 import { readHealth } from "@/lib/prooflock-client";
 import { canonicalProofHref } from "@/lib/prooflock-routes";
 import type { HealthSnapshot } from "@/lib/prooflock-types";
 import { parseNonZeroBytes32 } from "@/lib/prooflock-validation";
 
+const verifierClaim = claimFor("verifier");
+assertClaimAllowed(verifierClaim);
+
 export default function ProofPage() {
-  const router = useRouter(); const [proofId, setProofId] = useState(""); const [identityKey, setIdentityKey] = useState("");
-  const [health, setHealth] = useState<HealthSnapshot>(); const [healthError, setHealthError] = useState(false); const [retry, setRetry] = useState(0);
-  useEffect(() => { const controller = new AbortController(); setHealthError(false); void readHealth(controller.signal).then(setHealth)
-    .catch(() => { if (!controller.signal.aborted) setHealthError(true); }); return () => controller.abort(); }, [retry]);
+  const router = useRouter();
+  const [proofId, setProofId] = useState(""); const [identityKey, setIdentityKey] = useState("");
+  const [sourceTxHash, setSourceTxHash] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+  const proofRef = useRef<HTMLInputElement>(null); const identityRef = useRef<HTMLInputElement>(null);
+  const sourceRef = useRef<HTMLInputElement>(null);
   const exactProofId = parseNonZeroBytes32(proofId); const exactIdentityKey = parseNonZeroBytes32(identityKey);
-  const valid = exactProofId !== null && exactIdentityKey !== null;
-  return <section className="workspace-section proof-page"><div className="wrap"><div className="page-heading"><span className="eyebrow">Public offline verifier</span><h1>Verify a ProofLock</h1>
-    <p>Retrieve canonical evidence, recompute commitments, and compare the historical artifact without starting paid Compute.</p></div>
-    <div className="verify-sheet"><label htmlFor="proof-id">Proof ID</label><input id="proof-id" className="mono" value={proofId} onChange={(event) => setProofId(event.target.value)} placeholder="0x…32-byte proof ID" />
-      <label htmlFor="identity-key">Identity key</label><input id="identity-key" className="mono" value={identityKey} onChange={(event) => setIdentityKey(event.target.value)} placeholder="0x…32-byte identity key" />
-      <button className="button primary" disabled={!valid} onClick={() => {
-        if (exactProofId && exactIdentityKey) router.push(canonicalProofHref(exactProofId, exactIdentityKey));
-      }}>Open verifier</button>
-      {(proofId || identityKey) && !valid && <p className="inline-state state-warn">Both values must be exact nonzero bytes32 identifiers.</p>}</div>
-    <div className="section-heading health-heading"><span className="eyebrow">Independent live probes</span><h2>Subsystem health</h2><p>Each cell is probed independently. Chain health never implies Storage or Compute health.</p></div>
-    {!health && !healthError && <div className="loading-ledger"><i /><i /><i /><span>Probing six dependencies…</span></div>}
-    {healthError && <div className="empty-ledger state-bad"><h2>Health response unavailable</h2><button className="button" onClick={() => setRetry((value) => value + 1)}>Retry probes</button></div>}
-    {health && <SubsystemHealthGrid snapshot={health} />}
-    <aside className="trust-disclosure"><h2>Verification scope</h2><p>“Retrieved and root-matched” describes this observation time. The current SDK path reports <code>networkProofVerified: false</code>; it does not claim an independently verified network Merkle proof.</p></aside>
+  const exactSource = sourceTxHash ? parseNonZeroBytes32(sourceTxHash) : undefined;
+  const requiredValid = exactProofId !== null && exactIdentityKey !== null;
+  const valid = exactProofId !== null && exactIdentityKey !== null && exactSource !== null;
+
+  const openVerifier = () => {
+    setSubmitted(true);
+    if (!exactProofId) return proofRef.current?.focus();
+    if (!exactIdentityKey) return identityRef.current?.focus();
+    if (exactSource === null) return sourceRef.current?.focus();
+    router.push(canonicalProofHref(exactProofId, exactIdentityKey, exactSource));
+  };
+  const submit = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); openVerifier(); };
+  const validateEnter = (event: KeyboardEvent<HTMLFormElement>) => {
+    if (event.key !== "Enter" || valid) return;
+    event.preventDefault(); openVerifier();
+  };
+
+  return <section className="workspace-section proof-page"><div className="wrap">
+    <div className="page-heading"><span className="eyebrow">{VERIFIER_CLAIM_COPY.title}</span><h1>{VERIFIER_CLAIM_COPY.title}</h1>
+      <p>{verifierClaim.text}</p></div>
+    <form className="verify-sheet" onSubmit={submit} onKeyDown={validateEnter} noValidate>
+      <Field ref={proofRef} label="Proof ID" mono required value={proofId} onChange={(event) => setProofId(event.target.value)}
+        placeholder="0x…32-byte proof ID" error={(submitted || proofId) && !exactProofId ? VERIFIER_CLAIM_COPY.entry.proofError : undefined} />
+      <Field ref={identityRef} label="Identity key" mono required value={identityKey} onChange={(event) => setIdentityKey(event.target.value)}
+        placeholder="0x…32-byte identity key" error={(submitted || identityKey) && !exactIdentityKey ? VERIFIER_CLAIM_COPY.entry.identityError : undefined} />
+      <Field ref={sourceRef} label="Optional Registry source transaction" mono value={sourceTxHash}
+        onChange={(event) => setSourceTxHash(event.target.value)} placeholder="0x…optional 32-byte transaction hash"
+        error={sourceTxHash && !exactSource ? VERIFIER_CLAIM_COPY.entry.sourceError : undefined} />
+      <Button type="submit" variant="primary" disabled={!requiredValid}>{VERIFIER_CLAIM_COPY.entry.openAction}</Button>
+      {(proofId || identityKey || sourceTxHash) && !valid ? <StateMessage state="error" title={VERIFIER_CLAIM_COPY.entry.invalidTitle}>
+        {VERIFIER_CLAIM_COPY.entry.invalidDetail}
+      </StateMessage> : null}
+    </form>
+    <HealthPanel />
   </div></section>;
+}
+
+function HealthPanel() {
+  const [health, setHealth] = useState<HealthSnapshot>(); const [failed, setFailed] = useState(false);
+  const [pending, setPending] = useState(true); const [generation, setGeneration] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    const controller = new AbortController(); setPending(true);
+    void readHealth(controller.signal).then((snapshot) => { setHealth(snapshot); setFailed(false); setPending(false); })
+      .catch(() => { if (!controller.signal.aborted) { setFailed(true); setPending(false); } });
+    return () => controller.abort();
+  }, [generation]);
+  useEffect(() => {
+    if (generation > 0 && !pending && health) headingRef.current?.focus();
+  }, [generation, health, pending]);
+  return <><div className="section-heading health-heading"><span className="eyebrow">{VERIFIER_CLAIM_COPY.health.eyebrow}</span>
+    <h2 ref={headingRef} tabIndex={-1}>{VERIFIER_CLAIM_COPY.health.heading}</h2><p>{VERIFIER_CLAIM_COPY.health.independence}</p></div>
+  {pending && !failed ? <StateMessage state="loading" title={VERIFIER_CLAIM_COPY.health.loadingTitle}>{VERIFIER_CLAIM_COPY.health.loadingDetail}</StateMessage> : null}
+  {failed ? <StateMessage state="unavailable" title={VERIFIER_CLAIM_COPY.health.unavailableTitle} action={<Button pending={pending}
+    pendingLabel={VERIFIER_CLAIM_COPY.health.retryingAction} onClick={() => setGeneration((value) => value + 1)}>{VERIFIER_CLAIM_COPY.health.retryAction}</Button>}>
+    {VERIFIER_CLAIM_COPY.health.unavailableDetail}
+  </StateMessage> : null}
+  {health ? <SubsystemHealthGrid snapshot={health} /> : null}</>;
 }

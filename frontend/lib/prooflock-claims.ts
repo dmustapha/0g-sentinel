@@ -66,6 +66,86 @@ export const CLAIM_REGISTRY = Object.freeze({
   }),
 } as const satisfies Record<ClaimKey, ClaimContract>);
 
+export const VERIFIER_CLAIM_COPY = deepFreeze({
+  title: "Public evidence verifier",
+  entry: {
+    invalidTitle: "Check verifier identifiers",
+    invalidDetail: "Required values and any supplied source transaction must be exact nonzero bytes32 identifiers.",
+    proofError: "Enter an exact nonzero bytes32 proof ID.",
+    identityError: "Enter an exact nonzero bytes32 identity key.",
+    sourceError: "Enter an exact nonzero bytes32 source transaction.",
+    openAction: "Open verifier",
+  },
+  detail: {
+    invalidSource: "Invalid value",
+    invalidTitle: "Invalid verification link",
+    invalidDetail: "Proof ID, identity key, and optional source transaction must be exact nonzero bytes32 identifiers.",
+  },
+  health: {
+    eyebrow: "Independent live probes",
+    heading: "Subsystem health",
+    independence: "Each cell is probed independently. One probe never determines a sibling.",
+    loadingTitle: "Probing six dependencies",
+    loadingDetail: "Each probe settles independently.",
+    unavailableTitle: "Health response unavailable",
+    unavailableDetail: "No dependency status is inferred from the failed response.",
+    retryAction: "Retry probes",
+    retryingAction: "Retrying probes",
+    directObservation: "Direct dependency probe",
+    computeObservation: "Service discovery only",
+    computeInferenceLabel: "inferenceExecuted",
+    storageObservation: "Retrieval canary",
+    storageNetworkProofLabel: "networkProofVerified",
+  },
+  historical: {
+    labels: {
+      IDLE: "Ready to verify",
+      VERIFYING: "Verifying exact stored bytes…",
+      MATCH: "Historical artifact matches",
+      MISMATCH: "Historical artifact mismatch",
+      HINT_REQUIRED: "Source transaction required",
+      UNAVAILABLE: "Evidence unavailable",
+      TIMEOUT: "Verification timed out",
+      CANCELED: "Verification canceled",
+      RETRYING: "Retrying verification",
+    },
+    boundaryTitle: "Historical evidence status",
+    boundaryDetail: "Historical evidence and current access are reported separately.",
+  },
+  current: {
+    headingPrefix: "Current access",
+    boundaryTitle: "Current access status",
+    reasonPrefix: "Reason",
+    noReason: "No reason code was returned.",
+  },
+  evidence: {
+    storageFlagLabel: "Storage verifier flag",
+    storageFlagValue: "networkProofVerified: false",
+    providerFallback: "Provider not provided",
+    modelFallback: "Model not provided",
+    unavailableValue: "Unavailable",
+  },
+  locator: {
+    staleTitle: "Stale proof link",
+    staleDetail: "The supplied Registry source transaction does not identify the current record. No historical match is claimed.",
+    staleAction: "Retry current record without source locator",
+    mismatchTitle: "Historical proof mismatch",
+    mismatchDetail: "The linked artifact failed cryptographic or finalized provenance checks. No historical match is claimed.",
+    hintTitle: "Source transaction required",
+    hintDetail: "This proof is outside the bounded historical lookup. Open a link carrying its exact Registry source transaction.",
+    unavailableTitle: "Historical evidence unavailable",
+    unavailableDetail: "The current record remains visible, but its historical artifact was not verified.",
+  },
+  actions: {
+    verify: "Verify exact evidence",
+    verifying: "Verifying exact evidence",
+    retry: "Retry",
+    retrying: "Retrying",
+    cancelHistorical: "Cancel historical verification",
+    cancelCurrent: "Cancel current access read",
+  },
+} as const);
+
 export type ClaimContextMap = Readonly<{
   storage: HistoricalVerifiedStorageObservation;
   chainHistory: CurrentVerifiedRegistryObservation;

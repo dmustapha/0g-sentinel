@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "ProofLock operator · 0G Sentinel",
+  title: "ProofLock operator",
   description: "Authorized ProofLock sealing, drift checks, resealing, and commitment-bound write recovery.",
 };
 

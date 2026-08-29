@@ -15,6 +15,10 @@ const PUBLIC_V2 = [
   "NEXT_PUBLIC_PROOFLOCK_POLICY_VERSION", "NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID",
 ];
 const SERVER_V2 = ["PROOFLOCK_REGISTRY_V2_FROM_BLOCK", "PROOFLOCK_CONSUMER_ADDRESS"];
+const FEATURED_PROOF = [
+  "PROOFLOCK_FEATURED_PROOF_ID", "PROOFLOCK_FEATURED_IDENTITY_KEY", "PROOFLOCK_FEATURED_SOURCE_TX_HASH",
+];
+const FEATURED_METADATA = ["PROOFLOCK_FEATURED_AGENT_ID", "PROOFLOCK_FEATURED_VERIFIED_AT"];
 const OPERATOR_V2 = [
   "SENTINEL_0G_PRIVATE_KEY", "PROOFLOCK_GUARDIAN_PRIVATE_KEY", "PROOFLOCK_COMPUTE_PRIVATE_KEY",
   "PROOFLOCK_SCANNER_SOFTWARE_VERSION", "PROOFLOCK_POLICY_VERSION",
@@ -93,6 +97,42 @@ describe("release configuration and legacy boundary", () => {
     for (const name of SERVER_V2) expect(text).toMatch(new RegExp(`^${name}=`, "m"));
     for (const name of OPERATOR_V2) expect(text).toMatch(new RegExp(`^${name}=`, "m"));
     expect(text).not.toMatch(/^PROOFLOCK_OPERATOR_MODULE=/m);
+  });
+
+  it.each([".env.example", "../.env.example"])("documents the server-only featured-proof tuple in %s", (path) => {
+    const text = readFileSync(resolve(process.cwd(), path), "utf8");
+    for (const name of [...FEATURED_PROOF, ...FEATURED_METADATA]) {
+      expect(text).toMatch(new RegExp(`^${name}=`, "m"));
+      expect(text).not.toMatch(new RegExp(`^NEXT_PUBLIC_${name}=`, "m"));
+    }
+    expect(text).toContain("Populate all three only after exact release-time verification");
+    expect(text).toContain("keep blank until Task 22 records the exact release audit");
+  });
+
+  it("keeps featured-proof configuration on the server and public landing free of mutation controls", () => {
+    const featured = readFileSync(resolve(process.cwd(), "components/FeaturedProofLink.tsx"), "utf8");
+    const landing = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8");
+    expect(featured).not.toContain('"use client"');
+    for (const name of [...FEATURED_PROOF, ...FEATURED_METADATA])
+      expect(featured).toContain(`process.env.${name}`);
+    for (const forbidden of ["operator-token", "One-time operator token", "Run verified evaluation", "ScanInput", "RescanButton"])
+      expect(landing).not.toContain(forbidden);
+  });
+
+  it("provides skip navigation, semantic shell links, route titles, and neutral network wording", () => {
+    const root = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+    const overview = readFileSync(resolve(process.cwd(), "app/page.tsx"), "utf8");
+    const operator = readFileSync(resolve(process.cwd(), "app/operator/layout.tsx"), "utf8");
+    const nav = readFileSync(resolve(process.cwd(), "components/NavLinks.tsx"), "utf8");
+    expect(root).toContain('<Link href="#main-content"');
+    expect(root).toContain('<Link href="/" className="wordmark"');
+    expect(root).toContain("Network configuration · Chain ID 16661");
+    expect(root).not.toContain("0G MAINNET");
+    expect(overview).not.toContain("0G Mainnet");
+    expect(overview).toContain("export const metadata");
+    expect(operator).toContain("export const metadata");
+    expect(nav).toContain('aria-current={pathname === "/" ? "page" : undefined}');
+    expect(nav).toContain('aria-current={operatorActive ? "page" : undefined}');
   });
 
   it.each([".env.example", "../.env.example"])("documents all nine V2 deployment inputs in %s", (path) => {

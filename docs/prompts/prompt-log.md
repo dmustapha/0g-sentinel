@@ -82,3 +82,14 @@
 > if new chat is needed, use /handoff
 
 **Action:** Confirmed Task 13 is next, audited the current context and clean Task 12 checkpoint, and ran the `/handoff` workflow so a new chat can resume dependency-ordered TDD execution without losing constraints or verification evidence.
+
+### Prompt 16
+> Resume 0G Sentinel ProofLock in /Users/MAC/.config/superpowers/worktrees/0g-sentinel/sentinel-prooflock.
+>
+> First read the complete handoff at /Users/MAC/.config/superpowers/worktrees/0g-sentinel/sentinel-prooflock/docs/context/conversation_2026-08-29_1546.md, then read the applicable AGENTS.md and Task 13 onward in /Users/MAC/.config/superpowers/worktrees/0g-sentinel/sentinel-prooflock/docs/plans/2026-08-28-sentinel-proof-ledger-world-class-implementation.md.
+>
+> The branch should be clean at 9340092, immediately after Task 12 implementation commit eec0d35. Tasks 1 through 12 are completed, committed, verified, and independently reviewed. The user reviewed the Task 12 checkpoint and asked to continue in this new chat. Start Task 13 using the executing-plans and test-driven-development workflows. Build StatusBadge, EvidenceSheet, DataRow, and ProofPlane exactly within the planned file scope, prove RED before implementation, run the specified gates, obtain independent review, and then continue in dependency order.
+>
+> Preserve all critical constraints: Tasks 5 and 6 are already one atomic slice; the operation journal stays phased; current observations remain pinned and independent; APIs stay additive and version-compatible; public routes stay secret-free; hostile-data safety precedes route migration; and complete inventory remains a truthful signed deferral unless explicitly expanded. The submission deadline is September 1, 2026 at 15:00 UTC, or 4:00 PM WAT. Do not claim world-class or submission-ready until Task 22 passes with funded mainnet evidence and a deployed-URL audit.
+
+**Action:** Reloaded the complete handoff, applicable instructions, and Tasks 13 through 22; verified the clean Task 12 checkpoint; then completed Task 13 through strict RED/GREEN TDD, focused and proportional gates, production build, measured 320/390 Chromium checks, and independent specification and quality approval.

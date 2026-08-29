@@ -88,6 +88,30 @@ describe("agent detail locator races", () => {
     expect(screen.queryByRole("heading", { name: "Agent #7" })).toBeNull();
     expect(screen.getByText(/Resolving identity, lease, evidence, and Gate/)).toBeTruthy();
   });
+
+  it("renders a hostile predecessor locator inertly without crashing the mounted route", async () => {
+    client.verifyProof.mockResolvedValue({ ...proof(sourceOne), storage: {
+      ...proof(sourceOne).storage, envelope: { previousProofId: `${"x".repeat(2_000_000)}\u202e` },
+    } });
+    render(<AgentDetailPage params={{ address: "7" }} />);
+
+    expect(await screen.findByText("Predecessor unavailable")).toBeTruthy();
+    expect(screen.getByText(/No historical locator link is available/)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /x{20}/ })).toBeNull();
+  });
+
+  it("renders hostile detail numerics unavailable instead of blocking the event loop", async () => {
+    const hostile = "9".repeat(2_000_000);
+    const poisoned = detail();
+    client.readProofLockDetail.mockResolvedValue({ ...poisoned, proofLock: {
+      ...poisoned.proofLock, version: hostile, issuedAt: hostile, validUntil: hostile,
+    } });
+    render(<AgentDetailPage params={{ address: "7" }} />);
+
+    expect(await screen.findAllByText("Version unavailable")).not.toHaveLength(0);
+    expect(screen.getAllByText("Invalid timestamp")).toHaveLength(2);
+    expect(document.body.textContent).not.toContain(hostile.slice(0, 100));
+  });
 });
 
 function detail(): ProofLockDetailResponse {

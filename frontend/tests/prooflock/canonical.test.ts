@@ -293,7 +293,7 @@ describe("strict envelope validation", () => {
     expect(() => validateEvidenceEnvelope(value)).toThrow(/wallet|subject/i);
   });
 
-  it("accepts policyVersion through uint32 max and rejects overflow", () => {
+  it("accepts policyVersion through uint32 max and rejects zero, overflow, and huge values", () => {
     const maximum: any = validEnvelope();
     maximum.policyVersion = 4_294_967_295;
     expect(validateEvidenceEnvelope(maximum).policyVersion).toBe(4_294_967_295);
@@ -301,6 +301,12 @@ describe("strict envelope validation", () => {
     const overflow: any = validEnvelope();
     overflow.policyVersion = 4_294_967_296;
     expect(() => validateEvidenceEnvelope(overflow)).toThrow(/policy|uint32/i);
+
+    for (const invalid of [0, 1e100]) {
+      const value: any = validEnvelope();
+      value.policyVersion = invalid;
+      expect(() => validateEvidenceEnvelope(value)).toThrow(/policy|integer|uint32/i);
+    }
   });
 
   it("requires the canonical chain-16661 identity registry", () => {

@@ -15,6 +15,7 @@ import { HistoricalProofDetails, ProofLocatorNotice } from "@/components/VerifyE
 import { computeProofId, readProofLockDetail, resolveIdentity, verifyProof } from "@/lib/prooflock-client";
 import { canonicalAgentHref, parseSourceTxHashParam, verifyLinkedHistoricalProof } from "@/lib/prooflock-routes";
 import { admittedConsumerState } from "@/lib/prooflock-status";
+import { safeDisplayText } from "@/lib/safe-display";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
 import type { CanonicalIdentity, GateDecision, ProofLockDetailResponse, VerifiedProof } from "@/lib/prooflock-types";
 import type { LinkedHistoricalProof } from "@/lib/prooflock-routes";
@@ -54,12 +55,13 @@ export default function AgentDetailPage({ params }: { params: { address: string 
       }
     }).catch((cause) => {
       if (!controller.signal.aborted && generation.current === currentGeneration) setState({ key: locatorKey,
-        status: "ERROR", message: cause instanceof Error ? cause.message : "ProofLock detail is unavailable" });
+        status: "ERROR", message: safeDisplayText(cause instanceof Error
+          ? cause.message : "ProofLock detail is unavailable", { maxGraphemes: 256 }) });
     });
     return () => controller.abort();
   }, [load, locatorKey]);
   const visible = state.key === locatorKey ? state : { key: locatorKey, status: "LOADING" as const };
-  if (visible.status === "ERROR") return <section className="workspace-section"><div className="wrap empty-ledger state-bad"><h1>ProofLock unavailable</h1><p>{visible.message}</p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>;
+  if (visible.status === "ERROR") return <section className="workspace-section"><div className="wrap empty-ledger state-bad"><h1>ProofLock unavailable</h1><p><bdi>{visible.message}</bdi></p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>;
   if (visible.status === "LOADING") return <section className="workspace-section"><div className="wrap loading-ledger"><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate…</span></div></section>;
   return <Detail data={visible.data} />;
 }
@@ -72,7 +74,7 @@ function Detail({ data }: { data: ViewData }) {
   const envelope = proof?.storage.envelope; const previous = typeof envelope?.previousProofId === "string" ? envelope.previousProofId : undefined;
   const compute = computeSummary(envelope); const storage = storageSummary(proof);
   return <section className="workspace-section detail-page"><div className="wrap"><Link href="/agents" className="text-link">← ProofLocks</Link>
-    <header className="detail-header"><div><span className="eyebrow">Canonical ERC-8004 identity</span><h1>Agent #{identity.identity.agentId}</h1><p className="mono break">{identity.agentWallet}</p></div>
+    <header className="detail-header"><div><span className="eyebrow">Canonical ERC-8004 identity</span><h1 aria-label={`Agent #${identity.identity.agentId}`}>Agent #<bdi dir="ltr">{identity.identity.agentId}</bdi></h1><p className="mono break"><bdi dir="ltr">{identity.agentWallet}</bdi></p></div>
       {process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId && <DemoFixtureBadge />}</header>
     {detail.detail.status === "UNAVAILABLE" && <div className="inline-state state-warn"><b>{detail.detail.code}</b> · Stored evidence could not enrich this identity. Gate remains UNKNOWN and blocked.</div>}
     <ProofLocatorNotice status={linkedProof.status} currentHref={canonicalAgentHref(identity.identity.agentId)} />

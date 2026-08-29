@@ -6,8 +6,8 @@ const NAMES = Object.keys(LABELS) as SubsystemName[];
 export function SubsystemHealthGrid({ snapshot }: { snapshot: HealthSnapshot }) {
   return <div className="health-grid">{NAMES.map((name) => { const probe = snapshot.dependencies[name]; const tone = probe.status === "HEALTHY" ? "state-good" : probe.status === "UNHEALTHY" ? "state-bad" : "state-warn";
     return <article className={`health-cell ${tone}`} key={name}><div className="card-row"><b>{LABELS[name]}</b><span className="status-chip">{probe.status}</span></div>
-      <dl><div><dt>Latency</dt><dd>{probe.latencyMs} ms</dd></div><div><dt>Observed</dt><dd>{probe.observedAt}</dd></div>
-        <div><dt>Observation</dt><dd>{observation(name, probe.detail)}</dd></div></dl></article>;
+      <dl><div><dt>Latency</dt><dd><bdi dir="ltr">{probe.latencyMs} ms</bdi></dd></div><div><dt>Observed</dt><dd><bdi dir="ltr">{probe.observedAt}</bdi></dd></div>
+        <div><dt>Observation</dt><dd><bdi>{observation(name, probe.detail)}</bdi></dd></div></dl></article>;
   })}</div>;
 }
 

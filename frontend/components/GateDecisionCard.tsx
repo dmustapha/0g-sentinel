@@ -1,4 +1,5 @@
 import { gateReasonMeta } from "@/lib/prooflock-status";
+import { safeDisplayText } from "@/lib/safe-display";
 import type { GateDecision } from "@/lib/prooflock-types";
 
 export function GateDecisionCard({ decision }: { decision: GateDecision | null }) {
@@ -12,7 +13,7 @@ export function GateDecisionCard({ decision }: { decision: GateDecision | null }
       <span className="state-mark" aria-hidden="true">{decision.allowed ? "✓" : "×"}</span></div>
     <h3>{decision.allowed ? "ALLOWED" : "BLOCKED"}</h3>
     <p className="reason-code">{reason.code}</p><p>{reason.label}. Stable reason code {decision.reason}.</p>
-    <dl className="micro-grid"><div><dt>Subject</dt><dd className="mono break">{decision.subject}</dd></div>
-      <div><dt>Version</dt><dd className="mono">v{decision.version}</dd></div></dl>
+    <dl className="micro-grid"><div><dt>Subject</dt><dd className="mono break"><bdi dir="ltr">{decision.subject}</bdi></dd></div>
+      <div><dt>Version</dt><dd className="mono">v<bdi dir="ltr">{safeDisplayText(decision.version, { maxGraphemes: 80 })}</bdi></dd></div></dl>
   </section>;
 }

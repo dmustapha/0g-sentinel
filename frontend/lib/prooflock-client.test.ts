@@ -15,6 +15,16 @@ describe("ProofLock discovery client contract", () => {
     await expect(discoverProofLocks()).resolves.toMatchObject({ complete: false, returned: 1, toBlock: 116 });
   });
 
+  it("rejects block numbers outside JavaScript's exact integer range", async () => {
+    const body = validResponse();
+    body.latestBlock = Number.MAX_SAFE_INTEGER + 1;
+    body.toBlock = body.latestBlock - body.confirmations + 1;
+    body.fromBlock = body.toBlock;
+    body.identities[0]!.blockNumber = body.toBlock;
+    respond(body);
+    await expect(discoverProofLocks()).rejects.toThrow();
+  });
+
   it.each([
     ["zero identity", (body: DiscoveryBody) => { body.identities[0]!.identityKey = bytes32("0"); }],
     ["zero source transaction", (body: DiscoveryBody) => { body.identities[0]!.transactionHash = bytes32("0"); }],
@@ -54,6 +64,22 @@ describe("versioned ProofLock detail client contract", () => {
       signal: undefined, headers: { accept: "application/json" },
     });
   });
+
+  it("accepts the maximum onchain policy version exactly", async () => {
+    const body = legacyDetailResponse();
+    body.proofLock.policyVersion = 4_294_967_295;
+    respond(body);
+    await expect(readProofLockDetail(body.identityKey)).resolves
+      .toMatchObject({ proofLock: { policyVersion: 4_294_967_295 } });
+  });
+
+  it.each([0, 4_294_967_296, 1e100])(
+    "rejects an out-of-range policy version %s", async (policyVersion) => {
+      const body = legacyDetailResponse();
+      body.proofLock.policyVersion = policyVersion;
+      respond(body);
+      await expect(readProofLockDetail(body.identityKey)).rejects.toThrow();
+    });
 
   it("requests and parses the additive sealedEvidence/currentAccess response", async () => {
     const body: any = currentDetailResponse();

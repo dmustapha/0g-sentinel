@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { canonicalAgentHref, canonicalProofHref } from "@/lib/prooflock-routes";
 import { admittedConsumerState, gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
+import { safeDisplayText } from "@/lib/safe-display";
+import { isCanonicalAgentId, isCanonicalUint64, isPositiveUint48, isPositiveUint64 } from "@/lib/prooflock-validation";
 import type { ProofLockInventoryItem } from "@/lib/prooflock-types";
 
 export function AgentsTable({ items }: { items: readonly ProofLockInventoryItem[] }) {
@@ -24,25 +26,43 @@ function InventoryCard({ item }: { item: ProofLockInventoryItem }) {
 
 function values(item: ProofLockInventoryItem) {
   if (item.status === "ENRICHMENT_UNAVAILABLE") return unavailableValues(item);
+  if (!validInventoryNumerics(item)) return invalidRecordValues(item);
   const lease = leaseStatus(item.proofLock); const gate = item.detail.gate;
   const gateText = gate.status === "VERIFIED" ? gateReasonMeta(gate.reason) : null;
   const proofHref = historicalProofHref(item);
+  const agentId = item.detail.status === "VERIFIED"
+    ? safeDisplayText(item.detail.identity.agentId, { maxGraphemes: 80 }) : undefined;
   const identity = item.detail.status === "VERIFIED"
-    ? <Link className="identity-link" href={canonicalAgentHref(item.detail.identity.agentId, item.transactionHash)}><b>Agent #{item.detail.identity.agentId}</b><span className="mono">{short(item.detail.identity.agentWallet)}</span></Link>
-    : proofHref ? <Link className="identity-link" href={proofHref}><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code} · verify stored proof</small></Link>
-      : <div><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code}</small></div>;
+    ? <Link className="identity-link" href={canonicalAgentHref(item.detail.identity.agentId, item.transactionHash)}><b>Agent #<bdi dir="ltr">{agentId}</bdi></b><span className="mono"><bdi dir="ltr">{short(item.detail.identity.agentWallet)}</bdi></span></Link>
+    : proofHref ? <Link className="identity-link" href={proofHref}><b>Identity unavailable</b><span className="mono"><bdi dir="ltr">{short(item.identityKey)}</bdi></span><small>{item.detail.code} · verify stored proof</small></Link>
+      : <div><b>Identity unavailable</b><span className="mono"><bdi dir="ltr">{short(item.identityKey)}</bdi></span><small>{item.detail.code}</small></div>;
   const admitted = lease === "ACTIVE" && item.detail.status === "VERIFIED" &&
     admittedConsumerState(item.proofLock, gate, item.detail.consumer, item.detail.identity.agentWallet);
-  return { identity, coverage: <span className="mono">0x{item.proofLock.coverage.toString(16).padStart(2, "0")} / 0x7f</span>,
-    seal: <span>v{item.proofLock.version} · {short(item.proofLock.envelopeDigest)}</span>, lease,
+  return { identity, coverage: <span className="mono"><bdi dir="ltr">0x{item.proofLock.coverage.toString(16).padStart(2, "0")} / 0x7f</bdi></span>,
+    seal: <span><bdi dir="ltr">v{item.proofLock.version} · {short(item.proofLock.envelopeDigest)}</bdi></span>, lease,
     gate: <span className={admitted ? "state-good" : "state-bad"}>{gateText ? gateText.code : "UNKNOWN"}</span>,
-    last: <span className="mono">block {item.blockNumber}</span>, tone: admitted ? "state-good" : lease === "EXPIRING" || lease === "INCOMPLETE" ? "state-warn" : "state-bad" };
+    last: <span className="mono"><bdi dir="ltr">block {item.blockNumber}</bdi></span>, tone: admitted ? "state-good" : lease === "EXPIRING" || lease === "INCOMPLETE" ? "state-warn" : "state-bad" };
+}
+function invalidRecordValues(item: Extract<ProofLockInventoryItem, { status: "VERIFIED" }>) {
+  return { identity: <div><b>Record unavailable</b><span className="mono"><bdi dir="ltr">{short(item.identityKey)}</bdi></span>
+      <small>Canonical numeric fields are invalid</small></div>, coverage: <span>Unavailable</span>,
+    seal: <span>Unavailable</span>, lease: "UNKNOWN", gate: <span className="state-unknown">UNKNOWN</span>,
+    last: <span className="mono"><bdi dir="ltr">block {item.blockNumber}</bdi></span>, tone: "state-unknown" };
+}
+function validInventoryNumerics(item: Extract<ProofLockInventoryItem, { status: "VERIFIED" }>): boolean {
+  const record = item.proofLock;
+  if (!isPositiveUint64(record.version) || !isPositiveUint48(record.issuedAt)
+    || !isPositiveUint48(record.validUntil)) return false;
+  if (item.detail.status !== "VERIFIED") return true;
+  return isCanonicalAgentId(item.detail.identity.agentId)
+    && (item.detail.gate.status !== "VERIFIED" || isCanonicalUint64(item.detail.gate.version))
+    && (item.detail.consumer.status !== "VERIFIED" || isCanonicalUint64(item.detail.consumer.version));
 }
 function unavailableValues(item: Extract<ProofLockInventoryItem, { status: "ENRICHMENT_UNAVAILABLE" }>) {
-  return { identity: <div><b>Enrichment unavailable</b><span className="mono">{short(item.identityKey)}</span>
+  return { identity: <div><b>Enrichment unavailable</b><span className="mono"><bdi dir="ltr">{short(item.identityKey)}</bdi></span>
       <small>{item.code}</small></div>, coverage: <span>Unavailable</span>,
-    seal: <span className="mono">Registry tx {short(item.transactionHash)}</span>, lease: "UNKNOWN",
-    gate: <span className="state-unknown">UNKNOWN</span>, last: <span className="mono">block {item.blockNumber}</span>,
+    seal: <span className="mono"><bdi dir="ltr">Registry tx {short(item.transactionHash)}</bdi></span>, lease: "UNKNOWN",
+    gate: <span className="state-unknown">UNKNOWN</span>, last: <span className="mono"><bdi dir="ltr">block {item.blockNumber}</bdi></span>,
     tone: "state-unknown" };
 }
 function historicalProofHref(item: Extract<ProofLockInventoryItem, { status: "VERIFIED" }>): string | null {

@@ -38,6 +38,39 @@ describe("ProofLock dashboard and detail", () => {
     expect(html).toContain("v3"); expect(html).toContain("SUPERSEDED"); expect(html).toContain("append-preserved");
   });
 
+  it("preserves predecessor casing in visible text while normalizing its href", () => {
+    const previousProofId = `0x${"Ab".repeat(32)}`;
+    const html = renderToStaticMarkup(<SealLifecycle currentVersion="3" previousProofId={previousProofId}
+      identityKey={`0x${"Cd".repeat(32)}`} />);
+    expect(html).toContain(previousProofId);
+    expect(html).toContain(`/proof/${previousProofId.toLowerCase()}`);
+  });
+
+  it.each([
+    ["blank", ""], ["non-hex", "not-a-proof"], ["short", `0x${"aa".repeat(31)}`],
+    ["bidi-suffixed", `0x${"aa".repeat(32)}\u202e`], ["oversized", "x".repeat(2_000_000)],
+  ])("renders an invalid predecessor (%s) inertly without throwing", (_label, previousProofId) => {
+      const html = renderToStaticMarkup(<SealLifecycle currentVersion="3" previousProofId={previousProofId}
+        identityKey={`0x${"bb".repeat(32)}`} />);
+      expect(html).toContain("Predecessor unavailable");
+      expect(html).toContain("No historical locator link is available");
+      expect(html).not.toContain("href=");
+      expect(html).not.toContain("\u202e");
+    });
+
+  it("renders hostile canonical lease numerics as unavailable without truncating them into another value", () => {
+    const hostile = "9".repeat(2_000_000);
+    const lease = renderToStaticMarkup(<AdmissionLeaseCard record={{ ...record,
+      version: hostile, issuedAt: hostile, validUntil: hostile }} nowSeconds={10_000} />);
+    const lifecycle = renderToStaticMarkup(<SealLifecycle currentVersion={hostile}
+      identityKey={record.identityKey} />);
+    expect(lease).toContain("Version unavailable");
+    expect(lease).toContain("Invalid timestamp");
+    expect(lease).not.toContain(hostile.slice(0, 100));
+    expect(lifecycle).toContain("Version unavailable");
+    expect(lifecycle).not.toContain(hostile.slice(0, 100));
+  });
+
   it("shows verified Compute and honest Storage capability without fallback claims", () => {
     const html = renderToStaticMarkup(React.createElement(EvidenceProofCard, { record,
       compute: { provider: `0x${"99".repeat(20)}`, model: "llama-3", verified: true },

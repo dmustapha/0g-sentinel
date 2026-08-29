@@ -3,7 +3,9 @@ import { AbiCoder, keccak256, toUtf8Bytes } from "ethers";
 import { canonicalize } from "json-canonicalize";
 import { assertObservation } from "./prooflock-observations";
 import { gateReasonMeta } from "./prooflock-status";
-import { isCanonicalAgentId } from "./prooflock-validation";
+import { isCanonicalAgentId, isCanonicalUint48, isCanonicalUint64,
+  isPositiveUint48, isPositiveUint64 } from "./prooflock-validation";
+import { configuredDisplayText } from "./safe-display";
 
 import type {
   ApiErrorShape, CanonicalIdentity, HealthSnapshot, OperatorRunInput, ProofLockDiscoveryResponse,
@@ -14,32 +16,39 @@ import type {
 const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
 const hex32 = z.string().regex(/^0x[0-9a-f]{64}$/i);
 const nonZeroHex32 = hex32.refine((value) => !/^0x0{64}$/i.test(value));
-const decimal = z.string().regex(/^(0|[1-9]\d*)$/);
-const positiveDecimal = z.string().regex(/^[1-9]\d*$/);
-const canonicalAgentId = decimal.refine(isCanonicalAgentId);
+const canonicalAgentId = z.string().max(78).refine(isCanonicalAgentId);
+const uint64Decimal = z.string().max(20).refine(isCanonicalUint64);
+const positiveUint64Decimal = z.string().max(20).refine(isPositiveUint64);
+const uint48Decimal = z.string().max(15).refine(isCanonicalUint48);
+const positiveUint48Decimal = z.string().max(15).refine(isPositiveUint48);
+const policyVersion = z.number().int().min(1).max(4_294_967_295);
+const uri = z.string().max(4_096);
+const identityCard = boundedRecord({ keys: 256, nodes: 1_024, depth: 8,
+  array: 128, stringUnits: 65_536 });
 const ERC8004_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
 const identitySchema = z.object({
-  identity: z.object({ namespace: z.literal("eip155"), chainId: z.literal(16661), registryAddress: hex20, agentId: decimal }),
-  owner: hex20, agentWallet: hex20, agentURI: z.string(), registrationDigest: hex32,
-  sourceBlockNumber: decimal, sourceBlockHash: hex32, card: z.record(z.string(), z.unknown()),
+  identity: z.object({ namespace: z.literal("eip155"), chainId: z.literal(16661), registryAddress: hex20, agentId: canonicalAgentId }),
+  owner: hex20, agentWallet: hex20, agentURI: uri, registrationDigest: hex32,
+  sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32, card: identityCard,
 });
 const lockSchema = z.object({
   identityKey: hex32, subject: hex20, envelopeDigest: hex32, storageRoot: hex32, computeRoot: hex32,
-  artifactHash: hex32, runtimeCodeHash: hex32, version: decimal, issuedAt: decimal, validUntil: decimal,
-  policyVersion: z.number().int().nonnegative(), behavioralScore: z.number().int().min(0).max(100),
+  artifactHash: hex32, runtimeCodeHash: hex32, version: positiveUint64Decimal,
+  issuedAt: positiveUint48Decimal, validUntil: positiveUint48Decimal,
+  policyVersion, behavioralScore: z.number().int().min(0).max(100),
   codeRisk: z.number().int().min(0).max(2), coverage: z.number().int().min(0).max(255),
   state: z.number().int().min(0).max(255), stateReason: z.number().int().min(0).max(255),
 });
 const unknownGateSchema = z.object({ status: z.literal("UNKNOWN"), allowed: z.literal(false), reason: z.null() });
 const verifiedGateSchema = z.object({ status: z.literal("VERIFIED"), allowed: z.boolean(), reason: z.number().int().min(0).max(255),
-  subject: hex20, version: decimal });
+  subject: hex20, version: uint64Decimal });
 const unknownConsumerSchema = z.object({ status: z.literal("UNKNOWN"), accepted: z.literal(false) });
-const verifiedConsumerSchema = z.object({ status: z.literal("VERIFIED"), accepted: z.boolean(), address: hex20, subject: hex20, version: decimal });
+const verifiedConsumerSchema = z.object({ status: z.literal("VERIFIED"), accepted: z.boolean(), address: hex20, subject: hex20, version: uint64Decimal });
 const identitySummarySchema = z.object({ identityKey: hex32, namespace: z.literal("eip155"), chainId: z.literal(16661),
-  registryAddress: hex20, agentId: decimal, owner: hex20, agentWallet: hex20, registrationUri: z.string(),
-  registrationDigest: hex32, sourceBlockNumber: decimal, sourceBlockHash: hex32 });
-const resolutionSummarySchema = z.object({ owner: hex20, agentWallet: hex20, agentURI: z.string(),
-  registrationDigest: hex32, sourceBlockNumber: decimal, sourceBlockHash: hex32 });
+  registryAddress: hex20, agentId: canonicalAgentId, owner: hex20, agentWallet: hex20, registrationUri: uri,
+  registrationDigest: hex32, sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32 });
+const resolutionSummarySchema = z.object({ owner: hex20, agentWallet: hex20, agentURI: uri,
+  registrationDigest: hex32, sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32 });
 const detailSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("VERIFIED"), identity: identitySummarySchema, resolution: resolutionSummarySchema,
     gate: z.union([verifiedGateSchema, unknownGateSchema]), consumer: z.union([verifiedConsumerSchema, unknownConsumerSchema]) }),
@@ -58,7 +67,7 @@ const currentReason = z.enum(["OBSERVED", "CURRENT_IDENTITY_UNAVAILABLE", "CURRE
 const currentObservationSchema = z.object({ scope: z.literal("CURRENT"),
   subsystem: z.enum(["identity", "lease", "gate", "consumer"]),
   status: z.enum(["VERIFIED", "BLOCKED", "UNAVAILABLE", "STALE", "MISMATCH", "NOT_APPLICABLE"]),
-  observedAt: z.string().datetime(), observationBlockNumber: decimal, observationBlockHash: nonZeroHex32,
+  observedAt: z.string().datetime(), observationBlockNumber: positiveUint64Decimal, observationBlockHash: nonZeroHex32,
   serverIssuedAt: z.string().datetime(), ttlMs: z.number().int().positive().max(3_600_000),
   freshnessExpiresAt: z.string().datetime(), reasonCode: observationReason.optional(),
   allowed: z.literal(true).optional(), accepted: z.literal(true).optional(),
@@ -74,12 +83,12 @@ const currentObservationSchema = z.object({ scope: z.literal("CURRENT"),
 });
 const currentIdentityValueSchema = z.object({ identity: z.object({ namespace: z.literal("eip155"),
   chainId: z.literal(16661), registryAddress: hex20, agentId: canonicalAgentId }).strict(), owner: hex20,
-  agentWallet: hex20, agentURI: z.string(), registrationDigest: hex32,
-  sourceBlockNumber: decimal, sourceBlockHash: hex32 }).strict();
+  agentWallet: hex20, agentURI: uri, registrationDigest: hex32,
+  sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32 }).strict();
 const currentGateValueSchema = z.object({ allowed: z.boolean(), reason: z.number().int().min(0).max(16),
-  subject: hex20, version: decimal }).strict();
+  subject: hex20, version: uint64Decimal }).strict();
 const currentConsumerValueSchema = z.object({ accepted: z.boolean(), address: hex20,
-  subject: hex20, version: decimal }).strict();
+  subject: hex20, version: uint64Decimal }).strict();
 const currentEntry = <T extends z.ZodType>(capability: string, subsystem: string, value: T) =>
   z.object({ capability: z.literal(capability), reason: currentReason,
     observation: currentObservationSchema.refine((item) => item.subsystem === subsystem,
@@ -98,8 +107,8 @@ const currentEntry = <T extends z.ZodType>(capability: string, subsystem: string
     });
 const currentAccessSchema = z.object({ schema: z.literal("sentinel.prooflock/current-access-v1"),
   version: z.literal(1), agentId: canonicalAgentId, identityKey: nonZeroHex32,
-  observationBlock: z.object({ number: positiveDecimal, hash: nonZeroHex32,
-    timestamp: positiveDecimal }).strict(),
+  observationBlock: z.object({ number: positiveUint64Decimal, hash: nonZeroHex32,
+    timestamp: positiveUint48Decimal }).strict(),
   observedAt: z.string().datetime(), freshnessExpiresAt: z.string().datetime(),
   observations: z.object({
     identity: currentEntry("ERC8004_IDENTITY_AT_FINALIZED_BLOCK", "identity", currentIdentityValueSchema),
@@ -124,15 +133,17 @@ const apiStageSchema = z.enum(["VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT", "RU
   "RUNNING_COMPUTE", "CANONICALIZING_EVIDENCE", "UPLOADING_STORAGE", "VERIFYING_STORAGE", "WRITING_CHAIN",
   "READING_CHAIN_BACK", "SEALED", "AUTHENTICATING", "RESOLVING_IDENTITY", "READING_PROOF", "VERIFYING_PROOF",
   "HEALTH_CHECK", "RECOVERING_WRITE"]);
-const errorSchema = z.object({ error: z.object({ code: apiCodeSchema, message: z.string().min(1).max(512),
+const errorMessageSchema = z.string().max(16_384).transform((value) =>
+  configuredDisplayText(value, "Unspecified error", { maxGraphemes: 256 }));
+const errorSchema = z.object({ error: z.object({ code: apiCodeSchema, message: errorMessageSchema,
   stage: apiStageSchema, retryable: z.boolean(), requestId: z.string().min(1).max(128) }).strict() }).strict();
 const recoveryId = z.string().regex(/^rec_[0-9a-f]{16,64}$/i);
 const writeOutcomeSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("NOT_BROADCAST"), recoveryId }),
   z.object({ status: z.literal("SUBMISSION_OUTCOME_UNKNOWN"), recoveryId, transactionHash: hex32.optional() }),
   z.object({ status: z.literal("FINALIZED_READBACK_UNAVAILABLE"), recoveryId, transactionHash: hex32,
-    identityKey: hex32, version: decimal }),
-  z.object({ status: z.literal("SEALED"), recoveryId, transactionHash: hex32, identityKey: hex32, version: decimal }),
+    identityKey: hex32, version: positiveUint64Decimal }),
+  z.object({ status: z.literal("SEALED"), recoveryId, transactionHash: hex32, identityKey: hex32, version: positiveUint64Decimal }),
   z.object({ status: z.literal("REVERTED"), recoveryId, transactionHash: hex32 }),
 ]);
 const runnerStageSchema = z.enum(["VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT", "RUNNING_DETERMINISTIC_CHECKS",
@@ -157,7 +168,7 @@ const progressSchema = z.union([
   z.object({ phase: z.literal("HASH_KNOWN"), transactionHash: hex32 }).strict(),
   z.object({ phase: z.literal("REVERTED"), transactionHash: hex32 }).strict(),
   z.object({ phase: z.literal("FINALIZED"), transactionHash: hex32, blockHash: hex32,
-    blockNumber: decimal, confirmations: z.number().int().positive() }).strict(),
+    blockNumber: positiveUint64Decimal, confirmations: z.number().int().positive() }).strict(),
 ]);
 const activeKeys = new Map<string, string>();
 const recoveryInputs = new Map<string, string>();
@@ -206,7 +217,7 @@ export async function discoverProofLocks(signal?: AbortSignal): Promise<ProofLoc
     proofLock: discoveryLock, detail: detailSchema });
   const unavailable = z.object({ status: z.literal("ENRICHMENT_UNAVAILABLE"), ...source,
     code: z.literal("DEPENDENCY_UNAVAILABLE") }).strict();
-  const schema = z.object({ identities: z.array(z.discriminatedUnion("status", [verified, unavailable])),
+  const schema = z.object({ identities: z.array(z.discriminatedUnion("status", [verified, unavailable])).max(100),
     latestBlock: z.number().int().nonnegative(), fromBlock: z.number().int().nonnegative(),
     toBlock: z.number().int().nonnegative(), confirmations: z.number().int().positive(),
     observedAt: z.string().datetime(), cap: z.number().int().positive(), returned: z.number().int().nonnegative(),
@@ -402,17 +413,20 @@ export async function verifyProof(proofId: string, identityKey: string, signal?:
       registryAddress: hex20, transactionHash: hex32, blockNumber: z.number().int().nonnegative(), blockHash: hex32,
       logIndex: z.number().int().nonnegative() }), proofLock: lockSchema,
     storage: z.object({ retrievalVerified: z.literal(true), networkProofVerified: z.literal(false),
-      envelope: z.record(z.string(), z.unknown()), computeVerification: z.array(z.unknown()).optional(),
-      storageCommitment: z.record(z.string(), z.unknown()).optional() }) });
+      envelope: boundedRecord({ keys: 256, nodes: 10_000, depth: 16, array: 512,
+        stringUnits: 900_000 }), computeVerification: z.array(z.unknown()).max(64).optional(),
+      storageCommitment: boundedRecord({ keys: 64, nodes: 256, depth: 6, array: 64,
+        stringUnits: 32_768 }).optional() }) });
   return schema.parse(body) as VerifiedProof;
 }
 
 export async function readHealth(signal?: AbortSignal): Promise<HealthSnapshot> {
   const response = await fetch("/api/health", { signal, cache: "no-store" });
-  const raw = await response.json().catch(() => null);
+  const raw = await readBoundedJson(response).catch(() => null);
   const probe = z.object({ status: z.enum(["HEALTHY", "UNHEALTHY", "UNKNOWN"]), latencyMs: z.number().nonnegative(),
     observedAt: z.string().datetime(),
-    detail: z.record(z.string(), z.unknown()).optional() });
+    detail: boundedRecord({ keys: 128, nodes: 512, depth: 6, array: 64,
+      stringUnits: 32_768 }).optional() });
   return z.object({ status: z.enum(["HEALTHY", "DEGRADED"]), dependencies: z.object({
     rpc: probe, identity: probe, registry: probe, gate: probe, compute: probe, storage: probe,
   }) }).parse(raw) as HealthSnapshot;
@@ -542,12 +556,61 @@ export function computeProofId(registryAddress: string, record: ProofLockRecord)
 async function requestJson(url: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(url, { ...init, headers: { accept: "application/json", ...init?.headers } });
   if (!response.ok) await throwResponse(response);
-  return response.json();
+  return readBoundedJson(response);
 }
 
 async function throwResponse(response: Response): Promise<never> {
-  const raw = await response.json().catch(() => null);
+  const raw = await readBoundedJson(response).catch(() => null);
   const parsed = errorSchema.safeParse(raw);
   if (parsed.success) throw new ProofLockApiError(parsed.data.error as ApiErrorShape, response.status);
   throw new Error(`ProofLock request failed (${response.status})`);
+}
+
+const MAX_JSON_RESPONSE_BYTES = 1_048_576;
+async function readBoundedJson(response: Response): Promise<unknown> {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > MAX_JSON_RESPONSE_BYTES) responseTooLarge();
+  if (!response.body) {
+    const text = await response.text();
+    if (text.length > MAX_JSON_RESPONSE_BYTES) responseTooLarge();
+    return JSON.parse(text);
+  }
+  const reader = response.body.getReader(); const chunks: Uint8Array[] = []; let total = 0;
+  while (true) {
+    const chunk = await reader.read(); if (chunk.done) break;
+    total += chunk.value.byteLength;
+    if (total > MAX_JSON_RESPONSE_BYTES) { await reader.cancel(); responseTooLarge(); }
+    chunks.push(chunk.value);
+  }
+  const bytes = new Uint8Array(total); let offset = 0;
+  for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+function responseTooLarge(): never { throw new Error("ProofLock response exceeds bounded size"); }
+
+type RecordLimits = Readonly<{ keys: number; nodes: number; depth: number;
+  array: number; stringUnits: number }>;
+function boundedRecord(limits: RecordLimits) {
+  return z.record(z.string().max(256), z.unknown()).superRefine((value, context) => {
+    try { assertBoundedValue(value, limits); }
+    catch (cause) { context.addIssue({ code: "custom",
+      message: cause instanceof Error ? cause.message : "Object exceeds bounds" }); }
+  });
+}
+
+function assertBoundedValue(root: unknown, limits: RecordLimits): void {
+  const pending: Array<readonly [unknown, number]> = [[root, 0]];
+  let nodes = 0; let stringUnits = 0;
+  while (pending.length) {
+    const [value, depth] = pending.pop()!; nodes += 1;
+    if (nodes > limits.nodes || depth > limits.depth) throw new Error("Object exceeds structural bounds");
+    if (typeof value === "string") { stringUnits += value.length;
+      if (stringUnits > limits.stringUnits) throw new Error("Object strings exceed bounds"); }
+    else if (Array.isArray(value)) { if (value.length > limits.array) throw new Error("Array exceeds bounds");
+      for (const item of value) pending.push([item, depth + 1]); }
+    else if (value && typeof value === "object") { const entries = Object.entries(value);
+      if (entries.length > limits.keys) throw new Error("Object keys exceed bounds");
+      for (const [, item] of entries) pending.push([item, depth + 1]); }
+  }
 }

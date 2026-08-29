@@ -5,6 +5,8 @@ import { useEffect, useReducer, useRef } from "react";
 import { ProofLockApiError, readProofLockDetail, verifyProof } from "@/lib/prooflock-client";
 import { admittedConsumerState, gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
 import { createVerificationCoordinator, initialVerificationState, verificationReducer } from "@/lib/verification-state";
+import { explorerAddressUrl, explorerTransactionUrl } from "@/lib/explorer-url";
+import { configuredDisplayText, displayValue, safeDisplayText } from "@/lib/safe-display";
 import type { VerificationAction } from "@/lib/verification-state";
 import type { CurrentVerification, ProofLockDetailResponse, ProofVerificationState, VerifiedProof } from "@/lib/prooflock-types";
 import type { LinkedHistoricalProof } from "@/lib/prooflock-routes";
@@ -100,14 +102,26 @@ export function HistoricalProofDetails({ proof, explorerBase }: Readonly<{
 }>) {
   const compute = firstCompute(proof.storage.envelope);
   const uploadTx = stringField(proof.storage.storageCommitment, "uploadTxHash");
-  const base = explorerBase.replace(/\/$/, "");
-  return <div className="verification-proof"><dl className="proof-list"><div><dt>Registry source transaction</dt><dd><a className="text-link mono break" href={`${base}/tx/${proof.source.transactionHash}`} target="_blank" rel="noreferrer">{proof.source.transactionHash}</a></dd></div>
-    <div><dt>Source block</dt><dd>block {proof.source.blockNumber}</dd></div><div><dt>Lease version</dt><dd>Version {proof.proofLock.version}</dd></div>
-    <div><dt>Registry</dt><dd><a className="text-link mono break" href={`${base}/address/${proof.source.registryAddress}`} target="_blank" rel="noreferrer">{proof.source.registryAddress}</a></dd></div>
-    <div><dt>Source block hash</dt><dd className="mono break">{proof.source.blockHash}</dd></div><div><dt>Log index</dt><dd>{proof.source.logIndex}</dd></div>
-    <div><dt>Storage root</dt><dd className="mono break">{proof.proofLock.storageRoot}</dd></div><div><dt>Storage upload transaction</dt><dd>{uploadTx ? <a className="text-link mono break" href={`${base}/tx/${uploadTx}`} target="_blank" rel="noreferrer">{uploadTx}</a> : "Unavailable"}</dd></div>
-    <div><dt>Compute provider</dt><dd className="mono break">{compute?.provider ?? "Unavailable"}</dd></div><div><dt>Compute model</dt><dd>{compute?.model ?? "Unavailable"}</dd></div>
+  const provider = compute && configuredDisplayText(compute.provider, "Provider not provided", { maxGraphemes: 96 });
+  const model = compute && configuredDisplayText(compute.model, "Model not provided", { maxGraphemes: 120 });
+  const version = displayValue(proof.proofLock.version, { maxGraphemes: 80 });
+  return <div className="verification-proof"><dl className="proof-list"><div><dt>Registry source transaction</dt><dd><ExplorerValue base={explorerBase} kind="tx" value={proof.source.transactionHash} /></dd></div>
+    <div><dt>Source block</dt><dd aria-label={`block ${proof.source.blockNumber}`}>block <bdi dir="ltr">{proof.source.blockNumber}</bdi></dd></div><div><dt>Lease version</dt><dd aria-label={`Version ${version.display}`}>Version <bdi dir="ltr">{version.display}</bdi></dd></div>
+    <div><dt>Registry</dt><dd><ExplorerValue base={explorerBase} kind="address" value={proof.source.registryAddress} /></dd></div>
+    <div><dt>Source block hash</dt><dd className="mono break"><bdi dir="ltr">{proof.source.blockHash}</bdi></dd></div><div><dt>Log index</dt><dd><bdi dir="ltr">{proof.source.logIndex}</bdi></dd></div>
+    <div><dt>Storage root</dt><dd className="mono break"><bdi dir="ltr">{proof.proofLock.storageRoot}</bdi></dd></div><div><dt>Storage upload transaction</dt><dd>{uploadTx ? <ExplorerValue base={explorerBase} kind="tx" value={uploadTx} /> : "Unavailable"}</dd></div>
+    <div><dt>Compute provider</dt><dd className="mono break"><bdi>{provider ?? "Unavailable"}</bdi></dd></div><div><dt>Compute model</dt><dd><bdi>{model ?? "Unavailable"}</bdi></dd></div>
     <div><dt>Retrieval</dt><dd>Exact bytes, digest, and recomputed 0G root match</dd></div><div><dt>Capability</dt><dd className="mono">networkProofVerified: false</dd></div></dl></div>;
+}
+
+function ExplorerValue({ base, kind, value }: Readonly<{
+  base: string; kind: "tx" | "address"; value: string;
+}>) {
+  const href = kind === "tx" ? explorerTransactionUrl(base, value) : explorerAddressUrl(base, value);
+  const display = safeDisplayText(value, { maxGraphemes: 96 });
+  if (!href) return <span className="mono break"><bdi dir="ltr">{display}</bdi></span>;
+  return <a className="text-link mono break" href={href} target="_blank"
+    rel="noopener noreferrer"><bdi dir="ltr">{display}</bdi></a>;
 }
 
 export function ProofLocatorNotice({ status, currentHref }: Readonly<{
@@ -144,6 +158,7 @@ export function VerificationResult({ state, current, reasonCode, busy = false }:
   const tone = state === "MATCH" ? "state-good" : state === "IDLE" || state === "VERIFYING" || state === "RETRYING" ? "state-warn" : "state-bad";
   const currentVisible = current && current !== "IDLE";
   return <div className={`verification-result ${tone}`} role="status" aria-live="polite" aria-busy={busy}><b>{labels[state]}</b>{state === "MATCH" && <p>Canonical envelope, record bindings, verified Compute transcript, finalized Storage commitment, and retrieval match at verification time.</p>}
-    {currentVisible && <p><strong>Current access: {current}</strong>{reasonCode ? ` · ${reasonCode}` : ""}</p>}
+    {currentVisible && <p><strong>Current access: {current}</strong>{reasonCode
+      ? <> · <bdi>{safeDisplayText(reasonCode, { maxGraphemes: 80 })}</bdi></> : ""}</p>}
     {state === "MATCH" && <small>Historical artifact validity is independent of the current lease and Gate state.</small>}</div>;
 }

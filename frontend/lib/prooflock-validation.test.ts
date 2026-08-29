@@ -41,4 +41,8 @@ describe("canonical ERC-8004 agent IDs", () => {
   it.each(["", "00", "01", "+1", "-1", "1.0", " 1", "1 ", overflow])("rejects %j", (value) => {
     expect(isCanonicalAgentId(value)).toBe(false);
   });
+
+  it("rejects a multi-megabyte decimal before attempting BigInt conversion", () => {
+    expect(isCanonicalAgentId("9".repeat(2_000_000))).toBe(false);
+  });
 });

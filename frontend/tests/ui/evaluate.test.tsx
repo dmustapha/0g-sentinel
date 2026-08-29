@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { GateDecisionCard } from "../../components/GateDecisionCard";
 import { identityInputState } from "../../components/IdentityResolver";
 import { ProofCoverageGrid } from "../../components/ProofCoverageGrid";
+import { CompletionStatus, ResolveForm, ScanInput } from "../../components/ScanInput";
 import { StreamingScanPanel } from "../../components/StreamingScanPanel";
 import type { RunnerStage } from "../../lib/prooflock-types";
 import { admittedConsumerState } from "../../lib/prooflock-status";
@@ -16,6 +17,52 @@ const STAGES: readonly RunnerStage[] = [
 ];
 
 describe("Evaluate ceremony", () => {
+  it("uses a semantic resolve form with an explicit resolution-only cancel boundary", () => {
+    const base = { agentId: "7", valid: true, invalid: false, locked: false, onEdit: () => {},
+      onResolve: () => {}, onCancel: () => {} } as const;
+    const idle = renderToStaticMarkup(React.createElement(ResolveForm, { ...base, phase: "idle" }));
+    const resolving = renderToStaticMarkup(React.createElement(ResolveForm, { ...base, phase: "resolving" }));
+    expect(idle.startsWith('<form class="evaluate-form"')).toBe(true);
+    expect(idle).toContain('type="submit"');
+    expect(resolving).toContain('type="button"');
+    expect(resolving).toContain("Cancel resolution");
+  });
+
+  it("associates invalid and resolution-error identity input with its status", () => {
+    const base = { agentId: "abc", valid: false, invalid: true, locked: false, phase: "idle" as const,
+      onEdit: () => {}, onResolve: () => {}, onCancel: () => {} };
+    const invalid = renderToStaticMarkup(React.createElement(ResolveForm, base));
+    const resolutionError = renderToStaticMarkup(React.createElement(ResolveForm,
+      { ...base, agentId: "7", phase: "resolve_error" }));
+    const workbench = renderToStaticMarkup(React.createElement(ScanInput));
+    for (const html of [invalid, resolutionError]) {
+      expect(html).toContain('aria-invalid="true"');
+      expect(html).toContain('aria-describedby="agent-id-status"');
+    }
+    expect(workbench).toContain('id="agent-id-status"');
+  });
+
+  it("renders paid completion without another paid action", () => {
+    const html = renderToStaticMarkup(React.createElement(CompletionStatus,
+      { refresh: "complete", refreshError: null }));
+    expect(html).toContain("ProofLock write succeeded");
+    expect(html).toContain("Current read-back refreshed");
+    expect(html).not.toContain("Issue first ProofLock");
+    expect(html).not.toContain("operator-token");
+    expect(html).not.toContain("Run verified evaluation");
+  });
+
+  it("renders refresh failure as successful write plus a do-not-retry alert", () => {
+    const html = renderToStaticMarkup(React.createElement(CompletionStatus,
+      { refresh: "failed", refreshError: { code: "READ_FAILED", message: "unavailable",
+        stage: "READING_CHAIN_BACK", retryable: true, requestId: "test" } }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("ProofLock write succeeded");
+    expect(html).toContain("Current read-back is unavailable");
+    expect(html).toContain("Do not retry");
+    expect(html).not.toContain("Run verified evaluation");
+  });
+
   it("fails closed unless guarded Gate fields match subject, version, and ALLOWED reason", () => {
     const subject = `0x${"22".repeat(20)}` as `0x${string}`;
     const record = { subject, version: "2" };

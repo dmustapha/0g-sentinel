@@ -3,6 +3,7 @@
 **Date:** 2026-08-28
 **Status:** Approved direction, refined from the previously approved Industrial Proof Ledger recommendation
 **Supersedes:** The presentation and execution assumptions in `2026-08-28-prooflock-frontend-design.md`; its trust-boundary decisions remain valid
+**Responsive state specification:** [`../design/2026-08-28-sentinel-proof-ledger-state-spec.md`](../design/2026-08-28-sentinel-proof-ledger-state-spec.md) — **Approved by user at 2026-08-29T12:29:53Z**
 
 ## Objective
 

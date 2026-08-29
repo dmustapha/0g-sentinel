@@ -1,5 +1,6 @@
 import type { ApiErrorShape, CanonicalIdentity } from "@/lib/prooflock-types";
 import { configuredDisplayText } from "@/lib/safe-display";
+import { DataRow } from "@/components/ui/DataRow";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
 
 type ResolutionStatus = "idle" | "resolving" | "resolved" | "error";
@@ -27,12 +28,11 @@ export function IdentityResolver({ value, status, identity, error }: Readonly<{
   return <section className="evidence-card identity-card" aria-labelledby="identity-title">
     <div className="card-row"><div><span className="card-kicker">Canonical identity · finalized</span><h3 id="identity-title"><bdi dir="ltr">ERC-8004 Agent #{identity.identity.agentId}</bdi></h3></div>
       <span className="verified-stamp">Verified identity</span></div>
-    <dl className="proof-list">
-      <div><dt>Current agent wallet</dt><dd className="mono break"><bdi dir="ltr">{identity.agentWallet}</bdi></dd></div>
-      <div><dt>Owner</dt><dd className="mono break"><bdi dir="ltr">{identity.owner}</bdi></dd></div>
-      <div><dt>Registry</dt><dd className="mono break"><bdi dir="ltr">{identity.identity.registryAddress}</bdi></dd></div>
-      <div><dt>Resolution block</dt><dd className="mono">#<bdi dir="ltr">{identity.sourceBlockNumber}</bdi></dd></div>
-      <div><dt>Registration digest</dt><dd className="mono break"><bdi dir="ltr">{identity.registrationDigest}</bdi></dd></div>
-    </dl>
+    <dl className="proof-list"><DataRow label="Agent ID" value={identity.identity.agentId} copyable />
+      <DataRow label="Current agent wallet" value={identity.agentWallet} copyable />
+      <DataRow label="Owner" value={identity.owner} copyable />
+      <DataRow label="Registry" value={identity.identity.registryAddress} copyable />
+      <DataRow label="Resolution block" value={identity.sourceBlockNumber} copyable />
+      <DataRow label="Registration digest" value={identity.registrationDigest} copyable /></dl>
   </section>;
 }

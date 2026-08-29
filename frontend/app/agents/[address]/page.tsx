@@ -167,8 +167,7 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
   const verifiedSourceTxHash = historical?.status === "MATCH"
     ? historical.proof.source.transactionHash : sourceTxHash;
   return <section className="workspace-section detail-page"><div className="wrap"><Link href="/agents" className="text-link">← ProofLocks</Link>
-    <header className="detail-header"><div><span className="eyebrow">Canonical ERC-8004 identity</span><h1 aria-label={`Agent #${identity.identity.agentId}`}>Agent #<bdi dir="ltr">{identity.identity.agentId}</bdi></h1><p className="mono break"><bdi dir="ltr">{identity.agentWallet}</bdi></p></div>
-      {process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId && <DemoFixtureBadge />}</header>
+    <IdentityHeader identity={identity} fixture={process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId} />
     <section aria-labelledby="current-decision"><div className="card-row"><div><span className="eyebrow">Current decision</span><h2 id="current-decision">Current decision</h2></div></div>
       {current ? <GateDecisionCard current={current.decision} /> : <p role="status">Pinned current decision unavailable. Access is not admitted.</p>}
       {state.current.refresh === "FAILED" && <p role="status">Refresh unavailable: <bdi>{state.current.error}</bdi>. The last pinned snapshot remains visible.</p>}
@@ -203,6 +202,16 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
       validator={process.env.NEXT_PUBLIC_PROOFLOCK_SCANNER_ADDRESS} custodyConstraint={process.env.NEXT_PUBLIC_PROOFLOCK_CUSTODY_CONSTRAINT} />
     <aside className="legacy-banner"><b>LEGACY V1 · excluded</b><span>Historical AttestationRegistry records never appear as an active ProofLock V2 lease.</span></aside>
   </div></section>;
+}
+
+function IdentityHeader({ fixture, identity }: Readonly<{
+  fixture: boolean; identity: CanonicalIdentity;
+}>) {
+  return <header className="detail-header"><div><span className="eyebrow">Canonical ERC-8004 identity</span>
+    <h1 aria-label={`Agent #${identity.identity.agentId}`}>Agent #<bdi dir="ltr">{identity.identity.agentId}</bdi></h1>
+    <dl className="proof-list proof-identifiers"><DataRow label="Agent ID" value={identity.identity.agentId} copyable />
+      <DataRow label="Agent wallet" value={identity.agentWallet} copyable /></dl></div>
+    {fixture ? <DemoFixtureBadge /> : null}</header>;
 }
 
 function LoadingView() { return <section className="workspace-section"><div className="wrap loading-ledger"><h1>ProofLock detail</h1><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate with pinned current access…</span></div></section>; }

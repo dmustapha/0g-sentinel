@@ -1,9 +1,11 @@
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { DataRow } from "@/components/ui/DataRow";
 import type { HistoricalPlaneView } from "@/lib/proof-detail-state";
-import type { ComputeVerificationCapability, ProofLockRecord } from "@/lib/prooflock-types";
+import type { ComputeVerificationCapability, HistoricalVerifiedStorageObservation, ProofLockRecord,
+  ProofLockObservation } from "@/lib/prooflock-types";
 import { configuredDisplayText, safeDisplayText } from "@/lib/safe-display";
 import { explorerAddressUrl, explorerTransactionUrl } from "@/lib/explorer-url";
+import { assertClaimAllowed, claimFor, formatComputeClaim, VERIFIER_CLAIM_COPY } from "@/lib/prooflock-claims";
 
 type LegacyCompute = Readonly<{ provider: string; model: string; verified: boolean }>;
 type LegacyStorage = Readonly<Record<string, unknown>>;
@@ -14,25 +16,37 @@ export function EvidenceProofCard({ record, historical, compute, explorerBase = 
 }>) {
   const proof = historical?.status === "MATCH" ? historical.proof : undefined;
   const computeObservation = historical?.observations.find((item) => item.subsystem === "compute");
-  const storageObservation = historical?.observations.find((item) => item.subsystem === "storage");
+  const storageObservation = historical?.observations.find(isVerifiedStorageObservation);
   const capability = computeObservation?.status === "VERIFIED" && "capability" in computeObservation
     ? computeObservation.capability as ComputeVerificationCapability : undefined;
   const legacyMetadata = !historical ? compute : undefined;
   const computeVerified = Boolean(capability);
-  const storageVerified = storageObservation?.status === "VERIFIED" || (!historical && storage?.retrievalVerified === true);
+  const storageVerified = Boolean(storageObservation);
+  const legacyStorageReported = !historical && storage?.retrievalVerified === true;
   const uploadTx = proof ? stringField(proof.storage.storageCommitment, "uploadTxHash") : stringField(storage, "uploadTxHash");
   const provider = capability?.provider ?? legacyMetadata?.provider;
   const model = capability?.model ?? legacyMetadata?.model;
+  const computeClaim = capability ? assertClaimAllowed(formatComputeClaim(capability)) : null;
+  const storageClaim = storageObservation
+    ? assertClaimAllowed(claimFor("storage", storageObservation)) : null;
+  const networkProofDisplay = storageObservation
+    ? `networkProofVerified: ${String(storageObservation.capability.networkProofVerified)}`
+    : legacyNetworkProofDisplay(storage);
   return <section className="evidence-card evidence-stack"><div className="card-row"><div><span className="card-kicker">Exact provenance</span><h3>Evidence commitments</h3></div>
     <StatusBadge status={computeVerified && storageVerified ? "VERIFIED" : "UNAVAILABLE"} surface="paper" /></div>
-    <div className="evidence-segment"><b>{computeVerified ? "0G Compute capability" : "0G Compute unavailable"}</b>
+    <div className="evidence-segment"><b aria-label={computeVerified ? "Compute evidence" : "0G Compute unavailable"}>Compute evidence</b>
       {provider && model ? <ComputeDetails provider={provider} model={model} capability={capability} />
-        : <p>Compute transcript is unavailable. No fallback receipt is accepted.</p>}</div>
-    <div className="evidence-segment"><b>{storageVerified ? "0G Storage evidence" : "0G Storage unavailable"}</b>
+        : <p>{VERIFIER_CLAIM_COPY.evidence.unavailableValue}</p>}</div>
+    {computeClaim ? <p><bdi>{safeDisplayText(computeClaim, { maxGraphemes: 512 })}</bdi></p> : null}
+    <div className="evidence-segment"><b>Storage evidence</b>
       <dl className="proof-list"><DataRow label="Root" value={record.storageRoot} copyable />
-        <DataRow label="Upload transaction" value={uploadTx} copyable />
-        <DataRow label="Retrieval" value={storageVerified ? "Retrieved bytes and root matched during historical verification" : "Not re-verified"} technical={false} />
-        <DataRow label="Capability" value={`networkProofVerified: ${String(proof?.storage.networkProofVerified ?? storage?.networkProofVerified ?? false)}`} /></dl></div>
+        <DataRow label="Upload transaction" value={uploadTx}
+          displayValue={uploadTx ? safeDisplayText(uploadTx, { maxGraphemes: 96 }) : undefined} copyable />
+        <DataRow label="Retrieval" value={storageClaim
+          ? safeDisplayText(storageClaim, { maxGraphemes: 512 })
+          : legacyStorageReported ? "Unverified legacy metadata: reported root matched during historical verification"
+            : VERIFIER_CLAIM_COPY.evidence.unavailableValue} technical={false} />
+        <DataRow label="Capability" value={networkProofDisplay} technical={false} /></dl></div>
     <dl className="proof-list commitments"><DataRow label="Envelope digest" value={record.envelopeDigest} copyable />
       <DataRow label="Runtime commitment" value={record.runtimeCodeHash} copyable />
       <DataRow label="Artifact hash" value={proof?.proofLock.artifactHash ?? record.artifactHash} copyable /></dl>
@@ -44,8 +58,12 @@ export function EvidenceProofCard({ record, historical, compute, explorerBase = 
       <DataRow label="Log index" value={proof.source.logIndex} />
       <DataRow label="Registry" value={proof.source.registryAddress} copyable external
         href={explorerAddressUrl(explorerBase, proof.source.registryAddress) ?? undefined} /></dl> : null}
-    <p className="trust-note"><code>networkProofVerified: false</code> means the current SDK path verifies exact retrieved bytes, digest, recomputed 0G root, and finalized Flow submission—not an SDK-supplied network Merkle proof.</p>
+    {storageClaim ? <p className="trust-note"><bdi>{safeDisplayText(storageClaim, { maxGraphemes: 512 })}</bdi></p> : null}
   </section>;
+}
+
+function isVerifiedStorageObservation(item: ProofLockObservation): item is HistoricalVerifiedStorageObservation {
+  return item.scope === "HISTORICAL" && item.subsystem === "storage" && item.status === "VERIFIED";
 }
 
 function ComputeDetails({ capability, model, provider }: Readonly<{
@@ -67,5 +85,11 @@ function ComputeDetails({ capability, model, provider }: Readonly<{
 
 function stringField(value: Readonly<Record<string, unknown>> | undefined, key: string): string | undefined {
   const candidate = value?.[key];
-  return typeof candidate === "string" ? safeDisplayText(candidate, { maxGraphemes: 96 }) : undefined;
+  return typeof candidate === "string" ? candidate : undefined;
+}
+
+function legacyNetworkProofDisplay(storage: LegacyStorage | undefined): string {
+  if (!storage || !("networkProofVerified" in storage)) return VERIFIER_CLAIM_COPY.evidence.unavailableValue;
+  const reported = safeDisplayText(String(storage.networkProofVerified), { maxGraphemes: 32 });
+  return `Unverified legacy metadata: reported networkProofVerified: ${reported}`;
 }

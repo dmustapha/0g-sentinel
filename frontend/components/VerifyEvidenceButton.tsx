@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useReducer, useRef, type ReactNode, type RefObject } from "react";
 import { Button } from "@/components/ui/Button";
+import { DataRow } from "@/components/ui/DataRow";
 import { StateMessage, type StateMessageState } from "@/components/ui/StateMessage";
 import { VERIFIER_CLAIM_COPY } from "@/lib/prooflock-claims";
 import { ProofLockApiError, readProofLockDetail, verifyProof } from "@/lib/prooflock-client";
@@ -136,24 +137,29 @@ export function HistoricalProofDetails({ proof, explorerBase }: Readonly<{
   const uploadTx = stringField(proof.storage.storageCommitment, "uploadTxHash");
   const provider = compute && configuredDisplayText(compute.provider, VERIFIER_CLAIM_COPY.evidence.providerFallback, { maxGraphemes: 96 });
   const model = compute && configuredDisplayText(compute.model, VERIFIER_CLAIM_COPY.evidence.modelFallback, { maxGraphemes: 120 });
+  const providerConfigured = Boolean(compute && provider !== VERIFIER_CLAIM_COPY.evidence.providerFallback);
   const version = displayValue(proof.proofLock.version, { maxGraphemes: 80 });
-  return <div className="verification-proof"><dl className="proof-list"><div><dt>Registry source transaction</dt><dd><ExplorerValue base={explorerBase} kind="tx" value={proof.source.transactionHash} /></dd></div>
-    <div><dt>Source block</dt><dd aria-label={`block ${proof.source.blockNumber}`}>block <bdi dir="ltr">{proof.source.blockNumber}</bdi></dd></div><div><dt>Lease version</dt><dd aria-label={`Version ${version.display}`}>Version <bdi dir="ltr">{version.display}</bdi></dd></div>
-    <div><dt>Registry</dt><dd><ExplorerValue base={explorerBase} kind="address" value={proof.source.registryAddress} /></dd></div>
-    <div><dt>Source block hash</dt><dd className="mono break"><bdi dir="ltr">{proof.source.blockHash}</bdi></dd></div><div><dt>Log index</dt><dd><bdi dir="ltr">{proof.source.logIndex}</bdi></dd></div>
-    <div><dt>Storage root</dt><dd className="mono break"><bdi dir="ltr">{proof.proofLock.storageRoot}</bdi></dd></div><div><dt>Storage upload transaction</dt><dd>{uploadTx ? <ExplorerValue base={explorerBase} kind="tx" value={uploadTx} /> : VERIFIER_CLAIM_COPY.evidence.unavailableValue}</dd></div>
-    <div><dt>Compute provider</dt><dd className="mono break"><bdi>{provider ?? VERIFIER_CLAIM_COPY.evidence.unavailableValue}</bdi></dd></div><div><dt>Compute model</dt><dd><bdi>{model ?? VERIFIER_CLAIM_COPY.evidence.unavailableValue}</bdi></dd></div>
-    <div><dt>{VERIFIER_CLAIM_COPY.evidence.storageFlagLabel}</dt><dd className="mono">{VERIFIER_CLAIM_COPY.evidence.storageFlagValue}</dd></div></dl></div>;
-}
-
-function ExplorerValue({ base, kind, value }: Readonly<{
-  base: string; kind: "tx" | "address"; value: string;
-}>) {
-  const href = kind === "tx" ? explorerTransactionUrl(base, value) : explorerAddressUrl(base, value);
-  const display = safeDisplayText(value, { maxGraphemes: 96 });
-  if (!href) return <span className="mono break"><bdi dir="ltr">{display}</bdi></span>;
-  return <a className="text-link mono break" href={href} target="_blank"
-    rel="noopener noreferrer"><bdi dir="ltr">{display}</bdi></a>;
+  return <div className="verification-proof"><dl className="proof-list">
+    <DataRow label="Registry source transaction" value={proof.source.transactionHash} copyable external
+      href={explorerTransactionUrl(explorerBase, proof.source.transactionHash) ?? undefined} />
+    <DataRow label="Source block" value={proof.source.blockNumber}
+      displayValue={`block ${proof.source.blockNumber}`} copyable />
+    <DataRow label="Lease version" value={version.canonical} displayValue={`Version ${version.display}`} copyable />
+    <DataRow label="Registry" value={proof.source.registryAddress} copyable external
+      href={explorerAddressUrl(explorerBase, proof.source.registryAddress) ?? undefined} />
+    <DataRow label="Source block hash" value={proof.source.blockHash} copyable />
+    <DataRow label="Log index" value={proof.source.logIndex} copyable />
+    <DataRow label="Storage root" value={proof.proofLock.storageRoot} copyable />
+    <DataRow label="Storage upload transaction" value={uploadTx}
+      displayValue={uploadTx ? safeDisplayText(uploadTx, { maxGraphemes: 96 }) : undefined} copyable external
+      href={uploadTx ? explorerTransactionUrl(explorerBase, uploadTx) ?? undefined : undefined} />
+    <DataRow label="Compute provider" value={providerConfigured ? compute!.provider
+      : provider ?? VERIFIER_CLAIM_COPY.evidence.unavailableValue}
+      displayValue={provider} technical={providerConfigured} copyable={providerConfigured} />
+    <DataRow label="Compute model" value={model ?? VERIFIER_CLAIM_COPY.evidence.unavailableValue}
+      displayValue={model} technical={false} />
+    <DataRow label={VERIFIER_CLAIM_COPY.evidence.storageFlagLabel}
+      value={VERIFIER_CLAIM_COPY.evidence.storageFlagValue} /></dl></div>;
 }
 
 export function ProofLocatorNotice({ status, currentHref }: Readonly<{

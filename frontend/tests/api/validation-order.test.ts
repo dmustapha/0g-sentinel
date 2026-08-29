@@ -45,6 +45,16 @@ describe("public read route validation order", () => {
     expect(readApi.createProductionReadDependencies).not.toHaveBeenCalled();
   });
 
+  it("rejects a malformed optional agent ID before constructing ProofLock dependencies", async () => {
+    const response = await readProofLock(
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=07"),
+      { params: { identityKey: valid } },
+    );
+    expect(response.status).toBe(400);
+    expect((await response.json()).error.code).toBe("INVALID_INPUT");
+    expect(readApi.createProductionReadDependencies).not.toHaveBeenCalled();
+  });
+
   it("rejects a malformed proof request before constructing verifier dependencies", async () => {
     const response = await verifyProof(
       new Request(`https://sentinel.test/api/v1/proofs/0x123/verify?identityKey=${valid}`),

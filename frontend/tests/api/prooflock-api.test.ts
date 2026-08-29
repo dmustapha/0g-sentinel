@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { authenticateOperator } from "../../server/prooflock/auth";
 import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "../../server/prooflock/errors";
@@ -129,6 +129,7 @@ describe("structured API errors", () => {
 });
 
 describe("public read handlers", () => {
+  afterEach(() => vi.useRealTimers());
   const identity = {
     identity: { namespace: "eip155", chainId: 16661, registryAddress: hex("80", 20), agentId: "7" },
     owner: hex("aa", 20), agentWallet: hex("bb", 20), agentURI: "https://example.com/card.json",
@@ -155,6 +156,13 @@ describe("public read handlers", () => {
         resolution: { agentWallet: record.subject }, gate: { status: "VERIFIED", allowed: true, reason: 0,
           subject: record.subject, version: "1" }, consumer: { status: "VERIFIED", accepted: true,
           address: hex("77", 20), subject: record.subject, version: "1" } }),
+      readCurrentAccess: vi.fn().mockResolvedValue({
+        schema: "sentinel.prooflock/current-access-v1", version: 1, agentId: "7", identityKey,
+        observationBlock: { number: "123", hash: hex("aa", 32), timestamp: "1800000000" },
+        observedAt: "2026-08-29T12:00:00.000Z",
+        freshnessExpiresAt: "2026-08-29T12:01:00.000Z",
+        observations: { gate: { reason: "DRIFTED", observation: { status: "BLOCKED" } } },
+      }),
       computeProofId: vi.fn().mockReturnValue(proofId),
       verifyStoredEvidence: vi.fn().mockResolvedValue({ envelope: { schema: "sentinel.prooflock/evidence-v1" }, retrievalVerified: true, networkProofVerified: false }),
       ...overrides,
@@ -225,6 +233,124 @@ describe("public read handlers", () => {
       gate: { status: "VERIFIED", allowed: true, reason: 0, subject: record.subject, version: "1" },
       consumer: { status: "VERIFIED", accepted: true, subject: record.subject, version: "1" } } });
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("keeps the exact legacy response contract when no canonical agentId is supplied", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/legacy"));
+    const body = await response.json();
+
+    expect(Object.keys(body).sort()).toEqual(["detail", "identityKey", "proofLock"]);
+    expect((deps as any).readCurrentAccess).not.toHaveBeenCalled();
+  });
+
+  it("adds versioned sealed evidence and independently observed current access for new readers", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect((deps as any).readCurrentAccess).toHaveBeenCalledWith("7", identityKey,
+      expect.any(AbortSignal));
+    expect(body).toMatchObject({ responseVersion: 2,
+      sealedEvidence: { schema: "sentinel.prooflock/sealed-evidence-v1", version: 1,
+        proofLock: { identityKey } },
+      currentAccess: { schema: "sentinel.prooflock/current-access-v1", version: 1,
+        observations: { gate: { observation: { status: "BLOCKED" } } } },
+      detail: { status: "VERIFIED" },
+    });
+  });
+
+  it("keeps a blocked current Gate renderable when sealed Storage enrichment is unavailable", async () => {
+    const detail = { status: "UNAVAILABLE", code: "EVIDENCE_UNAVAILABLE", identity: null,
+      resolution: null, gate: { status: "UNKNOWN", allowed: false, reason: null },
+      consumer: { status: "UNKNOWN", accepted: false } };
+    const deps = dependencies({ readProofLockDetail: vi.fn().mockResolvedValue(detail) });
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+
+    expect(await response.json()).toMatchObject({
+      sealedEvidence: { detail: { status: "UNAVAILABLE", code: "EVIDENCE_UNAVAILABLE" } },
+      currentAccess: { observations: { gate: { observation: { status: "BLOCKED" } } } },
+    });
+  });
+
+  it("keeps current facts renderable when sealed-detail enrichment ignores abort forever", async () => {
+    vi.useFakeTimers();
+    const deps = dependencies({
+      readProofLockDetail: vi.fn(() => new Promise<never>(() => undefined)),
+    });
+    const pending = createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+    let response: Response | undefined;
+    void pending.then((value) => { response = value; });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+
+    expect(response).toBeDefined();
+    expect(await response!.json()).toMatchObject({
+      sealedEvidence: { detail: { status: "UNAVAILABLE", code: "EVIDENCE_UNAVAILABLE" } },
+      currentAccess: { observations: { gate: { observation: { status: "BLOCKED" } } } },
+    });
+  });
+
+  it("aborts promptly while sealed-detail enrichment ignores abort", async () => {
+    const controller = new AbortController();
+    const deps = dependencies({
+      readProofLockDetail: vi.fn(() => new Promise<never>(() => undefined)),
+    });
+    const pending = createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7",
+        { signal: controller.signal }));
+
+    controller.abort(new DOMException("Canceled", "AbortError"));
+
+    const response = await pending;
+    expect(response.status).toBe(499);
+    expect((await response.json()).error.code).toBe("REQUEST_ABORTED");
+  });
+
+  it("rejects malformed agentId before Registry, Storage, or current-access dependencies", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=07"));
+
+    expect(response.status).toBe(400);
+    expect(deps.readProofLock).not.toHaveBeenCalled();
+    expect(deps.readProofLockDetail).not.toHaveBeenCalled();
+    expect((deps as any).readCurrentAccess).not.toHaveBeenCalled();
+  });
+
+  it("returns MISMATCH without current facts when agentId resolves to another identity key", async () => {
+    const deps = dependencies({ readCurrentAccess: vi.fn().mockRejectedValue(new ProofMismatchError()) } as any);
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+    const body = await response.json();
+
+    expect(response.status).toBe(409);
+    expect(body).toMatchObject({ error: { code: "MISMATCH" } });
+    expect(body.currentAccess).toBeUndefined();
+  });
+
+  it("aborts and consumes sealed-detail enrichment when current access rejects", async () => {
+    let detailSignal: AbortSignal | undefined;
+    const deps = dependencies({
+      readCurrentAccess: vi.fn().mockRejectedValue(new ProofMismatchError()),
+      readProofLockDetail: vi.fn((_record, signal) => {
+        detailSignal = signal;
+        return new Promise<never>((_resolve, reject) => signal.addEventListener("abort",
+          () => queueMicrotask(() => reject(new Error("late detail rejection"))), { once: true }));
+      }),
+    } as any);
+
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+
+    expect(response.status).toBe(409);
+    expect(detailSignal?.aborted).toBe(true);
+    await Promise.resolve();
   });
 
   it("binds proofId and identityKey before returning verified Storage evidence", async () => {

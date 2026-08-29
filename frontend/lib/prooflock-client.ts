@@ -1,10 +1,13 @@
 import { z } from "zod";
-import { keccak256, toUtf8Bytes } from "ethers";
+import { AbiCoder, keccak256, toUtf8Bytes } from "ethers";
 import { canonicalize } from "json-canonicalize";
+import { assertObservation } from "./prooflock-observations";
+import { gateReasonMeta } from "./prooflock-status";
+import { isCanonicalAgentId } from "./prooflock-validation";
 
 import type {
   ApiErrorShape, CanonicalIdentity, HealthSnapshot, OperatorRunInput, ProofLockDiscoveryResponse,
-  OperatorRunProgress, OperatorTerminalResult, ProofLockDetailResponse, ProofLockRecord,
+  OperatorRunProgress, OperatorTerminalResult, ProofLockCurrentDetailResponse, ProofLockDetailResponse, ProofLockRecord,
   ProofLockWriteOutcome, RunnerStage, VerifiedProof,
 } from "./prooflock-types";
 
@@ -12,6 +15,9 @@ const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
 const hex32 = z.string().regex(/^0x[0-9a-f]{64}$/i);
 const nonZeroHex32 = hex32.refine((value) => !/^0x0{64}$/i.test(value));
 const decimal = z.string().regex(/^(0|[1-9]\d*)$/);
+const positiveDecimal = z.string().regex(/^[1-9]\d*$/);
+const canonicalAgentId = decimal.refine(isCanonicalAgentId);
+const ERC8004_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
 const identitySchema = z.object({
   identity: z.object({ namespace: z.literal("eip155"), chainId: z.literal(16661), registryAddress: hex20, agentId: decimal }),
   owner: hex20, agentWallet: hex20, agentURI: z.string(), registrationDigest: hex32,
@@ -40,6 +46,74 @@ const detailSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("UNAVAILABLE"), code: z.enum(["EVIDENCE_UNAVAILABLE", "EVIDENCE_INVALID", "IDENTITY_UNAVAILABLE", "IDENTITY_INVALID"]),
     identity: z.null(), resolution: z.null(), gate: unknownGateSchema, consumer: unknownConsumerSchema }),
 ]);
+const observationReason = z.enum(["ALLOWED", "NO_PROOF", "REVOKED", "DRIFTED", "EXPIRED",
+  "SUBJECT_CHANGED", "RUNTIME_CODE_DRIFT", "POLICY_TOO_OLD", "COVERAGE_INCOMPLETE",
+  "COMPUTE_UNVERIFIED", "STORAGE_UNVERIFIED", "BEHAVIORAL_RISK", "CODE_RISK",
+  "IDENTITY_UNAVAILABLE", "AGENT_NOT_FOUND", "AGENT_WALLET_UNSET", "IDENTITY_MISMATCH",
+  "UNKNOWN_REASON", "EVIDENCE_UNAVAILABLE", "EVIDENCE_MISMATCH"]);
+const currentReason = z.enum(["OBSERVED", "CURRENT_IDENTITY_UNAVAILABLE", "CURRENT_LEASE_UNAVAILABLE",
+  "CURRENT_GATE_UNAVAILABLE", "CURRENT_CONSUMER_UNAVAILABLE", "CURRENT_LEASE_MISMATCH",
+  "CURRENT_GATE_MISMATCH", "CURRENT_CONSUMER_MISMATCH", "GUARDED_CONSUMER_BLOCKED",
+  ...observationReason.options]);
+const currentObservationSchema = z.object({ scope: z.literal("CURRENT"),
+  subsystem: z.enum(["identity", "lease", "gate", "consumer"]),
+  status: z.enum(["VERIFIED", "BLOCKED", "UNAVAILABLE", "STALE", "MISMATCH", "NOT_APPLICABLE"]),
+  observedAt: z.string().datetime(), observationBlockNumber: decimal, observationBlockHash: nonZeroHex32,
+  serverIssuedAt: z.string().datetime(), ttlMs: z.number().int().positive().max(3_600_000),
+  freshnessExpiresAt: z.string().datetime(), reasonCode: observationReason.optional(),
+  allowed: z.literal(true).optional(), accepted: z.literal(true).optional(),
+}).strict().superRefine((value, context) => {
+  if (Date.parse(value.freshnessExpiresAt) !== Date.parse(value.observedAt) + value.ttlMs) {
+    context.addIssue({ code: "custom", message: "Current observation freshness is inconsistent" });
+  }
+  if (Date.parse(value.serverIssuedAt) < Date.parse(value.observedAt)) {
+    context.addIssue({ code: "custom", message: "Current observation server time is inconsistent" });
+  }
+  try { assertObservation(value); }
+  catch { context.addIssue({ code: "custom", message: "Current observation state is invalid" }); }
+});
+const currentIdentityValueSchema = z.object({ identity: z.object({ namespace: z.literal("eip155"),
+  chainId: z.literal(16661), registryAddress: hex20, agentId: canonicalAgentId }).strict(), owner: hex20,
+  agentWallet: hex20, agentURI: z.string(), registrationDigest: hex32,
+  sourceBlockNumber: decimal, sourceBlockHash: hex32 }).strict();
+const currentGateValueSchema = z.object({ allowed: z.boolean(), reason: z.number().int().min(0).max(16),
+  subject: hex20, version: decimal }).strict();
+const currentConsumerValueSchema = z.object({ accepted: z.boolean(), address: hex20,
+  subject: hex20, version: decimal }).strict();
+const currentEntry = <T extends z.ZodType>(capability: string, subsystem: string, value: T) =>
+  z.object({ capability: z.literal(capability), reason: currentReason,
+    observation: currentObservationSchema.refine((item) => item.subsystem === subsystem,
+      { message: "Current observation subsystem is inconsistent" }), value: value.nullable() }).strict()
+    .superRefine((entry, context) => {
+      const parsed = entry as unknown as Readonly<{
+        observation: Readonly<{ status: string }>;
+        value: unknown;
+      }>;
+      const unavailable = ["UNAVAILABLE", "MISMATCH", "STALE", "NOT_APPLICABLE"]
+        .includes(parsed.observation.status);
+      if ((parsed.observation.status === "VERIFIED" && parsed.value === null)
+        || (unavailable && parsed.value !== null)) {
+        context.addIssue({ code: "custom", message: "Current observation value is inconsistent" });
+      }
+    });
+const currentAccessSchema = z.object({ schema: z.literal("sentinel.prooflock/current-access-v1"),
+  version: z.literal(1), agentId: canonicalAgentId, identityKey: nonZeroHex32,
+  observationBlock: z.object({ number: positiveDecimal, hash: nonZeroHex32,
+    timestamp: positiveDecimal }).strict(),
+  observedAt: z.string().datetime(), freshnessExpiresAt: z.string().datetime(),
+  observations: z.object({
+    identity: currentEntry("ERC8004_IDENTITY_AT_FINALIZED_BLOCK", "identity", currentIdentityValueSchema),
+    lease: currentEntry("REGISTRY_V2_LEASE_AT_FINALIZED_BLOCK", "lease", lockSchema),
+    gate: currentEntry("AGENT_GATE_V2_AT_FINALIZED_BLOCK", "gate", currentGateValueSchema),
+    consumer: currentEntry("GUARDED_CONSUMER_AT_FINALIZED_BLOCK", "consumer", currentConsumerValueSchema),
+  }).strict(),
+}).strict().superRefine(validateCurrentAccessMetadata);
+const sealedEvidenceSchema = z.object({ schema: z.literal("sentinel.prooflock/sealed-evidence-v1"),
+  version: z.literal(1), proofLock: lockSchema, detail: detailSchema }).strict();
+const legacyDetailResponseSchema = z.object({ identityKey: nonZeroHex32,
+  proofLock: lockSchema, detail: detailSchema }).strict();
+const currentDetailResponseSchema = legacyDetailResponseSchema.extend({ responseVersion: z.literal(2),
+  sealedEvidence: sealedEvidenceSchema, currentAccess: currentAccessSchema }).strict();
 const apiCodeSchema = z.enum(["INVALID_INPUT", "UNAUTHORIZED", "NOT_FOUND", "GONE", "METHOD_NOT_ALLOWED",
   "AGENT_NOT_FOUND", "AGENT_WALLET_UNSET", "IDENTITY_UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", "COMPUTE_UNVERIFIED",
   "MISMATCH", "HINT_REQUIRED", "REQUEST_ABORTED", "INTERNAL_ERROR", "SUBMISSION_OUTCOME_UNKNOWN",
@@ -110,9 +184,16 @@ export async function readProofLock(identityKey: string, signal?: AbortSignal): 
   return lockSchema.parse(z.object({ identityKey: hex32, proofLock: lockSchema }).parse(body).proofLock) as ProofLockRecord;
 }
 
-export async function readProofLockDetail(identityKey: string, signal?: AbortSignal): Promise<ProofLockDetailResponse> {
-  const body = await requestJson(`/api/v1/prooflocks/${encodeURIComponent(identityKey)}`, { signal });
-  return z.object({ identityKey: hex32, proofLock: lockSchema, detail: detailSchema }).parse(body) as ProofLockDetailResponse;
+export async function readProofLockDetail(identityKey: string, signal?: AbortSignal,
+  agentId?: string): Promise<ProofLockDetailResponse> {
+  const query = agentId === undefined ? "" : `?agentId=${encodeURIComponent(agentId)}`;
+  const body = await requestJson(`/api/v1/prooflocks/${encodeURIComponent(identityKey)}${query}`, { signal });
+  if (agentId === undefined) return legacyDetailResponseSchema.parse(body) as ProofLockDetailResponse;
+  const parsed = currentDetailResponseSchema.parse(body);
+  if (!validCurrentDetailBinding(parsed, identityKey, agentId)) {
+    throw new TypeError("Current ProofLock detail binding is inconsistent");
+  }
+  return parsed as ProofLockCurrentDetailResponse;
 }
 
 export async function discoverProofLocks(signal?: AbortSignal): Promise<ProofLockDiscoveryResponse> {
@@ -144,6 +225,174 @@ function validDiscoveryMetadata(value: Readonly<{ identities: readonly Readonly<
     && value.returned <= value.cap && new Set(identities).size === identities.length
     && value.identities.every((row) => row.blockNumber >= value.fromBlock && row.blockNumber <= value.toBlock
       && (row.status !== "VERIFIED" || row.proofLock?.identityKey.toLowerCase() === row.identityKey.toLowerCase()));
+}
+
+function validateCurrentAccessMetadata(value: Record<string, any>, context: z.RefinementCtx): void {
+  const block = value.observationBlock;
+  const entries = Object.values(value.observations) as Record<string, any>[];
+  const consistent = entries.every(({ observation }) =>
+    observation.observationBlockNumber === block.number
+    && observation.observationBlockHash.toLowerCase() === block.hash.toLowerCase()
+    && observation.observedAt === value.observedAt
+    && observation.serverIssuedAt === value.observedAt
+    && observation.freshnessExpiresAt === value.freshnessExpiresAt);
+  if (!consistent) context.addIssue({ code: "custom",
+    message: "Current access observation metadata is inconsistent" });
+  if (!validCurrentEntrySemantics(value)) context.addIssue({ code: "custom",
+    message: "Current access observation state is inconsistent" });
+}
+
+function validCurrentEntrySemantics(value: Record<string, any>): boolean {
+  const { identity, lease, gate, consumer } = value.observations;
+  if (!validEntryState("identity", identity) || !validEntryState("lease", lease)
+    || !validEntryState("gate", gate) || !validEntryState("consumer", consumer)) return false;
+  if (identity.value && (identity.value.sourceBlockNumber !== value.observationBlock.number
+    || identity.value.sourceBlockHash.toLowerCase() !== value.observationBlock.hash.toLowerCase())) return false;
+  if (!validLeaseState(lease, value.observationBlock.timestamp)
+    || !validGateState(gate) || !validConsumerState(consumer)) return false;
+  return validCurrentProvenance(identity, lease, gate, consumer,
+    value.identityKey, value.observationBlock.timestamp);
+}
+
+function validLeaseState(entry: Record<string, any>, timestamp: string): boolean {
+  if (!entry.value) return entry.observation.status !== "VERIFIED";
+  const expected = leaseBlockReason(entry.value, BigInt(timestamp));
+  if (entry.observation.status === "VERIFIED") return expected === null;
+  if (entry.observation.status === "BLOCKED") return expected === entry.reason
+    && expected === entry.observation.reasonCode;
+  return false;
+}
+
+function leaseBlockReason(value: Record<string, any>, timestamp: bigint): string | null {
+  if (value.state === 2) return "REVOKED";
+  if (value.state === 3) return "DRIFTED";
+  if (value.state !== 1 || value.coverage !== 0x7f) return "COVERAGE_INCOMPLETE";
+  if (BigInt(value.validUntil) <= timestamp) return "EXPIRED";
+  return null;
+}
+
+function validEntryState(subsystem: string, entry: Record<string, any>): boolean {
+  const status = entry.observation.status;
+  const unavailable = { identity: ["CURRENT_IDENTITY_UNAVAILABLE", "IDENTITY_UNAVAILABLE"],
+    lease: ["CURRENT_LEASE_UNAVAILABLE", "EVIDENCE_UNAVAILABLE"],
+    gate: ["CURRENT_GATE_UNAVAILABLE", "EVIDENCE_UNAVAILABLE"],
+    consumer: ["CURRENT_CONSUMER_UNAVAILABLE", "EVIDENCE_UNAVAILABLE"] } as const;
+  const mismatch = `CURRENT_${subsystem.toUpperCase()}_MISMATCH`;
+  if (status === "UNAVAILABLE") return entry.reason === unavailable[subsystem as keyof typeof unavailable][0]
+    && entry.observation.reasonCode === unavailable[subsystem as keyof typeof unavailable][1];
+  if (status === "MISMATCH") return subsystem !== "identity" && entry.reason === mismatch
+    && entry.observation.reasonCode === "EVIDENCE_MISMATCH";
+  if (status === "VERIFIED") return entry.reason === (subsystem === "gate" ? "ALLOWED" : "OBSERVED")
+    && entry.observation.reasonCode === (subsystem === "gate" ? "ALLOWED" : undefined);
+  if (status !== "BLOCKED" || !["lease", "gate", "consumer"].includes(subsystem)) return false;
+  if (subsystem === "consumer") return entry.reason === "GUARDED_CONSUMER_BLOCKED"
+    && entry.observation.reasonCode === "UNKNOWN_REASON" && entry.value !== null;
+  return entry.reason === entry.observation.reasonCode
+    && (subsystem === "lease" && entry.reason === "NO_PROOF"
+      ? entry.value === null : entry.value !== null);
+}
+
+function validGateState(entry: Record<string, any>): boolean {
+  if (!entry.value) return entry.observation.status !== "VERIFIED";
+  const code = gateReasonMeta(entry.value.reason).code;
+  const identityFailure = ["IDENTITY_UNAVAILABLE", "AGENT_NOT_FOUND", "AGENT_WALLET_UNSET"].includes(code);
+  if (identityFailure && (!/^0x0{40}$/i.test(entry.value.subject) || entry.value.version !== "0")) return false;
+  if (!identityFailure && /^0x0{40}$/i.test(entry.value.subject)) return false;
+  if (entry.observation.status === "VERIFIED") return entry.value.allowed === true
+    && entry.value.reason === 0 && code === "ALLOWED";
+  if (entry.observation.status === "BLOCKED") return entry.value.allowed === false
+    && code === entry.reason && code === entry.observation.reasonCode;
+  return false;
+}
+
+function validConsumerState(entry: Record<string, any>): boolean {
+  if (!entry.value) return entry.observation.status !== "VERIFIED";
+  if (entry.observation.status === "VERIFIED") return entry.value.accepted === true;
+  if (entry.observation.status === "BLOCKED") return entry.value.accepted === false;
+  return false;
+}
+
+function validCurrentProvenance(identity: Record<string, any>, lease: Record<string, any>,
+  gate: Record<string, any>, consumer: Record<string, any>, identityKey: string,
+  blockTimestamp: string): boolean {
+  if (gate.value && !gateProvenance(identity, lease, gate.value,
+    identityKey, blockTimestamp)) return false;
+  if (consumer.value && !consumerProvenance(identity.value, lease.value, gate.value, consumer.value)) return false;
+  if (!gate.value || !consumer.value) return true;
+  return gate.value.allowed === consumer.value.accepted
+    && gate.value.subject.toLowerCase() === consumer.value.subject.toLowerCase()
+    && gate.value.version === consumer.value.version;
+}
+
+function gateProvenance(identity: Record<string, any>, lease: Record<string, any>,
+  gate: Record<string, any>, identityKey: string, blockTimestamp: string): boolean {
+  if (identityFailureGate(gate)) return identity.observation.status === "UNAVAILABLE";
+  if (identity.value && gate.subject.toLowerCase() !== identity.value.agentWallet.toLowerCase()) return false;
+  if (!lease.value) return lease.reason !== "NO_PROOF" || (gate.reason === 1 && gate.version === "0");
+  if (gate.version !== lease.value.version) return false;
+  const intrinsic = intrinsicGateReason(gate, lease.value, identityKey, BigInt(blockTimestamp));
+  if (intrinsic !== null) return gate.reason === intrinsic;
+  return ![1, 2, 3, 5, 8, 9, 10, 16].includes(gate.reason);
+}
+
+function intrinsicGateReason(gate: Record<string, any>, lease: Record<string, any>,
+  identityKey: string, blockTimestamp: bigint): number | null {
+  if (lease.version === "0") return 1;
+  if (lease.identityKey.toLowerCase() !== identityKey.toLowerCase()) return 16;
+  if (lease.subject.toLowerCase() !== gate.subject.toLowerCase()) return 5;
+  if (lease.state === 2) return 2;
+  if (lease.state === 3) return 3;
+  if (lease.state !== 1) return 16;
+  if (BigInt(lease.issuedAt) > blockTimestamp || BigInt(lease.validUntil) <= blockTimestamp) return 4;
+  if ((lease.coverage & 0x08) === 0) return 9;
+  if ((lease.coverage & 0x20) === 0) return 10;
+  if ((lease.coverage & 0x7f) !== 0x7f) return 8;
+  return null;
+}
+
+function consumerProvenance(identity: Record<string, any> | null, lease: Record<string, any> | null,
+  gate: Record<string, any> | null, consumer: Record<string, any>): boolean {
+  if (identity && consumer.subject.toLowerCase() !== identity.agentWallet.toLowerCase()) return false;
+  if (!lease) return true;
+  if (consumer.version !== lease.version) return false;
+  if (!consumer.accepted && gate && [1, 5, 13, 14, 15].includes(gate.reason)) return true;
+  return consumer.subject.toLowerCase() === lease.subject.toLowerCase();
+}
+
+function identityFailureGate(gate: Record<string, any>): boolean {
+  return gate.allowed === false && [13, 14, 15].includes(gate.reason)
+    && /^0x0{40}$/i.test(gate.subject) && gate.version === "0";
+}
+
+function validCurrentDetailBinding(value: z.infer<typeof currentDetailResponseSchema>,
+  requestedIdentityKey: string, requestedAgentId: string): boolean {
+  const key = value.identityKey.toLowerCase();
+  const current = value.currentAccess;
+  const identityValue = current.observations.identity.value;
+  const leaseValue = current.observations.lease.value;
+  const expectedKey = expectedCurrentIdentityKey(requestedAgentId);
+  return expectedKey !== null && key === expectedKey
+    && key === requestedIdentityKey.toLowerCase()
+    && value.proofLock.identityKey.toLowerCase() === key
+    && current.identityKey.toLowerCase() === key && current.agentId === requestedAgentId
+    && (!identityValue || validCurrentIdentityBinding(identityValue.identity, requestedAgentId, key))
+    && (!leaseValue || leaseValue.identityKey.toLowerCase() === key)
+    && canonicalize(value.sealedEvidence.proofLock) === canonicalize(value.proofLock)
+    && canonicalize(value.sealedEvidence.detail) === canonicalize(value.detail);
+}
+
+function validCurrentIdentityBinding(identity: Readonly<{ namespace: "eip155"; chainId: 16661;
+  registryAddress: string; agentId: string }>, requestedAgentId: string, identityKey: string): boolean {
+  if (!isCanonicalAgentId(identity.agentId) || identity.agentId !== requestedAgentId
+    || identity.registryAddress.toLowerCase() !== ERC8004_REGISTRY) return false;
+  return expectedCurrentIdentityKey(identity.agentId) === identityKey;
+}
+
+function expectedCurrentIdentityKey(agentId: string): string | null {
+  if (!isCanonicalAgentId(agentId)) return null;
+  const encoded = AbiCoder.defaultAbiCoder().encode(
+    ["uint256", "address", "uint256"], [16661, ERC8004_REGISTRY, BigInt(agentId)]);
+  return keccak256(encoded).toLowerCase();
 }
 
 export async function verifyProof(proofId: string, identityKey: string, signal?: AbortSignal, sourceTxHash?: string): Promise<VerifiedProof> {

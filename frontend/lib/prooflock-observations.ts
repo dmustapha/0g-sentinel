@@ -55,7 +55,8 @@ export function observationStatusAt(
   observation: ProofLockObservation,
   nowMs = Date.now(),
 ): ObservationStatus {
-  if (observation.scope !== "CURRENT" || observation.status !== "VERIFIED") return observation.status;
+  if (observation.scope !== "CURRENT"
+    || !["VERIFIED", "BLOCKED"].includes(observation.status)) return observation.status;
   return nowMs >= Date.parse(observation.freshnessExpiresAt) ? "STALE" : observation.status;
 }
 

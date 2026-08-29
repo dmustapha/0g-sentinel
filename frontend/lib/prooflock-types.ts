@@ -215,7 +215,80 @@ export type ProofLockDetail =
       identity: null; resolution: null; gate: Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
       consumer: Readonly<{ status: "UNKNOWN"; accepted: false }> }>;
 
-export type ProofLockDetailResponse = Readonly<{ identityKey: Bytes32; proofLock: ProofLockRecord; detail: ProofLockDetail }>;
+export type CurrentObservationCapability =
+  | "ERC8004_IDENTITY_AT_FINALIZED_BLOCK"
+  | "REGISTRY_V2_LEASE_AT_FINALIZED_BLOCK"
+  | "AGENT_GATE_V2_AT_FINALIZED_BLOCK"
+  | "GUARDED_CONSUMER_AT_FINALIZED_BLOCK";
+export type CurrentObservationReason =
+  | "OBSERVED" | "CURRENT_IDENTITY_UNAVAILABLE" | "CURRENT_LEASE_UNAVAILABLE"
+  | "CURRENT_GATE_UNAVAILABLE" | "CURRENT_CONSUMER_UNAVAILABLE"
+  | "CURRENT_LEASE_MISMATCH" | "CURRENT_GATE_MISMATCH"
+  | "CURRENT_CONSUMER_MISMATCH" | "GUARDED_CONSUMER_BLOCKED"
+  | GateReasonCode;
+export type CurrentIdentityValue = Readonly<{
+  identity: CanonicalIdentity["identity"];
+  owner: HexAddress;
+  agentWallet: HexAddress;
+  agentURI: string;
+  registrationDigest: Bytes32;
+  sourceBlockNumber: string;
+  sourceBlockHash: Bytes32;
+}>;
+export type CurrentGateValue = Readonly<{
+  allowed: boolean;
+  reason: number;
+  subject: HexAddress;
+  version: string;
+}>;
+export type CurrentConsumerValue = Readonly<{
+  accepted: boolean;
+  address: HexAddress;
+  subject: HexAddress;
+  version: string;
+}>;
+export type CurrentObservationEntry<T> = Readonly<{
+  capability: CurrentObservationCapability;
+  reason: CurrentObservationReason;
+  observation: ProofLockObservation;
+  value: T | null;
+}>;
+export type CurrentAccessV1 = Readonly<{
+  schema: "sentinel.prooflock/current-access-v1";
+  version: 1;
+  agentId: string;
+  identityKey: Bytes32;
+  observationBlock: Readonly<{ number: string; hash: Bytes32; timestamp: string }>;
+  observedAt: string;
+  freshnessExpiresAt: string;
+  observations: Readonly<{
+    identity: CurrentObservationEntry<CurrentIdentityValue>;
+    lease: CurrentObservationEntry<ProofLockRecord>;
+    gate: CurrentObservationEntry<CurrentGateValue>;
+    consumer: CurrentObservationEntry<CurrentConsumerValue>;
+  }>;
+}>;
+export type SealedEvidenceV1 = Readonly<{
+  schema: "sentinel.prooflock/sealed-evidence-v1";
+  version: 1;
+  proofLock: ProofLockRecord;
+  detail: ProofLockDetail;
+}>;
+type LegacyProofLockDetailResponse = Readonly<{
+  identityKey: Bytes32;
+  proofLock: ProofLockRecord;
+  detail: ProofLockDetail;
+}>;
+export type ProofLockDetailResponse = LegacyProofLockDetailResponse & Readonly<{
+  responseVersion?: 2;
+  sealedEvidence?: SealedEvidenceV1;
+  currentAccess?: CurrentAccessV1;
+}>;
+export type ProofLockCurrentDetailResponse = LegacyProofLockDetailResponse & Readonly<{
+  responseVersion: 2;
+  sealedEvidence: SealedEvidenceV1;
+  currentAccess: CurrentAccessV1;
+}>;
 export type VerifiedProofLockInventoryItem = DiscoveryRecord & ProofLockDetailResponse & Readonly<{
   status: "VERIFIED";
   proofId: Bytes32;

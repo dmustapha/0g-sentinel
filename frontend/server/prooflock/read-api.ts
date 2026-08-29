@@ -16,9 +16,14 @@ import { ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { HistoricalProofLock, ProofLockDetail, ProofLockReadDependencies } from "./api";
 import type { RegistryProofLockRecord } from "./chain";
 import { StrictComputeError } from "./compute/strict-error";
+import {
+  observeCurrentAccess,
+  type CurrentObservationDependencies,
+} from "./current-observations";
 
 const CHAIN_ID = 16661;
 const MAX_EVIDENCE_BYTES = 1_048_576;
+const CURRENT_OBSERVATION_TTL_MS = 30_000;
 const ZERO = "0x0000000000000000000000000000000000000001";
 const GATE = new Interface([
   "function registry() view returns (address)", "function identityRegistry() view returns (address)",
@@ -50,11 +55,14 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
   const resolveIdentity = (agentId: string, signal: AbortSignal) =>
     resolveProductionIdentity(rpcUrl, provider, agentId, signal);
   const detailDependencies = createDetailDependencies(env, rpcUrl, provider);
+  const confirmations = requiredInteger(env.PROOFLOCK_REGISTRY_V2_CONFIRMATIONS ?? "5",
+    "PROOFLOCK_REGISTRY_V2_CONFIRMATIONS", 1);
+  const currentDependencies = createCurrentObservationDependencies(
+    env, rpcUrl, provider, adapter, confirmations);
   const proofLocator = registryAddress ? createHistoricalProofLocator(provider as unknown as HistoricalProofProvider, registryAddress, {
     fromBlock: requiredInteger(env.PROOFLOCK_REGISTRY_V2_FROM_BLOCK,
       "PROOFLOCK_REGISTRY_V2_FROM_BLOCK", 0),
-    confirmations: requiredInteger(env.PROOFLOCK_REGISTRY_V2_CONFIRMATIONS ?? "5",
-      "PROOFLOCK_REGISTRY_V2_CONFIRMATIONS", 1),
+    confirmations,
     lookbackBlocks: requiredInteger(env.PROOFLOCK_PROOF_LOOKBACK_BLOCKS ?? "250000",
       "PROOFLOCK_PROOF_LOOKBACK_BLOCKS", 1),
     chunkBlocks: requiredInteger(env.PROOFLOCK_PROOF_LOG_CHUNK_BLOCKS ?? "50000",
@@ -87,7 +95,66 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       flowFromBlock: requiredInteger(env.PROOFLOCK_STORAGE_FLOW_FROM_BLOCK, "PROOFLOCK_STORAGE_FLOW_FROM_BLOCK", 0),
       confirmations: requiredInteger(env.PROOFLOCK_STORAGE_CONFIRMATIONS ?? "3", "PROOFLOCK_STORAGE_CONFIRMATIONS", 1),
     }, record, signal),
+    readCurrentAccess: (agentId, identityKey, signal) => observeCurrentAccess(
+      { agentId, identityKey }, currentDependencies,
+      { ttlMs: CURRENT_OBSERVATION_TTL_MS, readTimeoutMs: 2_000,
+        confirmationTimeoutMs: 2_000, signal }),
   });
+}
+
+function createCurrentObservationDependencies(env: NodeJS.ProcessEnv, rpcUrl: string,
+  provider: JsonRpcProvider, adapter: ReturnType<typeof createEthersRegistryChainAdapter> | undefined,
+  confirmations: number): CurrentObservationDependencies {
+  const requireAdapter = () => {
+    if (!adapter) throw new Error("PROOFLOCK_REGISTRY_V2_ADDRESS is not configured");
+    return adapter;
+  };
+  return Object.freeze({
+    pinFinalizedBlock: (signal) => pinFinalizedBlock(rpcUrl, provider, confirmations, signal),
+    confirmPinnedBlock: (number, hash, signal) => confirmPinnedBlock(provider, number, hash, signal),
+    resolveIdentity: (agentId, block, signal) => resolveProductionIdentity(
+      rpcUrl, provider, agentId, signal, block),
+    readLease: (identityKey, block, signal) => requireAdapter().getProofLock(
+      identityKey as `0x${string}`, signal, block),
+    readGate: (agentId, block, signal) => checkAgentGate(rpcUrl, provider,
+      requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS, "PROOFLOCK_AGENT_GATE_V2_ADDRESS"),
+      requiredAddress(env.PROOFLOCK_REGISTRY_V2_ADDRESS, "PROOFLOCK_REGISTRY_V2_ADDRESS"),
+      agentId, signal, fetch, block),
+    readConsumer: (agentId, identityKey, block, signal) => readCurrentConsumer(
+      env, rpcUrl, provider, requireAdapter(), agentId, identityKey, block, signal),
+  });
+}
+
+async function pinFinalizedBlock(rpcUrl: string, provider: JsonRpcProvider,
+  confirmations: number, signal: AbortSignal) {
+  await assertZeroGMainnetRpc(rpcUrl, signal);
+  const latest = await raceAbort(provider.getBlockNumber(), signal);
+  const number = latest - confirmations + 1;
+  if (!Number.isSafeInteger(number) || number <= 0) throw new Error("Finalized block is unavailable");
+  const block = await raceAbort(provider.getBlock(number), signal);
+  if (!block?.hash || block.number !== number || !Number.isSafeInteger(block.timestamp)
+    || block.timestamp <= 0) throw new Error("Finalized block is unavailable");
+  return Object.freeze({ number, hash: block.hash, timestamp: block.timestamp });
+}
+
+async function confirmPinnedBlock(provider: JsonRpcProvider, number: number,
+  hash: string, signal: AbortSignal): Promise<boolean> {
+  const block = await raceAbort(provider.getBlock(number), signal);
+  return Boolean(block?.hash && block.number === number && block.hash.toLowerCase() === hash.toLowerCase());
+}
+
+async function readCurrentConsumer(env: NodeJS.ProcessEnv, rpcUrl: string,
+  provider: JsonRpcProvider, adapter: ReturnType<typeof createEthersRegistryChainAdapter>,
+  agentId: string, identityKey: string, block: number, signal: AbortSignal) {
+  const [identity, lease] = await Promise.all([
+    resolveProductionIdentity(rpcUrl, provider, agentId, signal, block),
+    adapter.getProofLock(identityKey as `0x${string}`, signal, block),
+  ]);
+  const result = await simulateProofLockConsumer(rpcUrl, provider,
+    requiredAddress(env.PROOFLOCK_CONSUMER_ADDRESS, "PROOFLOCK_CONSUMER_ADDRESS"),
+    requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS, "PROOFLOCK_AGENT_GATE_V2_ADDRESS"),
+    agentId, identity.agentWallet, signal, block);
+  return Object.freeze({ ...result, subject: identity.agentWallet, version: lease.version });
 }
 
 export function createProductionDiscoveryDetailReader(env = process.env) {

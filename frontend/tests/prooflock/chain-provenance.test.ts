@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { writeProofLock, type ChainWriteRequest, type RegistryChainAdapter } from
+import { createEthersRegistryChainAdapter, REGISTRY_V2_INTERFACE, writeProofLock,
+  type ChainWriteRequest, type RegistryChainAdapter } from
   "../../server/prooflock/chain";
 import type { Bytes32, HexAddress } from "../../server/prooflock/types";
 
@@ -48,6 +49,17 @@ function adapter(from: HexAddress, recoveredFrom = from): RegistryChainAdapter {
 }
 
 describe("Registry scanner provenance", () => {
+  it("passes the finalized discovery block through the Ethers Registry adapter", async () => {
+    const raw = REGISTRY_V2_INTERFACE.encodeFunctionResult("getProofLock", [[
+      HASH, SUBJECT, HASH, HASH, HASH, HASH, ZERO, 1n, 10n, 20n, 1, 10, 0, 0x7f, 1, 0,
+    ]]);
+    const provider = { call: vi.fn(async () => raw) };
+    const chain = createEthersRegistryChainAdapter(provider as never, {} as never, REGISTRY);
+
+    await expect(chain.getProofLock(HASH, new AbortController().signal, 116)).resolves.toMatchObject({ version: 1n });
+    expect(provider.call).toHaveBeenCalledWith(expect.objectContaining({ to: REGISTRY, blockTag: 116 }));
+  });
+
   it("rejects a submitted seal before finality when tx.from is not the evidence scanner", async () => {
     const chain = adapter(OTHER);
     await expect(writeProofLock(chain, request(), { confirmations: 3, timeoutMs: 30_000 }))

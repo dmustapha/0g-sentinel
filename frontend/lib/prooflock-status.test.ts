@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   coverageItems,
+  compareProofLockUrgency,
   gateReasonMeta,
   leaseStatus,
-  proofLockUrgency,
   verificationSummary,
 } from "./prooflock-status";
 import type { ProofLockRecord } from "./prooflock-types";
+import type { ProofLockInventoryItem } from "./prooflock-types";
 
 const lock = (overrides: Partial<ProofLockRecord> = {}): ProofLockRecord => ({
   identityKey: `0x${"11".repeat(32)}`,
@@ -73,16 +74,24 @@ describe("ProofLock status semantics", () => {
     expect(leaseStatus(lock({ state: 3 }), 10_000)).toBe("DRIFTED");
   });
 
-  it("orders the dashboard by operational urgency, never by risk score", () => {
+  it("orders whole discovery rows by operational urgency with Gate denial ahead of admitted ACTIVE", () => {
     const items = [
-      lock({ identityKey: `0x${"01".repeat(32)}` }),
-      lock({ identityKey: `0x${"02".repeat(32)}`, state: 3 }),
-      lock({ identityKey: `0x${"03".repeat(32)}`, state: 2 }),
-      lock({ identityKey: `0x${"04".repeat(32)}`, validUntil: "9999" }),
-      lock({ identityKey: `0x${"05".repeat(32)}`, coverage: 0x3f }),
+      item("01", {}, 100, 0),
+      item("02", { state: 3 }, 100, 3),
+      item("03", { state: 2 }, 100, 2),
+      item("04", { validUntil: "9999" }, 100, 0),
+      item("05", { coverage: 0x3f }, 100, 0),
+      item("06", {}, 100, 11),
+      unavailable("07", 100),
     ];
-    expect(items.sort((a, b) => proofLockUrgency(a, 10_000) - proofLockUrgency(b, 10_000)).map((x) => x.identityKey.slice(2, 4)))
-      .toEqual(["02", "03", "04", "05", "01"]);
+    expect(items.sort((a, b) => compareProofLockUrgency(a, b, 10_000))
+      .map((value) => value.identityKey.slice(2, 4))).toEqual(["02", "03", "06", "04", "05", "07", "01"]);
+  });
+
+  it("uses block-descending then identity-ascending deterministic ties", () => {
+    const items = [item("03", {}, 99, 11), item("02", {}, 100, 11), item("01", {}, 100, 11)];
+    expect(items.sort((a, b) => compareProofLockUrgency(a, b, 10_000))
+      .map((value) => value.identityKey.slice(2, 4))).toEqual(["01", "02", "03"]);
   });
 
   it("expands the fixed 0x7f mask into seven named typed checks", () => {
@@ -92,3 +101,24 @@ describe("ProofLock status semantics", () => {
     expect(coverageItems(0x5f).find((item) => item.bit === 0x20)?.covered).toBe(false);
   });
 });
+
+function item(byte: string, overrides: Partial<ProofLockRecord>, blockNumber: number, gateReason: number): ProofLockInventoryItem {
+  const wallet = `0x${"99".repeat(20)}` as `0x${string}`;
+  const proofLock = lock({ identityKey: `0x${byte.repeat(32)}`, subject: wallet, ...overrides });
+  return { status: "VERIFIED", identityKey: proofLock.identityKey, proofId: `0x${"bb".repeat(32)}`,
+    transactionHash: `0x${"aa".repeat(32)}`,
+    blockNumber, proofLock, detail: { status: "VERIFIED", identity: { identityKey: proofLock.identityKey,
+      namespace: "eip155", chainId: 16661, registryAddress: `0x${"88".repeat(20)}`, agentId: byte,
+      owner: wallet, agentWallet: wallet, registrationUri: "https://agent.test", registrationDigest: `0x${"77".repeat(32)}`,
+      sourceBlockNumber: "90", sourceBlockHash: `0x${"66".repeat(32)}` }, resolution: { owner: wallet,
+      agentWallet: wallet, agentURI: "https://agent.test", registrationDigest: `0x${"77".repeat(32)}`,
+      sourceBlockNumber: "90", sourceBlockHash: `0x${"66".repeat(32)}` }, gate: { status: "VERIFIED",
+      allowed: gateReason === 0, reason: gateReason, subject: wallet, version: proofLock.version }, consumer: {
+      status: "VERIFIED", accepted: gateReason === 0, address: `0x${"55".repeat(20)}`, subject: wallet,
+      version: proofLock.version } } };
+}
+
+function unavailable(byte: string, blockNumber: number): ProofLockInventoryItem {
+  return { status: "ENRICHMENT_UNAVAILABLE", identityKey: `0x${byte.repeat(32)}`,
+    transactionHash: `0x${"aa".repeat(32)}`, blockNumber, code: "DEPENDENCY_UNAVAILABLE" };
+}

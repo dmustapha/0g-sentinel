@@ -629,7 +629,8 @@ describe("admin on-demand drift", () => {
 
 describe("legacy spend safety", () => {
   it("removes background enqueue and waitUntil from discovery", async () => {
-    const source = await readFile(resolve(process.cwd(), "app/api/discover/route.ts"), "utf8");
+    const source = (await Promise.all(["app/api/discover/route.ts", "server/prooflock/discovery.ts"]
+      .map((path) => readFile(resolve(process.cwd(), path), "utf8")))).join("\n");
     expect(source).not.toMatch(/waitUntil|enqueueAddresses|@scanner\/queue/);
     expect(source).toContain("ProofLocked");
   });

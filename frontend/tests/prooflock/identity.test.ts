@@ -107,6 +107,18 @@ describe("ERC-8004 identity resolution", () => {
     expect(Object.isFrozen(result)).toBe(true);
   });
 
+  it("uses an explicit discovery block without consulting a newer head", async () => {
+    const getLatestBlockNumber = vi.fn(async () => { throw new Error("latest head must not be read"); });
+    const fake = adapter({ getLatestBlockNumber });
+    const result = await resolveAgentIdentity(IDENTITY, { adapter: fake.value, sourceBlockNumber: 108n });
+
+    expect(getLatestBlockNumber).not.toHaveBeenCalled();
+    expect(fake.calls).toEqual([
+      ["code", 108n], ["owner", 108n], ["uri", 108n], ["wallet", 108n],
+    ]);
+    expect(result.sourceBlockNumber).toBe("108");
+  });
+
   it("rejects a reorg when the selected block hash changes after card resolution", async () => {
     let reads = 0;
     const getBlock = vi.fn(async (blockNumber: bigint) => ({

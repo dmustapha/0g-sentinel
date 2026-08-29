@@ -3,13 +3,14 @@ import { keccak256, toUtf8Bytes } from "ethers";
 import { canonicalize } from "json-canonicalize";
 
 import type {
-  ApiErrorShape, CanonicalIdentity, DiscoveryRecord, HealthSnapshot, OperatorRunInput,
+  ApiErrorShape, CanonicalIdentity, HealthSnapshot, OperatorRunInput, ProofLockDiscoveryResponse,
   OperatorRunProgress, OperatorTerminalResult, ProofLockDetailResponse, ProofLockRecord,
   ProofLockWriteOutcome, RunnerStage, VerifiedProof,
 } from "./prooflock-types";
 
 const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
 const hex32 = z.string().regex(/^0x[0-9a-f]{64}$/i);
+const nonZeroHex32 = hex32.refine((value) => !/^0x0{64}$/i.test(value));
 const decimal = z.string().regex(/^(0|[1-9]\d*)$/);
 const identitySchema = z.object({
   identity: z.object({ namespace: z.literal("eip155"), chainId: z.literal(16661), registryAddress: hex20, agentId: decimal }),
@@ -114,10 +115,35 @@ export async function readProofLockDetail(identityKey: string, signal?: AbortSig
   return z.object({ identityKey: hex32, proofLock: lockSchema, detail: detailSchema }).parse(body) as ProofLockDetailResponse;
 }
 
-export async function discoverProofLocks(signal?: AbortSignal): Promise<readonly DiscoveryRecord[]> {
+export async function discoverProofLocks(signal?: AbortSignal): Promise<ProofLockDiscoveryResponse> {
   const body = await requestJson("/api/discover", { signal });
-  return z.object({ identities: z.array(z.object({ identityKey: hex32, transactionHash: hex32,
-    blockNumber: z.number().int().nonnegative() })) }).parse(body).identities as readonly DiscoveryRecord[];
+  const source = { identityKey: nonZeroHex32, transactionHash: nonZeroHex32,
+    blockNumber: z.number().int().nonnegative() };
+  const discoveryLock = lockSchema.extend({ identityKey: nonZeroHex32, envelopeDigest: nonZeroHex32,
+    storageRoot: nonZeroHex32, computeRoot: nonZeroHex32, artifactHash: nonZeroHex32 });
+  const verified = z.object({ status: z.literal("VERIFIED"), ...source, proofId: nonZeroHex32,
+    proofLock: discoveryLock, detail: detailSchema });
+  const unavailable = z.object({ status: z.literal("ENRICHMENT_UNAVAILABLE"), ...source,
+    code: z.literal("DEPENDENCY_UNAVAILABLE") }).strict();
+  const schema = z.object({ identities: z.array(z.discriminatedUnion("status", [verified, unavailable])),
+    latestBlock: z.number().int().nonnegative(), fromBlock: z.number().int().nonnegative(),
+    toBlock: z.number().int().nonnegative(), confirmations: z.number().int().positive(),
+    observedAt: z.string().datetime(), cap: z.number().int().positive(), returned: z.number().int().nonnegative(),
+    complete: z.literal(false) }).refine((value) => validDiscoveryMetadata(value),
+    { message: "Discovery metadata is inconsistent" });
+  return schema.parse(body) as ProofLockDiscoveryResponse;
+}
+
+function validDiscoveryMetadata(value: Readonly<{ identities: readonly Readonly<{ identityKey: string;
+  blockNumber: number; status: string; proofLock?: Readonly<{ identityKey: string }> }>[]; latestBlock: number;
+  fromBlock: number; toBlock: number; confirmations: number; cap: number; returned: number }>): boolean {
+  const identities = value.identities.map((row) => row.identityKey.toLowerCase());
+  return value.latestBlock >= value.confirmations - 1
+    && value.toBlock === value.latestBlock - value.confirmations + 1
+    && value.fromBlock <= value.toBlock && value.returned === value.identities.length
+    && value.returned <= value.cap && new Set(identities).size === identities.length
+    && value.identities.every((row) => row.blockNumber >= value.fromBlock && row.blockNumber <= value.toBlock
+      && (row.status !== "VERIFIED" || row.proofLock?.identityKey.toLowerCase() === row.identityKey.toLowerCase()));
 }
 
 export async function verifyProof(proofId: string, identityKey: string, signal?: AbortSignal, sourceTxHash?: string): Promise<VerifiedProof> {

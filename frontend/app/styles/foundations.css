@@ -1,0 +1,22 @@
+@layer reset {
+  *, *::before, *::after { box-sizing: border-box; }
+  * { margin: 0; padding: 0; }
+}
+
+@layer base.prooflock {
+  html { background: var(--surface-canvas); }
+  body { min-width: 0; background: var(--surface-canvas); color: var(--text-on-dark); font: 400 var(--type-body)/var(--line-body) var(--font-body); -webkit-font-smoothing: antialiased; }
+  button, input { font: inherit; font-size: var(--type-body); }
+  button { color: inherit; }
+  a { color: inherit; text-decoration: none; }
+  code, .mono { font-family: var(--font-mono); font-size: var(--type-data); line-height: var(--line-data); }
+  h1, h2, h3 { font-family: var(--font-display); font-weight: 600; line-height: var(--line-heading); letter-spacing: -.025em; }
+  h1 { font-size: var(--type-display-lg); }
+  h2 { font-size: var(--type-display-sm); }
+  h3 { font-size: 1.15rem; }
+  p { color: var(--text-muted-on-dark); }
+  dt { color: var(--data-row-label-on-paper); font: 500 var(--data-row-label-type)/var(--line-caption) var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+  dd { color: var(--data-row-value-on-paper); }
+  input { width: 100%; min-width: 0; min-height: var(--field-min-height); border: 1px solid var(--field-border); border-radius: var(--shape-square); padding: 13px 14px; background: var(--field-surface); color: var(--field-text); outline: 0; }
+  input::placeholder { color: var(--text-placeholder-on-dark); }
+}

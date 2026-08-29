@@ -1,0 +1,14 @@
+@layer motion {
+  @keyframes pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+  @keyframes rail-in { from { opacity: 0; transform: translateY(7px); } }
+  .button { transition: transform var(--duration-standard) var(--ease-standard); }
+  .identity-skeleton { animation: pulse var(--duration-maximum) var(--ease-standard) infinite alternate; }
+  .rail-stage { animation: rail-in var(--duration-standard) var(--ease-standard) both; animation-delay: calc(var(--step) * var(--duration-stagger)); }
+  .loading-ledger i { animation: pulse var(--duration-maximum) var(--ease-standard) infinite alternate; }
+  .loading-ledger i:nth-child(2) { animation-delay: var(--duration-fast); }
+  .loading-ledger i:nth-child(3) { animation-delay: var(--duration-standard); }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+  }
+}

@@ -1,0 +1,99 @@
+@layer layouts {
+  .wrap { position: relative; z-index: var(--layer-content); width: min(100%, var(--measure-ledger)); margin-inline: auto; padding-inline: 28px; }
+  .texture { position: fixed; inset: 0; z-index: var(--layer-canvas); pointer-events: none; opacity: .34; background-image: radial-gradient(var(--texture-dot) .55px, transparent .55px); background-size: 4px 4px; mask-image: linear-gradient(to bottom, var(--shadow-ink), transparent 75%); }
+  .topbar-inner { min-height: 70px; max-width: var(--measure-ledger); margin: auto; padding: 12px 28px; display: flex; align-items: center; gap: 18px; }
+  .nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .ledger-hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); min-height: 670px; display: grid; align-items: center; }
+  .ledger-grid { position: absolute; inset: 0; }
+  .hero-ledger { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: clamp(44px, 8vw, 110px); align-items: center; padding-block: var(--space-11); }
+  .principle-strip { margin-top: 36px; display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .workspace-section, .trust-section { padding-block: var(--space-11); position: relative; z-index: 1; }
+  .section-heading, .page-heading { max-width: var(--measure-prose); margin-bottom: 38px; }
+  .section-heading h2, .page-heading h1 { margin: 12px 0 14px; }
+  .evaluate-workbench { display: grid; gap: var(--proof-plane-gap); }
+  .input-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+  .card-row, .decision-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+  .micro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .operator-panel { display: grid; grid-template-columns: 1fr minmax(300px, .8fr); gap: 28px; align-items: end; }
+  .operator-controls { display: grid; gap: var(--space-1); }
+  .action-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  .proof-ceremony { display: grid; gap: 0; }
+  .rail-stage { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
+  .coverage-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+  .coverage-item { display: grid; grid-template-columns: 22px 1fr; gap: var(--space-1); }
+  .trust-grid { display: grid; grid-template-columns: .65fr 1fr; gap: 60px; }
+  .trust-copy { display: grid; gap: 18px; }
+  .inventory-page, .detail-page, .proof-page, .proof-detail { min-height: calc(100vh - 70px); }
+  .inventory-legend { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
+  .identity-link { display: grid; gap: 3px; }
+  .inventory-cards { display: none; }
+  .loading-ledger { display: flex; align-items: center; gap: var(--space-1); }
+  .legacy-banner, .trust-disclosure { display: grid; gap: 4px; }
+  .detail-header { margin: 30px 0; display: flex; justify-content: space-between; gap: var(--space-3); align-items: flex-end; }
+  .fixture-badge { display: grid; gap: 4px; }
+  .decision-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
+  .consumer-call { margin-bottom: 18px; display: grid; gap: 5px; }
+  .detail-page .coverage-card, .detail-page .evidence-stack, .detail-page .lifecycle-card { margin-bottom: 18px; }
+  .evidence-segment { margin-top: 20px; }
+  .commitments { margin-top: 26px; }
+  .lifecycle-rail { margin-top: 22px; display: grid; gap: 10px; }
+  .life-node { display: grid; gap: 4px; }
+  .lifecycle-controls { margin-top: 18px; grid-template-columns: 1fr; }
+  .drift-diff { display: grid; gap: 7px; }
+  .verify-sheet { display: grid; gap: 10px; max-width: var(--measure-verify); }
+  .health-heading { margin-top: 70px; }
+  .health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .health-cell dl { margin-top: 18px; display: grid; gap: var(--space-1); }
+  .health-cell dl div { display: flex; justify-content: space-between; gap: var(--space-1); }
+  .verification-control { margin-top: 18px; display: grid; gap: 14px; }
+  .verification-result { display: grid; gap: 6px; }
+  .centered-state { min-height: calc(100vh - 70px); display: grid; place-content: center; justify-items: center; gap: var(--space-2); padding: 30px; text-align: center; }
+  .foot-inner { min-height: 90px; display: flex; align-items: center; gap: var(--space-2); }
+  .flink { margin-left: auto; }
+}
+
+@layer layouts {
+  @media (max-width: 850px) {
+    .hero-ledger, .trust-grid { grid-template-columns: 1fr; }
+    .ledger-hero { min-height: 0; }
+    .guarantee-sheet { max-width: var(--measure-narrow); }
+    .operator-panel { grid-template-columns: 1fr; }
+    .inventory-table { display: none; }
+    .inventory-cards { display: grid; }
+    .inventory-card .card-row > div { min-width: 0; }
+    .decision-grid, .health-grid { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 600px) {
+    .topbar-inner { flex-wrap: wrap; gap: 8px 12px; }
+    .network-tag { margin-left: auto; }
+    .nav { order: 3; margin: 0; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
+    .nav a { text-align: center; padding: 7px 3px; }
+    .workspace-section, .trust-section { padding-block: 62px; }
+    .hero-ledger { padding-block: 58px; }
+    .input-row { grid-template-columns: 1fr; }
+    .card-row, .detail-header { align-items: flex-start; flex-direction: column; }
+    .micro-grid, .coverage-grid, .decision-grid, .health-grid { grid-template-columns: 1fr; }
+    .proof-list > div { grid-template-columns: 1fr; gap: 4px; }
+    .proof-ceremony { padding: 18px 14px; }
+    .rail-line { left: 31px; }
+    .detail-header { display: flex; }
+    .foot-inner { align-items: flex-start; flex-direction: column; padding-block: var(--space-3); }
+    .flink { margin: 0; }
+  }
+
+  @media (max-width: 390px) {
+    .wrap, .topbar-inner { padding-inline: var(--space-2); }
+    .guarantee-sheet, .evidence-card, .evaluate-form, .operator-panel, .verify-sheet { padding: var(--space-2-5); }
+    .rail-stage { grid-template-columns: 30px 1fr; gap: 9px; }
+    .rail-line { left: 29px; }
+    .action-row { display: grid; }
+    .action-row .button { width: 100%; }
+  }
+
+  @media (max-width: 320px) {
+    .wrap, .topbar-inner { padding-inline: var(--space-1-5); }
+    .guarantee-sheet { clip-path: none; }
+    .status-chip, .coverage-total, .verified-stamp { white-space: normal; text-align: center; }
+  }
+}

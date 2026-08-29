@@ -1,0 +1,13 @@
+@layer utilities.prooflock {
+  .break { overflow-wrap: anywhere; }
+  .state-good { --state: var(--status-success-on-dark); color: var(--status-success-on-dark); }
+  .state-warn { --state: var(--status-caution-on-dark); color: var(--status-caution-on-dark); }
+  .state-bad { --state: var(--status-failure-on-dark); color: var(--status-failure-on-dark); }
+  .state-unknown { --state: var(--status-unknown-on-dark); color: var(--status-unknown-on-dark); }
+  .evidence-card.state-good { --state: var(--status-success-on-paper); color: var(--status-success-on-paper); }
+  .evidence-card.state-warn { --state: var(--status-caution-on-paper); color: var(--status-caution-on-paper); }
+  .evidence-card.state-bad { --state: var(--status-failure-on-paper); color: var(--status-failure-on-paper); }
+  .evidence-card.state-unknown { --state: var(--status-unknown-on-paper); color: var(--status-unknown-on-paper); }
+  :focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
+  .evidence-card :focus-visible, .guarantee-sheet :focus-visible { outline-color: var(--focus-on-paper); }
+}

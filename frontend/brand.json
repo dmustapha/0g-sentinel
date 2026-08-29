@@ -1,27 +1,7 @@
 {
-  "colors": {
-    "primary": "#111214",
-    "secondary": "#191A1E",
-    "accent": "#AD72FF",
-    "accentSecondary": "#F1EBDF",
-    "background": "#111214",
-    "surface": "#222329",
-    "surfaceHover": "#2B2C32",
-    "text": "#F2EFE8",
-    "textMuted": "#A7A39B",
-    "textDim": "#716F6B",
-    "safe": "#39B982",
-    "caution": "#D79A36",
-    "flagged": "#E45D5D",
-    "border": "rgba(242,239,232,0.14)"
-  },
-  "fonts": {
-    "heading": "Chakra Petch",
-    "body": "IBM Plex Sans",
-    "mono": "IBM Plex Mono"
-  },
-  "logoPath": "public/logo.svg",
-  "darkMode": true,
   "name": "0G Sentinel ProofLock",
-  "tagline": "Identity-bound, policy-scoped admission with exact 0G evidence."
+  "tagline": "Identity-bound, policy-scoped admission with exact 0G evidence.",
+  "logoPath": "public/logo.svg",
+  "canonicalStyleSource": "app/styles/tokens.css",
+  "designSystem": "DESIGN_SYSTEM.md"
 }

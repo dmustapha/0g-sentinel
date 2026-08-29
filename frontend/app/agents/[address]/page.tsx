@@ -9,7 +9,6 @@ import { DemoFixtureBadge } from "@/components/DemoFixtureBadge";
 import { EvidenceProofCard } from "@/components/EvidenceProofCard";
 import { GateDecisionCard } from "@/components/GateDecisionCard";
 import { ProofCoverageGrid } from "@/components/ProofCoverageGrid";
-import { RescanButton } from "@/components/RescanButton";
 import { SealLifecycle } from "@/components/SealLifecycle";
 import { TrustRoleDisclosure } from "@/components/TrustRoleDisclosure";
 import { HistoricalProofDetails, ProofLocatorNotice } from "@/components/VerifyEvidenceButton";
@@ -31,8 +30,8 @@ export default function AgentDetailPage({ params }: { params: { address: string 
   const agentId = params.address; const rawSourceTxHash = useSearchParams().get("sourceTxHash");
   const sourceParam = parseSourceTxHashParam(rawSourceTxHash);
   const sourceTxHash = sourceParam.status === "VALID" ? sourceParam.value : undefined;
-  const sourceStatus = sourceParam.status; const [revision, setRevision] = useState(0);
-  const locatorKey = JSON.stringify([agentId, sourceStatus, sourceTxHash ?? null, revision]);
+  const sourceStatus = sourceParam.status;
+  const locatorKey = JSON.stringify([agentId, sourceStatus, sourceTxHash ?? null]);
   const [state, setState] = useState<ViewState>({ key: locatorKey, status: "LOADING" });
   const generation = useRef(0);
   const load = useCallback(async (signal: AbortSignal) => {
@@ -62,10 +61,10 @@ export default function AgentDetailPage({ params }: { params: { address: string 
   const visible = state.key === locatorKey ? state : { key: locatorKey, status: "LOADING" as const };
   if (visible.status === "ERROR") return <section className="workspace-section"><div className="wrap empty-ledger state-bad"><h1>ProofLock unavailable</h1><p>{visible.message}</p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>;
   if (visible.status === "LOADING") return <section className="workspace-section"><div className="wrap loading-ledger"><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate…</span></div></section>;
-  return <Detail data={visible.data} onComplete={() => setRevision((value) => value + 1)} />;
+  return <Detail data={visible.data} />;
 }
 
-function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
+function Detail({ data }: { data: ViewData }) {
   const { identity, detail, proofId, linkedProof } = data; const record = detail.proofLock;
   const proof = linkedProof.status === "MATCH" ? linkedProof.proof : undefined;
   const gate: GateDecision | null = detail.detail.gate.status === "VERIFIED" ? { allowed: detail.detail.gate.allowed,
@@ -83,7 +82,9 @@ function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
     <ProofCoverageGrid coverage={record.coverage} /><EvidenceProofCard record={record} compute={compute} storage={storage} />
     {proof && <HistoricalProofDetails proof={proof} explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />}
     <SealLifecycle currentVersion={record.version} previousProofId={previous} identityKey={record.identityKey} />
-    <RescanButton identity={identity} record={record} previousProofId={proofId} onComplete={onComplete} />
+    <aside className="operator-panel lifecycle-controls"><div><span className="card-kicker">Authorized mutation</span>
+      <h3>Drift · reseal · recovery</h3><p>Operator credentials and paid actions are isolated from this public proof record.</p></div>
+      <Link className="button primary" href={`/operator?agentId=${identity.identity.agentId}`}>Open operator workbench</Link></aside>
     <TrustRoleDisclosure admin={process.env.NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS} guardian={process.env.NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS}
       validator={process.env.NEXT_PUBLIC_PROOFLOCK_SCANNER_ADDRESS} custodyConstraint={process.env.NEXT_PUBLIC_PROOFLOCK_CUSTODY_CONSTRAINT} />
     <aside className="legacy-banner"><b>LEGACY V1 · excluded</b><span>Historical AttestationRegistry records never appear as an active ProofLock V2 lease.</span></aside>

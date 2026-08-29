@@ -7,8 +7,9 @@ import {
   createResolutionCoordinator, evaluateReducer, executePaidRun, identityLocked, initialEvaluateState,
 } from "@/lib/evaluate-state";
 import type { EvaluateAction, EvaluateState, ResolutionResult } from "@/lib/evaluate-state";
-import { ProofLockApiError, readProofLockDetail, recoverProofLock, resolveIdentity, runProofLock } from "@/lib/prooflock-client";
-import type { ApiErrorShape, CanonicalIdentity, GateDecision } from "@/lib/prooflock-types";
+import { ProofLockApiError, computeProofId, readProofLockDetail, recoverProofLock,
+  resolveIdentity, runProofLock } from "@/lib/prooflock-client";
+import type { ApiErrorShape, CanonicalIdentity, GateDecision, ProofLockRecord } from "@/lib/prooflock-types";
 import { GateDecisionCard } from "./GateDecisionCard";
 import { IdentityResolver, identityInputState } from "./IdentityResolver";
 import { ProofCoverageGrid } from "./ProofCoverageGrid";
@@ -16,8 +17,14 @@ import { StreamingScanPanel } from "./StreamingScanPanel";
 import { WriteRecoveryPanel, createOperatorRunSession, interruptedOutcome } from "./WriteRecoveryPanel";
 import type { OperatorDisplayOutcome } from "./WriteRecoveryPanel";
 
-export function ScanInput(_legacyProps: { defaultAddress?: string } = {}) {
-  const workflow = useEvaluateWorkflow(); const { state } = workflow;
+type ExistingControls = Readonly<{ identity: CanonicalIdentity; record: ProofLockRecord;
+  previousProofId: `0x${string}`; refresh(): void }>;
+
+export function ScanInput({ initialAgentId = "", renderExisting }: Readonly<{
+  initialAgentId?: string; renderExisting?: (controls: ExistingControls) => React.ReactNode;
+}> = {}) {
+  const workflow = useEvaluateWorkflow(initialAgentId); const { state } = workflow;
+  const previousProofId = state.lock ? proofIdFor(state.lock) : null;
   return <div className="evaluate-workbench">
     <ResolveForm agentId={state.agentId} phase={state.phase} valid={workflow.valid}
       invalid={workflow.invalid} demoId={workflow.demoId} locked={identityLocked(state)} onEdit={workflow.editIdentity}
@@ -38,11 +45,13 @@ export function ScanInput(_legacyProps: { defaultAddress?: string } = {}) {
       onRecover={() => void workflow.recover()} />}
     {state.lock && <ProofCoverageGrid coverage={state.lock.coverage} />}
     {state.identity && <GateDecisionCard decision={state.gate} />}
+    {state.identity && state.lock && previousProofId && renderExisting?.({ identity: state.identity,
+      record: state.lock, previousProofId, refresh: () => { workflow.refreshCurrent(); } })}
   </div>;
 }
 
-function useEvaluateWorkflow() {
-  const [state, dispatch] = useReducer(evaluateReducer, initialEvaluateState);
+function useEvaluateWorkflow(initialAgentId: string) {
+  const [state, dispatch] = useReducer(evaluateReducer, { ...initialEvaluateState, agentId: initialAgentId });
   const coordinator = useCoordinator(dispatch);
   const runActiveRef = useRef(false);
   const valid = validAgentId(state.agentId);
@@ -53,6 +62,7 @@ function useEvaluateWorkflow() {
   const write = useOperatorWriteWorkflow(state, dispatch, coordinator, runActiveRef);
   return { state, dispatch, valid, invalid, resolutionStatus, demoId: process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID,
     cancelResolution: coordinator.cancel,
+    refreshCurrent: () => { if (state.identity) coordinator.refresh(state.agentId); },
     resolveCurrent: (agentId: string) => coordinator.resolve(agentId, validAgentId(agentId)), ...write };
 }
 
@@ -221,7 +231,7 @@ function OperatorPanel({ state, dispatch, evaluate, cancel, outcome, canceling, 
   const reconcileRequired = outcome?.status === "CONNECTION_INTERRUPTED";
   return <div className="operator-panel"><div><span className="card-kicker">Named operator-authorized validator</span><h3>{state.lock ? "Current ProofLock found" : "Issue first ProofLock"}</h3>
     <p>Mutation requires an operator token. It stays only in this form state and is cleared after the request.</p></div>
-    {state.lock ? <p className="inline-state state-warn">Existing v{state.lock.version}. Reseal is available on the ProofLock detail page.</p> : <div className="operator-controls">
+    {state.lock ? <p className="inline-state state-warn">Existing v{state.lock.version}. Continue with drift, reseal, or recovery below.</p> : <div className="operator-controls">
       <label htmlFor="operator-token">One-time operator token</label><input id="operator-token" type="password"
         value={state.operatorToken} disabled={busy} onChange={(event) => dispatch({ type: "EDIT_OPERATOR_TOKEN", token: event.target.value })}
         autoComplete="off" spellCheck={false} />
@@ -259,4 +269,9 @@ function apiError(cause: unknown, code: string, message: string, stage = "VALIDA
 
 function validAgentId(agentId: string): boolean {
   return agentId !== "" && identityInputState(agentId, "idle") !== "INVALID";
+}
+
+function proofIdFor(record: ProofLockRecord): `0x${string}` | null {
+  const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
+  return registry ? computeProofId(registry, record) : null;
 }

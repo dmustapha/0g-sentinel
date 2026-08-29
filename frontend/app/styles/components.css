@@ -105,10 +105,12 @@
   .health-cell .card-row b { color: var(--text); font: 600 var(--type-data)/var(--line-data) var(--font-display); }
   .health-cell dd { color: var(--muted); font: 500 var(--data-row-value-type)/var(--line-data) var(--font-mono); text-align: right; }
   .proof-identifiers { padding: 20px; border: 1px solid var(--line); background: var(--graphite-3); }
+  .proof-identifiers dt { color: var(--text-muted-on-dark); }
   .proof-identifiers dd { color: var(--text); }
-  .verification-result { border: 1px solid currentColor; padding: 20px; }
+  .verification-result > [data-plane] { min-width: 0; border: 1px solid currentColor; padding: 20px; }
   .verification-result b { font-family: var(--font-display); }
-  .verification-proof { color: var(--ink); background: var(--paper); padding: 20px; }
+  .verification-result__action { margin-top: var(--space-3); }
+  .verification-proof { margin-top: var(--space-3); color: var(--ink); background: var(--paper); padding: 20px; }
   footer { position: relative; z-index: var(--layer-content); border-top: 1px solid var(--line); background: var(--surface-ceremony); }
   .foot-inner { min-height: 90px; color: var(--muted); }
   .fmk { color: var(--text); font: 700 var(--type-data)/var(--line-data) var(--font-display); }

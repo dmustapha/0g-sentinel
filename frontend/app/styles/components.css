@@ -115,4 +115,51 @@
   .fnet { font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .flink { min-height: var(--control-min); display: inline-flex; align-items: center; color: var(--violet); font-size: var(--type-data); }
   .identity-link { min-height: var(--control-min); }
+
+  .ui-button { min-height: var(--button-min-height); display: inline-grid; place-items: center; border: 1px solid var(--button-border); border-radius: var(--shape-square); padding: var(--space-2-5) var(--space-4); background: transparent; color: var(--text-on-dark); box-shadow: var(--button-shadow); cursor: pointer; font: 600 var(--type-caption)/var(--line-caption) var(--font-display); letter-spacing: .05em; text-transform: uppercase; transition: transform var(--duration-standard); }
+  .ui-button__content { display: inline-grid; place-items: center; }
+  .ui-button__label { grid-area: 1 / 1; }
+  .ui-button__label[aria-hidden="true"] { visibility: hidden; }
+  .ui-button--primary { min-height: var(--button-primary-height); border-color: var(--button-primary-surface); background: var(--button-primary-surface); color: var(--button-primary-text); }
+  .ui-button--quiet { border-color: transparent; box-shadow: none; color: var(--action-on-dark); }
+  .ui-button--destructive { border-color: currentColor; background: transparent; color: var(--status-failure-on-dark); }
+  .ui-button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  .ui-button[aria-disabled="true"] { cursor: progress; }
+  .ui-button:not(:disabled):not([aria-disabled="true"]):active { transform: translate(2px, 2px); }
+  .ui-button:focus-visible, .ui-field__input:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
+
+  .ui-field { display: grid; gap: var(--space-2); }
+  .ui-field__label { color: var(--text-on-dark); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); letter-spacing: .08em; text-transform: uppercase; }
+  .ui-field__input { min-height: var(--field-min-height); width: 100%; border: 1px solid var(--field-border); border-radius: var(--shape-square); padding: var(--space-2-5) var(--space-3); background: var(--field-surface); color: var(--field-text); font: 400 var(--type-body)/var(--line-body) var(--font-body); }
+  .ui-field__input--mono { font-family: var(--font-mono); }
+  .ui-field__input[readonly] { background: var(--surface-subtle); }
+  .ui-field[data-invalid="true"] .ui-field__input { border-color: var(--status-failure-on-dark); }
+  .ui-field__hint, .ui-field__error { font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .ui-field__hint { color: var(--text-muted-on-dark); }
+  .ui-field__error { color: var(--status-failure-on-dark); }
+
+  .ui-state-message { border: 1px solid var(--state-message-border); padding: var(--state-message-padding); background: var(--surface-control); color: var(--text-on-dark); }
+  .ui-state-message__live { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+  .ui-state-message__mark { min-width: var(--icon-sm); font: 700 var(--type-body)/var(--line-body) var(--font-mono); text-align: center; }
+  .ui-state-message__title { display: block; font: 600 var(--type-data)/var(--line-data) var(--font-display); }
+  .ui-state-message__detail { margin-top: var(--space-1); color: var(--text-muted-on-dark); font-size: var(--type-data); }
+  .ui-state-message__action { margin-top: var(--space-3); }
+  .ui-state-message--loading { border-style: dashed; color: var(--action-on-dark); }
+  .ui-state-message--empty { color: var(--status-unknown-on-dark); }
+  .ui-state-message--error { border-width: 2px; color: var(--status-failure-on-dark); }
+  .ui-state-message--unavailable { border-width: 2px; border-style: dashed; color: var(--status-caution-on-dark); }
+  .ui-state-message--success { color: var(--status-success-on-dark); }
+
+  @media (hover: hover) and (pointer: fine) {
+    .ui-button:not(:disabled):not([aria-disabled="true"]):hover { transform: translateY(-2px); }
+  }
+  @media (forced-colors: active) {
+    .ui-button, .ui-field__input, .ui-state-message { border-color: currentColor; forced-color-adjust: auto; }
+    .ui-button:focus-visible, .ui-field__input:focus-visible { outline: 2px solid currentColor; }
+    .ui-state-message--error, .ui-state-message--unavailable { border-style: double; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ui-button { transition: none; }
+    .ui-button:not(:disabled):not([aria-disabled="true"]):active { transform: none; }
+  }
 }

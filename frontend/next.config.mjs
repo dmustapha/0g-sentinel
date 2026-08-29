@@ -6,6 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "standalone",
+  distDir: process.env.PROOFLOCK_PLAYWRIGHT_DEV === "1"
+    ? "output/playwright/mock-next"
+    : ".next",
   experimental: {
     outputFileTracingIncludes: {
       "/*": ["./.prooflock-build/sdk-worker.cjs"],

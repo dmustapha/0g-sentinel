@@ -1,6 +1,12 @@
 import Link from "next/link";
 
-export default function OverviewPage() {
+export default function OverviewPage({ searchParams = {} }: Readonly<{
+  searchParams?: Readonly<{ __prooflock_e2e_error?: string | readonly string[] }>;
+}>) {
+  if (process.env.PROOFLOCK_E2E_ERROR_TRIGGER === "enabled"
+    && searchParams.__prooflock_e2e_error === "1") {
+    throw new Error("Deterministic ProofLock E2E error boundary trigger");
+  }
   return <><section className="ledger-hero"><div className="ledger-grid" aria-hidden="true" /><div className="wrap hero-ledger">
     <div><span className="eyebrow">ProofLock · 0G Mainnet · 16661</span><h1>Admission should be <em>provable.</em></h1>
       <p className="hero-lede">Sentinel resolves an ERC-8004 identity, binds its current wallet to typed checks and verified 0G evidence, then issues a seven-day lease that AgentGateV2 can enforce.</p>

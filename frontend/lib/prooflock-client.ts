@@ -445,7 +445,7 @@ export async function runProofLock(
   const saved = readActiveOperation(storageKey);
   const stableKey = idempotencyKey ?? saved?.idempotencyKey ?? activeKeys.get(inputKey) ?? `client-${crypto.randomUUID()}`;
   rememberActiveOperation(storageKey, inputKey, { idempotencyKey: stableKey, recoveryId: saved?.recoveryId });
-  const response = await fetch("/api/admin/prooflocks/stream", { method: "POST", signal, cache: "no-store",
+  const response = await fetch("/api/admin/prooflocks/stream", { method: "POST", signal, cache: "no-store", redirect: "error",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}`,
       "idempotency-key": stableKey }, body: JSON.stringify(input) });
   if (!response.ok || !response.body) {
@@ -520,6 +520,7 @@ function forgetActiveOperation(key: string, inputKey: string): void {
 export async function recoverProofLock(recovery: string, token: string,
   transactionHash?: string, signal?: AbortSignal): Promise<ProofLockWriteOutcome> {
   const body = await requestJson("/api/admin/prooflocks/recovery", { method: "POST", signal, cache: "no-store",
+    redirect: "error",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify({ recoveryId: recovery, ...(transactionHash ? { transactionHash } : {}) }) });
   const result = writeOutcomeSchema.parse(z.object({ result: writeOutcomeSchema }).parse(body).result) as ProofLockWriteOutcome;
@@ -538,7 +539,8 @@ function forgetRecoveredOperation(recoveryId: string): void {
 
 export async function markOnDemandDrift(identityKey: string, token: string, signal?: AbortSignal): Promise<unknown> {
   return requestJson(`/api/admin/prooflocks/${encodeURIComponent(identityKey)}/drift`, { method: "POST", signal,
-    cache: "no-store", headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    cache: "no-store", redirect: "error",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: JSON.stringify({ mark: true }) });
 }
 

@@ -50,3 +50,8 @@
 > ccontinue then
 
 **Action:** Continued the atomic Tasks 5 and 6 implementation from the saved green-core checkpoint through production integration and verification.
+
+### Prompt 10
+> where are we, and due to the new og integrations do we need api credits
+
+**Action:** Reported the Task 9E verification checkpoint, clarified that local browser/release work needs no paid 0G access, and distinguished later funded mainnet wallets and provider configuration from generic API credits.

@@ -1,15 +1,17 @@
 import { configuredDisplayText } from "@/lib/safe-display";
+import { StatusBadge } from "@/components/ui/StatusBadge";
 
 export function TrustRoleDisclosure({ admin, guardian, validator, custodyConstraint }: Readonly<{
   admin?: string; guardian?: string; validator?: string; custodyConstraint?: string;
 }>) {
   const configured = [admin, guardian, validator].every(isAddress);
   const distinct = configured && new Set([admin!.toLowerCase(), guardian!.toLowerCase(), validator!.toLowerCase()]).size === 3;
-  return <aside className={`trust-disclosure ${distinct ? "state-warn" : "state-bad"}`}><h2>Named trust roles</h2>
+  return <aside className="trust-disclosure"><div className="card-row"><h2>Named trust roles</h2>
+    <StatusBadge status={distinct ? "VERIFIED" : "UNAVAILABLE"} /></div>
     <dl className="proof-list"><Role name="Admin" address={admin} note="Owns deployment administration." />
       <Role name="Guardian" address={guardian} note="May mark on-demand drift lifecycle state." />
       <Role name="Validator" address={validator} note="Is authorized to issue ProofLock leases." /></dl>
-    <p>{distinct ? "Deployment enforces three distinct addresses." : "Role handoff is missing or violates the three-distinct-address constraint."} <code><bdi>{configuredDisplayText(
+    <p>{distinct ? "Deployment enforces three distinct addresses; additional scanners may be independently authorized." : "Role configuration unavailable; handoff is missing or violates the three-distinct-address constraint."} <code><bdi>{configuredDisplayText(
       custodyConstraint, "custody constraint not configured", { maxGraphemes: 160 })}</bdi></code>. Drift detection is on-demand, not continuous.</p></aside>;
 }
 

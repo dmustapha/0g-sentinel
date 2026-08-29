@@ -16,7 +16,11 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:prooflock": "vitest run tests/prooflock"
+    "test:prooflock": "vitest run tests/prooflock",
+    "test:e2e": "node scripts/run-playwright.mjs",
+    "test:e2e:mocked": "node scripts/run-playwright.mjs --project=chromium-mocked",
+    "test:e2e:standalone": "node scripts/run-playwright.mjs --project=standalone-smoke",
+    "test:e2e:install": "playwright install chromium firefox webkit"
   },
   "dependencies": {
     "@0gfoundation/0g-compute-ts-sdk": "^0.9.0",
@@ -32,6 +36,8 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@playwright/test": "1.62.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

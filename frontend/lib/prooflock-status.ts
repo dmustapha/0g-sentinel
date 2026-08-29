@@ -1,4 +1,4 @@
-import type { GateReasonCode, LeaseStatus, ProofLockDetail, ProofLockRecord } from "./prooflock-types";
+import type { GateReasonCode, LeaseStatus, ProofLockDetail, ProofLockInventoryItem, ProofLockRecord } from "./prooflock-types";
 
 export function admittedConsumerState(record: Pick<ProofLockRecord, "subject" | "version">,
   gate: ProofLockDetail["gate"], consumer: ProofLockDetail["consumer"], expectedSubject: string): boolean {
@@ -46,9 +46,27 @@ export function leaseStatus(lock: ProofLockRecord, nowSeconds = Math.floor(Date.
   return validUntil - nowSeconds <= EXPIRING_WINDOW_SECONDS ? "EXPIRING" : "ACTIVE";
 }
 
-export function proofLockUrgency(lock: ProofLockRecord, nowSeconds = Math.floor(Date.now() / 1000)): number {
-  const status = leaseStatus(lock, nowSeconds);
-  return ({ DRIFTED: 0, REVOKED: 1, EXPIRED: 2, EXPIRING: 2, INCOMPLETE: 3, ACTIVE: 4 } as const)[status];
+export function proofLockUrgency(item: ProofLockInventoryItem, nowSeconds = Math.floor(Date.now() / 1000)): number {
+  if (item.status === "ENRICHMENT_UNAVAILABLE") return 3;
+  const status = leaseStatus(item.proofLock, nowSeconds);
+  if (status === "DRIFTED" || status === "REVOKED") return 0;
+  if (item.detail.status === "VERIFIED" && item.detail.gate.status === "VERIFIED"
+    && (!item.detail.gate.allowed || item.detail.gate.reason !== 0)) return 1;
+  if (status === "EXPIRED" || status === "EXPIRING") return 2;
+  if (!isAdmittedInventoryItem(item, status)) return 3;
+  return 4;
+}
+
+export function compareProofLockUrgency(left: ProofLockInventoryItem, right: ProofLockInventoryItem,
+  nowSeconds = Math.floor(Date.now() / 1000)): number {
+  return proofLockUrgency(left, nowSeconds) - proofLockUrgency(right, nowSeconds)
+    || right.blockNumber - left.blockNumber
+    || left.identityKey.toLowerCase().localeCompare(right.identityKey.toLowerCase());
+}
+
+function isAdmittedInventoryItem(item: ProofLockInventoryItem, status: LeaseStatus): boolean {
+  return item.status === "VERIFIED" && status === "ACTIVE" && item.detail.status === "VERIFIED"
+    && admittedConsumerState(item.proofLock, item.detail.gate, item.detail.consumer, item.detail.identity.agentWallet);
 }
 
 const COVERAGE_ITEMS = [

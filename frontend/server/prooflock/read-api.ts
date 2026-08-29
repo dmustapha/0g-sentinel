@@ -49,6 +49,7 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
     : undefined;
   const resolveIdentity = (agentId: string, signal: AbortSignal) =>
     resolveProductionIdentity(rpcUrl, provider, agentId, signal);
+  const detailDependencies = createDetailDependencies(env, rpcUrl, provider);
   const proofLocator = registryAddress ? createHistoricalProofLocator(provider as unknown as HistoricalProofProvider, registryAddress, {
     fromBlock: requiredInteger(env.PROOFLOCK_REGISTRY_V2_FROM_BLOCK,
       "PROOFLOCK_REGISTRY_V2_FROM_BLOCK", 0),
@@ -77,20 +78,7 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       await assertZeroGMainnetRpc(rpcUrl, signal);
       return proofLocator.locate(identityKey, proofId, sourceTxHash, signal);
     },
-    readProofLockDetail: (record, signal) => enrichProofLockDetail(record, {
-      downloadEvidence: (root, innerSignal) => downloadEvidence(
-        requiredHttps(env.ZERO_G_STORAGE_INDEXER, "ZERO_G_STORAGE_INDEXER"), root, innerSignal),
-      verifyStorageRoot: verifyDownloadedRoot,
-      resolveIdentity,
-      checkGate: (agentId, innerSignal) => checkAgentGate(
-        rpcUrl, provider, requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS,
-          "PROOFLOCK_AGENT_GATE_V2_ADDRESS"), requiredAddress(env.PROOFLOCK_REGISTRY_V2_ADDRESS,
-          "PROOFLOCK_REGISTRY_V2_ADDRESS"), agentId, innerSignal),
-      simulateConsumer: (agentId, subject, innerSignal) => simulateProofLockConsumer(
-        rpcUrl, provider, requiredAddress(env.PROOFLOCK_CONSUMER_ADDRESS,
-          "PROOFLOCK_CONSUMER_ADDRESS"), requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS,
-          "PROOFLOCK_AGENT_GATE_V2_ADDRESS"), agentId, subject, innerSignal),
-    }, signal),
+    readProofLockDetail: (record, signal) => enrichProofLockDetail(record, detailDependencies, signal),
     computeProofId: computeProofLockId,
     verifyStoredEvidence: (record, signal) => verifyStorageEvidence({
       indexerUrl: requiredHttps(env.ZERO_G_STORAGE_INDEXER, "ZERO_G_STORAGE_INDEXER"),
@@ -99,6 +87,33 @@ export function createProductionReadDependencies(env = process.env): ProofLockRe
       flowFromBlock: requiredInteger(env.PROOFLOCK_STORAGE_FLOW_FROM_BLOCK, "PROOFLOCK_STORAGE_FLOW_FROM_BLOCK", 0),
       confirmations: requiredInteger(env.PROOFLOCK_STORAGE_CONFIRMATIONS ?? "3", "PROOFLOCK_STORAGE_CONFIRMATIONS", 1),
     }, record, signal),
+  });
+}
+
+export function createProductionDiscoveryDetailReader(env = process.env) {
+  const rpcUrl = requiredHttps(env.ZERO_G_RPC || env.NEXT_PUBLIC_RPC_URL, "ZERO_G_RPC");
+  const provider = new JsonRpcProvider(rpcUrl);
+  return (record: RegistryProofLockRecord, blockNumber: number, signal: AbortSignal) => {
+    if (!Number.isSafeInteger(blockNumber) || blockNumber < 0) throw new Error("Discovery block is invalid");
+    return enrichProofLockDetail(record, createDetailDependencies(env, rpcUrl, provider, blockNumber), signal);
+  };
+}
+
+function createDetailDependencies(env: NodeJS.ProcessEnv, rpcUrl: string,
+  provider: JsonRpcProvider, blockNumber?: number): ProofLockDetailDependencies {
+  return Object.freeze({
+    downloadEvidence: (root, signal) => downloadEvidence(
+      requiredHttps(env.ZERO_G_STORAGE_INDEXER, "ZERO_G_STORAGE_INDEXER"), root, signal),
+    verifyStorageRoot: verifyDownloadedRoot,
+    resolveIdentity: (agentId, signal) => resolveProductionIdentity(rpcUrl, provider, agentId, signal, blockNumber),
+    checkGate: (agentId, signal) => checkAgentGate(rpcUrl, provider,
+      requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS, "PROOFLOCK_AGENT_GATE_V2_ADDRESS"),
+      requiredAddress(env.PROOFLOCK_REGISTRY_V2_ADDRESS, "PROOFLOCK_REGISTRY_V2_ADDRESS"),
+      agentId, signal, fetch, blockNumber),
+    simulateConsumer: (agentId, subject, signal) => simulateProofLockConsumer(rpcUrl, provider,
+      requiredAddress(env.PROOFLOCK_CONSUMER_ADDRESS, "PROOFLOCK_CONSUMER_ADDRESS"),
+      requiredAddress(env.PROOFLOCK_AGENT_GATE_V2_ADDRESS, "PROOFLOCK_AGENT_GATE_V2_ADDRESS"),
+      agentId, subject, signal, blockNumber),
   });
 }
 
@@ -429,11 +444,13 @@ async function resolveProductionIdentity(
   provider: JsonRpcProvider,
   agentId: string,
   signal: AbortSignal,
+  blockNumber?: number,
 ): Promise<ResolvedAgentIdentity> {
   await assertZeroGMainnetRpc(rpcUrl, signal);
   signal.throwIfAborted();
   const result = await resolveAgentIdentity({ namespace: "eip155", chainId: CHAIN_ID,
-    registryAddress: ERC8004_IDENTITY_REGISTRY, agentId }, { provider, finalityConfirmations: 5 });
+    registryAddress: ERC8004_IDENTITY_REGISTRY, agentId }, { provider, finalityConfirmations: 5,
+    sourceBlockNumber: blockNumber === undefined ? undefined : BigInt(blockNumber) });
   signal.throwIfAborted();
   return result;
 }
@@ -463,14 +480,15 @@ export async function checkAgentGate(
   agentId: string,
   signal: AbortSignal,
   rpcFetch: RpcFetch = fetch,
+  blockNumber?: number,
 ) {
   await assertZeroGMainnetRpc(rpcUrl, signal, rpcFetch);
   signal.throwIfAborted();
-  const code = await raceAbort(provider.getCode(gateAddress), signal);
+  const code = await raceAbort(provider.getCode(gateAddress, blockNumber), signal);
   if (code === "0x") throw new Error("AgentGate is unavailable");
   const [registryRaw, identityRaw] = await Promise.all([
-    raceAbort(provider.call({ to: gateAddress, data: GATE.encodeFunctionData("registry") }), signal),
-    raceAbort(provider.call({ to: gateAddress, data: GATE.encodeFunctionData("identityRegistry") }), signal),
+    raceAbort(provider.call(atBlock(gateAddress, GATE.encodeFunctionData("registry"), blockNumber)), signal),
+    raceAbort(provider.call(atBlock(gateAddress, GATE.encodeFunctionData("identityRegistry"), blockNumber)), signal),
   ]);
   const registry = String(GATE.decodeFunctionResult("registry", registryRaw)[0]).toLowerCase();
   const identity = String(GATE.decodeFunctionResult("identityRegistry", identityRaw)[0]).toLowerCase();
@@ -478,13 +496,13 @@ export async function checkAgentGate(
     throw new Error("AgentGate pointer mismatch");
   }
   const data = GATE.encodeFunctionData("checkAgent", [BigInt(agentId)]);
-  const raw = await raceAbort(provider.call({ to: gateAddress, data }), signal);
+  const raw = await raceAbort(provider.call(atBlock(gateAddress, data, blockNumber)), signal);
   const decoded = GATE.decodeFunctionResult("checkAgent", raw);
   return { allowed: Boolean(decoded.allowed), reason: Number(decoded.reason),
     subject: String(decoded.subject).toLowerCase(), version: BigInt(decoded.version) };
 }
 
-async function simulateProofLockConsumer(
+export async function simulateProofLockConsumer(
   rpcUrl: string,
   provider: JsonRpcProvider,
   consumerAddress: `0x${string}`,
@@ -492,23 +510,28 @@ async function simulateProofLockConsumer(
   agentId: string,
   subject: string,
   signal: AbortSignal,
+  blockNumber?: number,
 ) {
   await assertZeroGMainnetRpc(rpcUrl, signal);
   signal.throwIfAborted();
-  const code = await raceAbort(provider.getCode(consumerAddress), signal);
+  const code = await raceAbort(provider.getCode(consumerAddress, blockNumber), signal);
   if (code === "0x") throw new Error("ProofLock consumer is unavailable");
-  const pointerRaw = await raceAbort(provider.call({ to: consumerAddress,
-    data: CONSUMER.encodeFunctionData("gate") }), signal);
+  const pointerRaw = await raceAbort(provider.call(atBlock(consumerAddress,
+    CONSUMER.encodeFunctionData("gate"), blockNumber)), signal);
   const pointer = String(CONSUMER.decodeFunctionResult("gate", pointerRaw)[0]).toLowerCase();
   if (pointer !== gateAddress.toLowerCase()) throw new Error("ProofLock consumer Gate mismatch");
   try {
-    await raceAbort(provider.call({ to: consumerAddress, from: subject,
-      data: CONSUMER.encodeFunctionData("acceptAgent", [BigInt(agentId)]) }), signal);
+    await raceAbort(provider.call({ ...atBlock(consumerAddress,
+      CONSUMER.encodeFunctionData("acceptAgent", [BigInt(agentId)]), blockNumber), from: subject }), signal);
     return { accepted: true, address: consumerAddress };
   } catch (error) {
     if (isError(error, "CALL_EXCEPTION")) return { accepted: false, address: consumerAddress };
     throw error;
   }
+}
+
+function atBlock(to: string, data: string, blockNumber?: number) {
+  return blockNumber === undefined ? { to, data } : { to, data, blockTag: blockNumber };
 }
 
 function assertStoredIdentityBinding(

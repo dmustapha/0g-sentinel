@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { REGISTRY_V2_INTERFACE, computeProofLockId, type RegistryProofLockRecord } from "../../server/prooflock/chain";
 import { ProofMismatchError } from "../../server/prooflock/errors";
 import { checkAgentGate, createHistoricalProofLocator, type HistoricalProofProvider } from "../../server/prooflock/read-api";
+import * as readApi from "../../server/prooflock/read-api";
 import { ERC8004_IDENTITY_REGISTRY, type Bytes32 } from "../../server/prooflock/types";
 
 const hex = (byte: string, size: number): `0x${string}` => `0x${byte.repeat(size)}`;
@@ -15,6 +16,7 @@ const GATE = new Interface([
   "function registry() view returns (address)", "function identityRegistry() view returns (address)",
   "function checkAgent(uint256) view returns (bool,uint8,address,uint64)",
 ]);
+const CONSUMER = new Interface(["function gate() view returns (address)", "function acceptAgent(uint256 agentId)"]);
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -42,6 +44,42 @@ describe("production Gate binding", () => {
     await expect(checkAgentGate("https://rpc.example", provider as never, GATE_ADDRESS, REGISTRY,
       "7", new AbortController().signal, chainFetch())).rejects.toThrow("pointer");
     expect(provider.call.mock.calls.some(([request]) => String(request.data).startsWith(checkSelector))).toBe(false);
+  });
+
+  it("pins Gate bytecode, pointers, and decision to the discovery block", async () => {
+    const provider = { getCode: vi.fn(async () => "0x6000"), call: vi.fn(async ({ data }) => {
+      if (data === GATE.encodeFunctionData("registry")) return GATE.encodeFunctionResult("registry", [REGISTRY]);
+      if (data === GATE.encodeFunctionData("identityRegistry")) {
+        return GATE.encodeFunctionResult("identityRegistry", [ERC8004_IDENTITY_REGISTRY]);
+      }
+      return GATE.encodeFunctionResult("checkAgent", [false, 11, hex("bb", 20), 1n]);
+    }) };
+    const result = await checkAgentGate("https://rpc.example", provider as never, GATE_ADDRESS, REGISTRY,
+      "7", new AbortController().signal, chainFetch(), 116);
+
+    expect(result).toMatchObject({ allowed: false, reason: 11, version: 1n });
+    expect(provider.getCode).toHaveBeenCalledWith(GATE_ADDRESS, 116);
+    expect(provider.call.mock.calls.every(([request]) => request.blockTag === 116)).toBe(true);
+  });
+
+  it("pins consumer bytecode, Gate pointer, and simulation to the discovery block", async () => {
+    const simulate = (readApi as unknown as { simulateProofLockConsumer: (rpc: string, provider: unknown,
+      consumer: `0x${string}`, gate: `0x${string}`, agentId: string, subject: string,
+      signal: AbortSignal, blockNumber: number) => Promise<Readonly<{ accepted: boolean }>> }).simulateProofLockConsumer;
+    expect(simulate).toBeTypeOf("function");
+    vi.stubGlobal("fetch", chainFetch());
+    const consumerAddress = hex("14", 20);
+    const subject = hex("bb", 20);
+    const provider = { getCode: vi.fn(async () => "0x6000"), call: vi.fn(async ({ data }) => {
+      if (data === CONSUMER.encodeFunctionData("gate")) return CONSUMER.encodeFunctionResult("gate", [GATE_ADDRESS]);
+      return "0x";
+    }) };
+
+    await expect(simulate("https://rpc.example", provider, consumerAddress, GATE_ADDRESS,
+      "7", subject, new AbortController().signal, 116)).resolves.toMatchObject({ accepted: true });
+    expect(provider.getCode).toHaveBeenCalledWith(consumerAddress, 116);
+    expect(provider.call.mock.calls.every(([request]) => request.blockTag === 116)).toBe(true);
+    expect(provider.call).toHaveBeenCalledWith(expect.objectContaining({ from: subject, blockTag: 116 }));
   });
 });
 

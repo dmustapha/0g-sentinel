@@ -36,6 +36,7 @@ export type ResolveIdentityOptions = Readonly<{
   provider?: Provider;
   adapter?: IdentityChainAdapter;
   finalityConfirmations?: number;
+  sourceBlockNumber?: bigint;
   cardLoaderOptions?: CardLoaderOptions;
 }>;
 
@@ -46,7 +47,9 @@ export async function resolveAgentIdentity(
   const identity = validateIdentity(input);
   const adapter = resolveAdapter(options);
   await requireMainnet(adapter);
-  const blockNumber = await finalizedBlock(adapter, options.finalityConfirmations);
+  const blockNumber = options.sourceBlockNumber === undefined
+    ? await finalizedBlock(adapter, options.finalityConfirmations)
+    : explicitSourceBlock(options.sourceBlockNumber);
   const block = await loadSourceBlock(adapter, blockNumber);
   await requireRegistry(adapter, blockNumber);
   const agentId = BigInt(identity.agentId);
@@ -69,6 +72,11 @@ export async function resolveAgentIdentity(
     sourceBlockHash: normalizeBytes32(block.hash),
     card: registration.card,
   });
+}
+
+function explicitSourceBlock(value: bigint): bigint {
+  if (typeof value !== "bigint" || value < 0n || value > BigInt(Number.MAX_SAFE_INTEGER)) invalidIdentity();
+  return value;
 }
 
 async function assertSourceBlockUnchanged(

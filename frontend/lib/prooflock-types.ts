@@ -216,7 +216,26 @@ export type ProofLockDetail =
       consumer: Readonly<{ status: "UNKNOWN"; accepted: false }> }>;
 
 export type ProofLockDetailResponse = Readonly<{ identityKey: Bytes32; proofLock: ProofLockRecord; detail: ProofLockDetail }>;
-export type ProofLockInventoryItem = ProofLockDetailResponse & Readonly<{ transactionHash: Bytes32; blockNumber: number }>;
+export type VerifiedProofLockInventoryItem = DiscoveryRecord & ProofLockDetailResponse & Readonly<{
+  status: "VERIFIED";
+  proofId: Bytes32;
+}>;
+export type UnavailableProofLockInventoryItem = DiscoveryRecord & Readonly<{
+  status: "ENRICHMENT_UNAVAILABLE";
+  code: "DEPENDENCY_UNAVAILABLE";
+}>;
+export type ProofLockInventoryItem = VerifiedProofLockInventoryItem | UnavailableProofLockInventoryItem;
+export type ProofLockDiscoveryResponse = Readonly<{
+  identities: readonly ProofLockInventoryItem[];
+  latestBlock: number;
+  fromBlock: number;
+  toBlock: number;
+  confirmations: number;
+  observedAt: string;
+  cap: number;
+  returned: number;
+  complete: false;
+}>;
 
 export type SubsystemName = "rpc" | "identity" | "registry" | "gate" | "compute" | "storage";
 export type SubsystemHealth = Readonly<{

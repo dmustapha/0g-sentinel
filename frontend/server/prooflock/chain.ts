@@ -69,7 +69,7 @@ export interface RegistryChainAdapter {
   readonly registryAddress: HexAddress;
   getChainId(signal?: AbortSignal): Promise<bigint>;
   getCode(address: string, signal?: AbortSignal): Promise<string>;
-  getProofLock(identityKey: Bytes32, signal?: AbortSignal): Promise<RegistryProofLockRecord>;
+  getProofLock(identityKey: Bytes32, signal?: AbortSignal, blockTag?: number): Promise<RegistryProofLockRecord>;
   sendTransaction(transaction: Readonly<{ to: HexAddress; data: string }>): Promise<Readonly<{ hash: string; to: string; data: string; from: string }>>;
   waitForReceipt(hash: string, confirmations: number, timeoutMs: number, signal?: AbortSignal): Promise<RegistryReceipt | null>;
   getTransaction(hash: string, signal?: AbortSignal): Promise<Readonly<{ hash: string; to: string; data: string; from: string }> | null>;
@@ -86,7 +86,8 @@ export function createEthersRegistryChainAdapter(
     registryAddress: registry,
     getChainId: async (signal) => (await chainAbortable(provider.getNetwork(), signal)).chainId,
     getCode: (address, signal) => chainAbortable(provider.getCode(address), signal),
-    getProofLock: (identityKey, signal) => chainAbortable(getEthersProofLock(provider, registry, identityKey), signal),
+    getProofLock: (identityKey, signal, blockTag) => chainAbortable(
+      getEthersProofLock(provider, registry, identityKey, blockTag), signal),
     sendTransaction: async (transaction) => {
       const sent = await signer.sendTransaction(transaction);
       return { hash: sent.hash, to: transaction.to, data: transaction.data, from: sent.from };
@@ -154,9 +155,11 @@ async function getEthersProofLock(
   provider: Provider,
   registry: HexAddress,
   identityKey: Bytes32,
+  blockTag?: number,
 ): Promise<RegistryProofLockRecord> {
   const data = REGISTRY_V2_INTERFACE.encodeFunctionData("getProofLock", [identityKey]);
-  const raw = await provider.call({ to: registry, data });
+  const transaction = blockTag === undefined ? { to: registry, data } : { to: registry, data, blockTag };
+  const raw = await provider.call(transaction);
   const decoded = REGISTRY_V2_INTERFACE.decodeFunctionResult("getProofLock", raw)[0];
   return normalizeRecord(decoded);
 }

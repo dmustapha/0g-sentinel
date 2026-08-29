@@ -24,6 +24,7 @@ function InventoryCard({ item }: { item: ProofLockInventoryItem }) {
 }
 
 function values(item: ProofLockInventoryItem) {
+  if (item.status === "ENRICHMENT_UNAVAILABLE") return unavailableValues(item);
   const lease = leaseStatus(item.proofLock); const gate = item.detail.gate;
   const gateText = gate.status === "VERIFIED" ? gateReasonMeta(gate.reason) : null;
   const proofHref = historicalProofHref(item);
@@ -38,7 +39,14 @@ function values(item: ProofLockInventoryItem) {
     gate: <span className={admitted ? "state-good" : "state-bad"}>{gateText ? gateText.code : "UNKNOWN"}</span>,
     last: <span className="mono">block {item.blockNumber}</span>, tone: admitted ? "state-good" : lease === "EXPIRING" || lease === "INCOMPLETE" ? "state-warn" : "state-bad" };
 }
-function historicalProofHref(item: ProofLockInventoryItem): string | null {
+function unavailableValues(item: Extract<ProofLockInventoryItem, { status: "ENRICHMENT_UNAVAILABLE" }>) {
+  return { identity: <div><b>Enrichment unavailable</b><span className="mono">{short(item.identityKey)}</span>
+      <small>{item.code}</small></div>, coverage: <span>Unavailable</span>,
+    seal: <span className="mono">Registry tx {short(item.transactionHash)}</span>, lease: "UNKNOWN",
+    gate: <span className="state-unknown">UNKNOWN</span>, last: <span className="mono">block {item.blockNumber}</span>,
+    tone: "state-unknown" };
+}
+function historicalProofHref(item: Extract<ProofLockInventoryItem, { status: "VERIFIED" }>): string | null {
   const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
   if (!registry) return null;
   try { return `/proof/${computeProofId(registry, item.proofLock)}?identityKey=${item.identityKey}&sourceTxHash=${item.transactionHash}`; }

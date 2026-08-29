@@ -26,6 +26,33 @@
   .inventory-page, .detail-page, .proof-page, .proof-detail { min-height: calc(100vh - 70px); }
   .inventory-legend { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
   .identity-link { display: grid; gap: 3px; }
+  .inventory-table caption { padding: var(--space-2) 13px; color: var(--text-muted-on-dark); background: var(--surface-ceremony); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); text-align: left; }
+  .inventory-table th:nth-child(1) { width: 20%; }
+  .inventory-table th:nth-child(2) { width: 8%; }
+  .inventory-table th:nth-child(3) { width: 21%; }
+  .inventory-table th:nth-child(4) { width: 10%; }
+  .inventory-table th:nth-child(5) { width: 12%; }
+  .inventory-table th:nth-child(6) { width: 12%; }
+  .inventory-table th:nth-child(7) { width: 17%; }
+  .inventory-status { display: grid; gap: 5px; justify-items: start; }
+  .inventory-seal-source { display: grid; gap: 4px; }
+  .inventory-copy-value { min-width: 0; display: grid; gap: var(--space-1); }
+  .inventory-copy-value button { min-width: var(--control-min); min-height: var(--control-min); justify-self: start; border: 1px solid currentColor; background: transparent; color: var(--action-on-dark); cursor: pointer; }
+  .inventory-table a { color: var(--action-on-dark); text-decoration: underline; text-underline-offset: 3px; }
+  .inventory-table a:focus-visible, .inventory-copy-value button:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
+  .inventory-card-data { display: grid; margin-top: var(--space-2); }
+  .inventory-status-row, .inventory-action-row { display: grid; grid-template-columns: minmax(125px, .4fr) 1fr; gap: 18px; padding: 10px 0; border-top: 1px solid var(--border-subtle-on-dark); }
+  .inventory-status-row dd, .inventory-action-row dd { margin: 0; }
+  .inventory-card-identity, .inventory-card-identity dd { margin: 0; }
+  .inventory-card-identity b, .inventory-card .ui-data-row__value, .inventory-status-row dd, .inventory-action-row dd { color: var(--text-on-dark); }
+  .inventory-card .inventory-copy-value { color: var(--text-on-dark); }
+  .inventory-card .ui-data-row, .inventory-card .ui-data-row__label { border-color: var(--border-subtle-on-dark); }
+  .inventory-card .ui-data-row__label, .inventory-status-row dt, .inventory-action-row dt { color: var(--text-muted-on-dark); }
+  .inventory-card .ui-data-row__value a, .inventory-action-row a { color: var(--action-on-dark); }
+  .inventory-card .ui-data-row__value button { color: var(--action-on-dark); }
+  .inventory-card .ui-data-row__value a:focus-visible, .inventory-action-row a:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
+  .inventory-card .ui-data-row__value button:focus-visible { outline-color: var(--focus-on-dark); }
+  .inventory-order, .inventory-partial { margin-bottom: var(--space-2); }
   .inventory-cards { display: none; }
   .loading-ledger { display: flex; align-items: center; gap: var(--space-1); }
   .legacy-banner, .trust-disclosure { display: grid; gap: 4px; }
@@ -61,7 +88,9 @@
     .operator-panel { grid-template-columns: 1fr; }
     .inventory-table { display: none; }
     .inventory-cards { display: grid; }
+    .inventory-legend { display: none; }
     .inventory-card .card-row > div { min-width: 0; }
+    .inventory-card-data .ui-data-row, .inventory-status-row, .inventory-action-row { grid-template-columns: minmax(110px, .4fr) 1fr; }
     .decision-grid, .health-grid { grid-template-columns: 1fr 1fr; }
     .verification-result { grid-template-columns: 1fr; gap: var(--space-3); }
   }
@@ -76,6 +105,7 @@
     .input-row { grid-template-columns: 1fr; }
     .card-row, .detail-header { align-items: flex-start; flex-direction: column; }
     .micro-grid, .coverage-grid, .decision-grid, .health-grid { grid-template-columns: 1fr; }
+    .inventory-card-data .ui-data-row, .inventory-status-row, .inventory-action-row { grid-template-columns: 1fr; gap: 4px; }
     .proof-list > div { grid-template-columns: 1fr; gap: 4px; }
     .proof-ceremony { padding: 18px 14px; }
     .rail-line { left: 31px; }

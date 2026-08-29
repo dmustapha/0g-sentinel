@@ -2,7 +2,8 @@
 
 import { AbiCoder, keccak256 } from "ethers";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AdmissionLeaseCard } from "@/components/AdmissionLeaseCard";
 import { DemoFixtureBadge } from "@/components/DemoFixtureBadge";
 import { EvidenceProofCard } from "@/components/EvidenceProofCard";
@@ -11,33 +12,62 @@ import { ProofCoverageGrid } from "@/components/ProofCoverageGrid";
 import { RescanButton } from "@/components/RescanButton";
 import { SealLifecycle } from "@/components/SealLifecycle";
 import { TrustRoleDisclosure } from "@/components/TrustRoleDisclosure";
+import { HistoricalProofDetails, ProofLocatorNotice } from "@/components/VerifyEvidenceButton";
 import { computeProofId, readProofLockDetail, resolveIdentity, verifyProof } from "@/lib/prooflock-client";
+import { canonicalAgentHref, parseSourceTxHashParam, verifyLinkedHistoricalProof } from "@/lib/prooflock-routes";
 import { admittedConsumerState } from "@/lib/prooflock-status";
+import { isCanonicalAgentId } from "@/lib/prooflock-validation";
 import type { CanonicalIdentity, GateDecision, ProofLockDetailResponse, VerifiedProof } from "@/lib/prooflock-types";
+import type { LinkedHistoricalProof } from "@/lib/prooflock-routes";
 
-type ViewData = Readonly<{ identity: CanonicalIdentity; detail: ProofLockDetailResponse; proofId: `0x${string}`; proof?: VerifiedProof; consumerAllowed?: boolean }>;
+type ViewData = Readonly<{ identity: CanonicalIdentity; detail: ProofLockDetailResponse;
+  proofId: `0x${string}`; linkedProof: LinkedHistoricalProof; consumerAllowed: boolean }>;
+type ViewState =
+  | Readonly<{ key: string; status: "LOADING" }>
+  | Readonly<{ key: string; status: "READY"; data: ViewData }>
+  | Readonly<{ key: string; status: "ERROR"; message: string }>;
 
 export default function AgentDetailPage({ params }: { params: { address: string } }) {
-  const agentId = params.address; const [data, setData] = useState<ViewData>(); const [error, setError] = useState(""); const [revision, setRevision] = useState(0);
+  const agentId = params.address; const rawSourceTxHash = useSearchParams().get("sourceTxHash");
+  const sourceParam = parseSourceTxHashParam(rawSourceTxHash);
+  const sourceTxHash = sourceParam.status === "VALID" ? sourceParam.value : undefined;
+  const sourceStatus = sourceParam.status; const [revision, setRevision] = useState(0);
+  const locatorKey = JSON.stringify([agentId, sourceStatus, sourceTxHash ?? null, revision]);
+  const [state, setState] = useState<ViewState>({ key: locatorKey, status: "LOADING" });
+  const generation = useRef(0);
   const load = useCallback(async (signal: AbortSignal) => {
-    if (!/^(0|[1-9]\d*)$/.test(agentId)) throw new Error("Canonical decimal Agent ID required");
+    if (!isCanonicalAgentId(agentId)) throw new Error("Canonical decimal Agent ID required");
+    if (sourceStatus === "INVALID") throw new Error("Exact nonzero Registry source transaction required");
     const identity = await resolveIdentity(agentId, signal); const key = identityKey(identity);
     const detail = await readProofLockDetail(key, signal); const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
     if (!registry) throw new Error("RegistryV2 is not configured"); const proofId = computeProofId(registry, detail.proofLock);
-    const proof = await verifyProof(proofId, key, signal).catch(() => undefined);
+    const linkedProof = await verifyLinkedHistoricalProof({ proofId, identityKey: key,
+      sourceTxHash }, signal, verifyProof);
     const consumerAllowed = admittedConsumerState(detail.proofLock, detail.detail.gate, detail.detail.consumer, identity.agentWallet);
-    setData({ identity, detail, proofId, proof, consumerAllowed });
-  }, [agentId]);
-  useEffect(() => { const controller = new AbortController(); setError(""); void load(controller.signal).catch((cause) => {
-    if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "ProofLock detail is unavailable");
-  }); return () => controller.abort(); }, [load, revision]);
-  if (error) return <section className="workspace-section"><div className="wrap empty-ledger state-bad"><h1>ProofLock unavailable</h1><p>{error}</p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>;
-  if (!data) return <section className="workspace-section"><div className="wrap loading-ledger"><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate…</span></div></section>;
-  return <Detail data={data} onComplete={() => setRevision((value) => value + 1)} />;
+    return { identity, detail, proofId, linkedProof, consumerAllowed };
+  }, [agentId, sourceStatus, sourceTxHash]);
+  useEffect(() => {
+    const currentGeneration = ++generation.current; const controller = new AbortController();
+    setState({ key: locatorKey, status: "LOADING" });
+    void load(controller.signal).then((data) => {
+      if (!controller.signal.aborted && generation.current === currentGeneration) {
+        setState({ key: locatorKey, status: "READY", data });
+      }
+    }).catch((cause) => {
+      if (!controller.signal.aborted && generation.current === currentGeneration) setState({ key: locatorKey,
+        status: "ERROR", message: cause instanceof Error ? cause.message : "ProofLock detail is unavailable" });
+    });
+    return () => controller.abort();
+  }, [load, locatorKey]);
+  const visible = state.key === locatorKey ? state : { key: locatorKey, status: "LOADING" as const };
+  if (visible.status === "ERROR") return <section className="workspace-section"><div className="wrap empty-ledger state-bad"><h1>ProofLock unavailable</h1><p>{visible.message}</p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>;
+  if (visible.status === "LOADING") return <section className="workspace-section"><div className="wrap loading-ledger"><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate…</span></div></section>;
+  return <Detail data={visible.data} onComplete={() => setRevision((value) => value + 1)} />;
 }
 
 function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
-  const { identity, detail, proofId, proof } = data; const record = detail.proofLock;
+  const { identity, detail, proofId, linkedProof } = data; const record = detail.proofLock;
+  const proof = linkedProof.status === "MATCH" ? linkedProof.proof : undefined;
   const gate: GateDecision | null = detail.detail.gate.status === "VERIFIED" ? { allowed: detail.detail.gate.allowed,
     reason: detail.detail.gate.reason, subject: detail.detail.gate.subject, version: detail.detail.gate.version } : null;
   const envelope = proof?.storage.envelope; const previous = typeof envelope?.previousProofId === "string" ? envelope.previousProofId : undefined;
@@ -46,10 +76,12 @@ function Detail({ data, onComplete }: { data: ViewData; onComplete(): void }) {
     <header className="detail-header"><div><span className="eyebrow">Canonical ERC-8004 identity</span><h1>Agent #{identity.identity.agentId}</h1><p className="mono break">{identity.agentWallet}</p></div>
       {process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId && <DemoFixtureBadge />}</header>
     {detail.detail.status === "UNAVAILABLE" && <div className="inline-state state-warn"><b>{detail.detail.code}</b> · Stored evidence could not enrich this identity. Gate remains UNKNOWN and blocked.</div>}
+    <ProofLocatorNotice status={linkedProof.status} currentHref={canonicalAgentHref(identity.identity.agentId)} />
     <div className="decision-grid"><GateDecisionCard decision={gate} /><AdmissionLeaseCard record={record} /></div>
     <div className={data.consumerAllowed ? "consumer-call state-good" : "consumer-call state-bad"}><span className="card-kicker">Guarded ProofLockConsumerDemo simulation</span>
       <b>{data.consumerAllowed ? "CONSUMER ACTION ACCEPTED" : "CONSUMER ACTION BLOCKED"}</b><p>Accepted only when the server-guarded consumer simulation, Gate subject, Gate version, current lease, and ERC-8004 wallet all match.</p></div>
     <ProofCoverageGrid coverage={record.coverage} /><EvidenceProofCard record={record} compute={compute} storage={storage} />
+    {proof && <HistoricalProofDetails proof={proof} explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />}
     <SealLifecycle currentVersion={record.version} previousProofId={previous} identityKey={record.identityKey} />
     <RescanButton identity={identity} record={record} previousProofId={proofId} onComplete={onComplete} />
     <TrustRoleDisclosure admin={process.env.NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS} guardian={process.env.NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS}

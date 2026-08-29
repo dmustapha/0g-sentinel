@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useReducer, useRef } from "react";
 import { ProofLockApiError, readProofLockDetail, verifyProof } from "@/lib/prooflock-client";
 import { admittedConsumerState, gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
 import { createVerificationCoordinator, initialVerificationState, verificationReducer } from "@/lib/verification-state";
 import type { VerificationAction } from "@/lib/verification-state";
 import type { CurrentVerification, ProofLockDetailResponse, ProofVerificationState, VerifiedProof } from "@/lib/prooflock-types";
+import type { LinkedHistoricalProof } from "@/lib/prooflock-routes";
 
 type AbortKind = "TIMEOUT" | "CANCELED";
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -71,9 +73,10 @@ function newVerificationCoordinator(dispatch: (action: VerificationAction) => vo
   });
 }
 
-export function verificationStateForError(cause: unknown, abortKind?: AbortKind): Extract<ProofVerificationState, "MISMATCH" | "UNAVAILABLE" | "TIMEOUT" | "CANCELED"> {
+export function verificationStateForError(cause: unknown, abortKind?: AbortKind): Extract<ProofVerificationState, "MISMATCH" | "HINT_REQUIRED" | "UNAVAILABLE" | "TIMEOUT" | "CANCELED"> {
   if (abortKind) return abortKind;
   if (cause instanceof ProofLockApiError && (cause.detail.code === "MISMATCH" || cause.detail.code === "NOT_FOUND")) return "MISMATCH";
+  if (cause instanceof ProofLockApiError && cause.detail.code === "HINT_REQUIRED") return "HINT_REQUIRED";
   return "UNAVAILABLE";
 }
 
@@ -98,13 +101,29 @@ export function HistoricalProofDetails({ proof, explorerBase }: Readonly<{
   const compute = firstCompute(proof.storage.envelope);
   const uploadTx = stringField(proof.storage.storageCommitment, "uploadTxHash");
   const base = explorerBase.replace(/\/$/, "");
-  return <div className="verification-proof"><dl className="proof-list"><div><dt>Historical source</dt><dd><a className="text-link mono break" href={`${base}/tx/${proof.source.transactionHash}`} target="_blank" rel="noreferrer">{proof.source.transactionHash}</a></dd></div>
+  return <div className="verification-proof"><dl className="proof-list"><div><dt>Registry source transaction</dt><dd><a className="text-link mono break" href={`${base}/tx/${proof.source.transactionHash}`} target="_blank" rel="noreferrer">{proof.source.transactionHash}</a></dd></div>
     <div><dt>Source block</dt><dd>block {proof.source.blockNumber}</dd></div><div><dt>Lease version</dt><dd>Version {proof.proofLock.version}</dd></div>
     <div><dt>Registry</dt><dd><a className="text-link mono break" href={`${base}/address/${proof.source.registryAddress}`} target="_blank" rel="noreferrer">{proof.source.registryAddress}</a></dd></div>
     <div><dt>Source block hash</dt><dd className="mono break">{proof.source.blockHash}</dd></div><div><dt>Log index</dt><dd>{proof.source.logIndex}</dd></div>
     <div><dt>Storage root</dt><dd className="mono break">{proof.proofLock.storageRoot}</dd></div><div><dt>Storage upload transaction</dt><dd>{uploadTx ? <a className="text-link mono break" href={`${base}/tx/${uploadTx}`} target="_blank" rel="noreferrer">{uploadTx}</a> : "Unavailable"}</dd></div>
     <div><dt>Compute provider</dt><dd className="mono break">{compute?.provider ?? "Unavailable"}</dd></div><div><dt>Compute model</dt><dd>{compute?.model ?? "Unavailable"}</dd></div>
     <div><dt>Retrieval</dt><dd>Exact bytes, digest, and recomputed 0G root match</dd></div><div><dt>Capability</dt><dd className="mono">networkProofVerified: false</dd></div></dl></div>;
+}
+
+export function ProofLocatorNotice({ status, currentHref }: Readonly<{
+  status: LinkedHistoricalProof["status"];
+  currentHref: string;
+}>) {
+  if (status === "MATCH") return null;
+  if (status === "STALE_LINK") return <div className="inline-state state-warn"><b>Stale proof link</b>
+    <p>The supplied Registry source transaction does not identify the current record. No historical match is claimed.</p>
+    <Link className="text-link" href={currentHref}>Retry current record without source locator</Link></div>;
+  if (status === "MISMATCH") return <div className="inline-state state-bad"><b>Historical proof mismatch</b>
+    <p>The linked artifact failed cryptographic or finalized provenance checks. No historical match is claimed.</p></div>;
+  if (status === "HINT_REQUIRED") return <div className="inline-state state-warn"><b>Source transaction required</b>
+    <p>This proof is outside the bounded historical lookup. Open a link carrying its exact Registry source transaction.</p></div>;
+  return <div className="inline-state state-warn"><b>Historical evidence unavailable</b>
+    <p>The current record remains visible, but its historical artifact was not verified.</p></div>;
 }
 
 function firstCompute(envelope: Readonly<Record<string, unknown>>): { provider: string; model: string } | undefined {
@@ -120,7 +139,8 @@ function stringField(value: Readonly<Record<string, unknown>> | undefined, key: 
 
 export function VerificationResult({ state, current, reasonCode, busy = false }: { state: ProofVerificationState; current?: CurrentVerification["status"]; reasonCode?: string; busy?: boolean }) {
   const labels: Record<ProofVerificationState, string> = { IDLE: "Ready to verify", VERIFYING: "Verifying exact stored bytes…", MATCH: "Historical artifact matches",
-    MISMATCH: "Historical artifact mismatch", UNAVAILABLE: "Evidence unavailable", TIMEOUT: "Verification timed out", CANCELED: "Verification canceled", RETRYING: "Retrying verification" };
+    MISMATCH: "Historical artifact mismatch", HINT_REQUIRED: "Source transaction required", UNAVAILABLE: "Evidence unavailable",
+    TIMEOUT: "Verification timed out", CANCELED: "Verification canceled", RETRYING: "Retrying verification" };
   const tone = state === "MATCH" ? "state-good" : state === "IDLE" || state === "VERIFYING" || state === "RETRYING" ? "state-warn" : "state-bad";
   const currentVisible = current && current !== "IDLE";
   return <div className={`verification-result ${tone}`} role="status" aria-live="polite" aria-busy={busy}><b>{labels[state]}</b>{state === "MATCH" && <p>Canonical envelope, record bindings, verified Compute transcript, finalized Storage commitment, and retrieval match at verification time.</p>}

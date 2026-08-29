@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { canonicalAgentHref } from "@/lib/agents";
-import { computeProofId } from "@/lib/prooflock-client";
+import { canonicalAgentHref, canonicalProofHref } from "@/lib/prooflock-routes";
 import { admittedConsumerState, gateReasonMeta, leaseStatus } from "@/lib/prooflock-status";
 import type { ProofLockInventoryItem } from "@/lib/prooflock-types";
 
@@ -29,7 +28,7 @@ function values(item: ProofLockInventoryItem) {
   const gateText = gate.status === "VERIFIED" ? gateReasonMeta(gate.reason) : null;
   const proofHref = historicalProofHref(item);
   const identity = item.detail.status === "VERIFIED"
-    ? <Link className="identity-link" href={canonicalAgentHref(item.detail.identity.agentId)}><b>Agent #{item.detail.identity.agentId}</b><span className="mono">{short(item.detail.identity.agentWallet)}</span></Link>
+    ? <Link className="identity-link" href={canonicalAgentHref(item.detail.identity.agentId, item.transactionHash)}><b>Agent #{item.detail.identity.agentId}</b><span className="mono">{short(item.detail.identity.agentWallet)}</span></Link>
     : proofHref ? <Link className="identity-link" href={proofHref}><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code} · verify stored proof</small></Link>
       : <div><b>Identity unavailable</b><span className="mono">{short(item.identityKey)}</span><small>{item.detail.code}</small></div>;
   const admitted = lease === "ACTIVE" && item.detail.status === "VERIFIED" &&
@@ -47,9 +46,7 @@ function unavailableValues(item: Extract<ProofLockInventoryItem, { status: "ENRI
     tone: "state-unknown" };
 }
 function historicalProofHref(item: Extract<ProofLockInventoryItem, { status: "VERIFIED" }>): string | null {
-  const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
-  if (!registry) return null;
-  try { return `/proof/${computeProofId(registry, item.proofLock)}?identityKey=${item.identityKey}&sourceTxHash=${item.transactionHash}`; }
+  try { return canonicalProofHref(item.proofId, item.identityKey, item.transactionHash); }
   catch { return null; }
 }
 function short(value: string): string { return `${value.slice(0, 8)}…${value.slice(-6)}`; }

@@ -2,8 +2,11 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
+import OverviewPage from "../../app/page";
 import { GateDecisionCard } from "../../components/GateDecisionCard";
+import { FeaturedProofLink } from "../../components/FeaturedProofLink";
 import { identityInputState } from "../../components/IdentityResolver";
+import { OperatorWorkbench } from "../../components/OperatorWorkbench";
 import { ProofCoverageGrid } from "../../components/ProofCoverageGrid";
 import { CompletionStatus, ResolveForm, ScanInput } from "../../components/ScanInput";
 import { StreamingScanPanel } from "../../components/StreamingScanPanel";
@@ -15,8 +18,98 @@ const STAGES: readonly RunnerStage[] = [
   "RUNNING_COMPUTE", "CANONICALIZING_EVIDENCE", "UPLOADING_STORAGE",
   "VERIFYING_STORAGE", "WRITING_CHAIN", "READING_CHAIN_BACK", "SEALED",
 ];
+const FEATURED_ENV = [
+  "PROOFLOCK_FEATURED_PROOF_ID", "PROOFLOCK_FEATURED_IDENTITY_KEY", "PROOFLOCK_FEATURED_SOURCE_TX_HASH",
+  "PROOFLOCK_FEATURED_AGENT_ID", "PROOFLOCK_FEATURED_VERIFIED_AT",
+] as const;
 
 describe("Evaluate ceremony", () => {
+  it("keeps public entry secret-free and falls back to recent ProofLocks", () => {
+    const link = renderToStaticMarkup(React.createElement(FeaturedProofLink, { config: {} }));
+    const html = withoutFeaturedEnvironment(() => renderToStaticMarkup(React.createElement(OverviewPage)));
+    expect(link).toContain('href="/agents"');
+    expect(link).toContain("Browse recent ProofLocks");
+    expect(html).toContain('href="/agents"');
+    expect(html).toContain("Browse recent ProofLocks");
+    expect(html.match(/<h1(?:\s|>)/g)).toHaveLength(1);
+    expect(html).not.toMatch(/operator token|verified evaluation|reseal|recover write|seal ProofLock/i);
+    expect(html).not.toContain('type="password"');
+    expect(html).not.toContain("/operator?");
+  });
+
+  it("links a complete valid featured-proof locator without exposing configuration", () => {
+    const proofId = `0x${"11".repeat(32)}`;
+    const identityKey = `0x${"22".repeat(32)}`;
+    const sourceTxHash = `0x${"33".repeat(32)}`;
+    const html = renderToStaticMarkup(React.createElement(FeaturedProofLink, { config: {
+      proofId, identityKey, sourceTxHash, agentId: "1842", verifiedAt: "2026-08-29T15:00:00.000Z",
+    } }));
+    expect(html).toContain("Open featured real ProofLock");
+    expect(html).toContain(`/proof/${proofId}?identityKey=${identityKey}&amp;sourceTxHash=${sourceTxHash}`);
+    expect(html).toContain("Canonical Agent #1842");
+    expect(html).toContain('<time dateTime="2026-08-29T15:00:00.000Z"');
+  });
+
+  it.each([
+    { proofId: `0x${"11".repeat(32)}` },
+    { identityKey: `0x${"22".repeat(32)}` },
+    { sourceTxHash: `0x${"33".repeat(32)}` },
+    { proofId: `0x${"11".repeat(32)}`, identityKey: `0x${"22".repeat(32)}` },
+    { proofId: `0x${"11".repeat(32)}`, sourceTxHash: `0x${"33".repeat(32)}` },
+    { identityKey: `0x${"22".repeat(32)}`, sourceTxHash: `0x${"33".repeat(32)}` },
+    { proofId: `0x${"11".repeat(32)}`, identityKey: `0x${"22".repeat(32)}`, sourceTxHash: "not-a-hash" },
+    { proofId: `0x${"00".repeat(32)}`, identityKey: `0x${"22".repeat(32)}`, sourceTxHash: `0x${"33".repeat(32)}` },
+    { proofId: `0x${"11".repeat(32)}`, identityKey: `0x${"22".repeat(32)}`,
+      sourceTxHash: `0x${"33".repeat(32)}`, agentId: "1842" },
+    { proofId: `0x${"11".repeat(32)}`, identityKey: `0x${"22".repeat(32)}`,
+      sourceTxHash: `0x${"33".repeat(32)}`, agentId: "01842", verifiedAt: "2026-08-29T15:00:00.000Z" },
+    { proofId: `0x${"11".repeat(32)}`, identityKey: `0x${"22".repeat(32)}`,
+      sourceTxHash: `0x${"33".repeat(32)}`, agentId: "1842", verifiedAt: "2026-08-29" },
+  ])("never promotes an incomplete or invalid featured tuple", (config) => {
+    const html = renderToStaticMarkup(React.createElement(FeaturedProofLink, { config }));
+    expect(html).toContain("Browse recent ProofLocks");
+    expect(html).not.toContain("featured real proof");
+  });
+
+  it("places operator authority and paid-work disclosure before every credential control", () => {
+    const html = renderToStaticMarkup(React.createElement(OperatorWorkbench));
+    const authority = html.indexOf("Named operator authority");
+    const cost = html.indexOf("Paid 0G Compute and Storage work");
+    const agentId = html.indexOf("ERC-8004 Agent ID");
+    expect(authority).toBeGreaterThan(-1);
+    expect(cost).toBeGreaterThan(authority);
+    expect(agentId).toBeGreaterThan(cost);
+    expect(html).not.toContain("operator-token");
+  });
+
+  it("labels the architecture strip as process rather than live progress or health", () => {
+    const surfaces = [React.createElement(OverviewPage), React.createElement(OperatorWorkbench)];
+    for (const surface of surfaces) {
+      const html = renderToStaticMarkup(surface);
+      expect(html).toContain("Architecture / process");
+      expect(html).toContain("Identity");
+      expect(html).toContain("Checks");
+      expect(html).toContain("Compute");
+      expect(html).toContain("Storage");
+      expect(html).toContain("Lease");
+      expect(html).toContain("Gate");
+      expect(html).toContain("Not live progress or service health");
+      expect(html).not.toMatch(/class="[^"]*(?:running|complete)[^"]*"/);
+    }
+  });
+
+  it("keeps both public actions before dependency disclosure and architecture", () => {
+    const html = withoutFeaturedEnvironment(() => renderToStaticMarkup(React.createElement(OverviewPage)));
+    const primary = html.indexOf("Browse recent ProofLocks");
+    const secondary = html.indexOf("Verify another proof");
+    const dependencies = html.indexOf("Dependency configuration is not service health");
+    const architecture = html.indexOf("Architecture / process");
+    expect(primary).toBeGreaterThan(-1);
+    expect(primary).toBeLessThan(secondary);
+    expect(secondary).toBeLessThan(dependencies);
+    expect(dependencies).toBeLessThan(architecture);
+  });
+
   it("uses a semantic resolve form with an explicit resolution-only cancel boundary", () => {
     const base = { agentId: "7", valid: true, invalid: false, locked: false, onEdit: () => {},
       onResolve: () => {}, onCancel: () => {} } as const;
@@ -124,3 +217,16 @@ describe("Evaluate ceremony", () => {
     },
   );
 });
+
+function withoutFeaturedEnvironment<T>(run: () => T): T {
+  const previous = Object.fromEntries(FEATURED_ENV.map((name) => [name, process.env[name]]));
+  for (const name of FEATURED_ENV) delete process.env[name];
+  try { return run(); }
+  finally {
+    for (const name of FEATURED_ENV) {
+      const value = previous[name];
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  }
+}

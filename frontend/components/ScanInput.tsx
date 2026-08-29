@@ -16,6 +16,9 @@ import { ProofCoverageGrid } from "./ProofCoverageGrid";
 import { StreamingScanPanel } from "./StreamingScanPanel";
 import { WriteRecoveryPanel, createOperatorRunSession, interruptedOutcome } from "./WriteRecoveryPanel";
 import type { OperatorDisplayOutcome } from "./WriteRecoveryPanel";
+import { Button } from "./ui/Button";
+import { Field } from "./ui/Field";
+import { StateMessage } from "./ui/StateMessage";
 
 type ExistingControls = Readonly<{ identity: CanonicalIdentity; record: ProofLockRecord;
   previousProofId: `0x${string}`; refresh(): void }>;
@@ -193,13 +196,14 @@ type ResolveFormProps = Readonly<{ agentId: string; phase: EvaluateState["phase"
 export function ResolveForm({ agentId, phase, valid, invalid, demoId, locked, onEdit, onResolve, onCancel }: ResolveFormProps) {
   return <form className="evaluate-form" onSubmit={(event) => {
     event.preventDefault(); if (valid && !locked && phase !== "resolving") onResolve(agentId);
-  }}><label htmlFor="agent-id">ERC-8004 Agent ID</label><div className="input-row">
-    <input id="agent-id" inputMode="numeric" pattern="[0-9]*" value={agentId} disabled={locked}
+  }}><div className="input-row">
+    <Field id="agent-id" label="ERC-8004 Agent ID" inputMode="numeric" pattern="[0-9]*"
+      value={agentId} disabled={locked} invalid={invalid}
       aria-invalid={invalid || undefined} aria-describedby="agent-id-status"
       onChange={(event) => onEdit(event.target.value.trim())} placeholder="e.g. 1842" autoComplete="off" />
     {phase === "resolving"
-      ? <button className="button primary" type="button" onClick={onCancel}>Cancel resolution</button>
-      : <button className="button primary" type="submit" disabled={!valid || locked}>Resolve identity</button>}
+      ? <Button variant="primary" type="button" onClick={onCancel}>Cancel resolution</Button>
+      : <Button variant="primary" type="submit" disabled={!valid || locked}>Resolve identity</Button>}
     </div>
     {demoId && <button className="demo-action" type="button" disabled={locked} onClick={() => {
       onEdit(demoId); onResolve(demoId);
@@ -211,14 +215,13 @@ type CompletionStatusProps = Readonly<{ refresh: "awaiting" | "refreshing" | "co
   refreshError: ApiErrorShape | null }>;
 
 export function CompletionStatus({ refresh, refreshError }: CompletionStatusProps) {
-  if (refresh === "failed") return <section className="inline-state state-warn" role="alert">
-    <b>ProofLock write succeeded.</b> Current read-back is unavailable ({refreshError?.code ?? "READ_FAILED"}).
+  if (refresh === "failed") return <StateMessage state="error" title="ProofLock write succeeded.">
+    Current read-back is unavailable ({refreshError?.code ?? "READ_FAILED"}).
     Do not retry: the write may already be final.
-  </section>;
-  return <section className="inline-state state-good">
-    <b>ProofLock write succeeded.</b> {refresh === "complete"
-      ? "Current read-back refreshed." : "Confirming current read-back…"}
-  </section>;
+  </StateMessage>;
+  return <StateMessage announce="off" state="success" title="ProofLock write succeeded.">
+    {refresh === "complete" ? "Current read-back refreshed." : "Confirming current read-back…"}
+  </StateMessage>;
 }
 
 function OperatorPanel({ state, dispatch, evaluate, cancel, outcome, canceling, recovering }: Readonly<{
@@ -232,14 +235,15 @@ function OperatorPanel({ state, dispatch, evaluate, cancel, outcome, canceling, 
   return <div className="operator-panel"><div><span className="card-kicker">Named operator-authorized validator</span><h3>{state.lock ? "Current ProofLock found" : "Issue first ProofLock"}</h3>
     <p>Mutation requires an operator token. It stays only in this form state and is cleared after the request.</p></div>
     {state.lock ? <p className="inline-state state-warn">Existing v{state.lock.version}. Continue with drift, reseal, or recovery below.</p> : <div className="operator-controls">
-      <label htmlFor="operator-token">One-time operator token</label><input id="operator-token" type="password"
+      <Field id="operator-token" label="One-time operator token" type="password"
         value={state.operatorToken} disabled={busy} onChange={(event) => dispatch({ type: "EDIT_OPERATOR_TOKEN", token: event.target.value })}
         autoComplete="off" spellCheck={false} />
-      {!recoveryRequired && <button className="button primary" type="button" onClick={() => void evaluate()}
-        disabled={!state.operatorToken || busy || recovering}>{state.phase === "running"
-          ? "Evaluation running…" : reconcileRequired ? "Resume/reconcile evaluation" : "Run verified evaluation"}</button>}
-      {state.phase === "running" && <button className="button" type="button" onClick={cancel}
-        disabled={canceling}>{canceling ? "Cancelling…" : "Cancel seal"}</button>}</div>}
+      {!recoveryRequired && <Button variant="primary" type="button" onClick={() => void evaluate()}
+        disabled={!state.operatorToken || recovering} pending={busy}
+        pendingLabel="Evaluation running…">{reconcileRequired
+          ? "Resume/reconcile evaluation" : "Run verified evaluation"}</Button>}
+      {state.phase === "running" && <Button type="button" onClick={cancel}
+        disabled={canceling}>{canceling ? "Cancelling…" : "Cancel seal"}</Button>}</div>}
   </div>;
 }
 

@@ -33,6 +33,7 @@ export type ResolutionResult = Readonly<{ identity: CanonicalIdentity; lock: Pro
 export type EvaluateAction =
   | Readonly<{ type: "EDIT_IDENTITY"; agentId: string; generation: number }>
   | Readonly<{ type: "EDIT_OPERATOR_TOKEN"; token: string }>
+  | Readonly<{ type: "CLEAR_OPERATOR_TOKEN" }>
   | Readonly<{ type: "BEGIN_RESOLVE"; generation: number }>
   | Readonly<{ type: "CANCEL_RESOLVE"; generation: number }>
   | (Readonly<{ type: "RESOLVE_SUCCEEDED"; generation: number; requestedAgentId: string }> & ResolutionResult)
@@ -41,6 +42,10 @@ export type EvaluateAction =
   | Readonly<{ type: "STAGE_REACHED"; stage: RunnerStage }>
   | Readonly<{ type: "RUN_SUCCEEDED" }>
   | Readonly<{ type: "RUN_FAILED"; error: ApiErrorShape }>
+  | Readonly<{ type: "RUN_INTERRUPTED" }>
+  | Readonly<{ type: "RECOVERY_SUCCEEDED" }>
+  | Readonly<{ type: "RECOVERY_DEFINITIVE" }>
+  | Readonly<{ type: "RECOVERY_PROGRESS_UPDATED" }>
   | Readonly<{ type: "BEGIN_COMPLETION_REFRESH"; generation: number }>
   | (Readonly<{ type: "COMPLETION_REFRESH_SUCCEEDED"; generation: number; requestedAgentId: string }> & ResolutionResult)
   | Readonly<{ type: "COMPLETION_REFRESH_FAILED"; generation: number; requestedAgentId: string; error: ApiErrorShape }>;
@@ -50,6 +55,7 @@ export const initialEvaluateState: EvaluateState = idleState("", 0);
 export function evaluateReducer(state: EvaluateState, action: EvaluateAction): EvaluateState {
   if (action.type === "EDIT_IDENTITY") return editIdentity(state, action);
   if (action.type === "EDIT_OPERATOR_TOKEN") return editToken(state, action.token);
+  if (action.type === "CLEAR_OPERATOR_TOKEN") return clearToken(state);
   if (action.type === "BEGIN_RESOLVE") return beginResolve(state, action.generation);
   if (action.type === "CANCEL_RESOLVE") return cancelResolve(state, action.generation);
   if (action.type === "RESOLVE_SUCCEEDED") return resolveSucceeded(state, action);
@@ -58,6 +64,10 @@ export function evaluateReducer(state: EvaluateState, action: EvaluateAction): E
   if (action.type === "STAGE_REACHED") return stageReached(state, action.stage);
   if (action.type === "RUN_SUCCEEDED") return runSucceeded(state);
   if (action.type === "RUN_FAILED") return runFailed(state, action.error);
+  if (action.type === "RUN_INTERRUPTED") return runInterrupted(state);
+  if (action.type === "RECOVERY_SUCCEEDED") return recoverySucceeded(state);
+  if (action.type === "RECOVERY_DEFINITIVE") return recoveryDefinitive(state);
+  if (action.type === "RECOVERY_PROGRESS_UPDATED") return recoveryDefinitive(state);
   if (action.type === "BEGIN_COMPLETION_REFRESH") return beginCompletionRefresh(state, action.generation);
   return completeRefresh(state, action);
 }
@@ -70,6 +80,11 @@ function editIdentity(state: EvaluateState, action: Extract<EvaluateAction, { ty
 function editToken(state: EvaluateState, token: string): EvaluateState {
   if (state.phase !== "resolved" && state.phase !== "failed") return state;
   return { ...state, operatorToken: token };
+}
+
+function clearToken(state: EvaluateState): EvaluateState {
+  if (!state.operatorToken) return state;
+  return { ...state, operatorToken: "" };
 }
 
 function beginResolve(state: EvaluateState, generation: number): EvaluateState {
@@ -118,6 +133,24 @@ function runFailed(state: EvaluateState, error: ApiErrorShape): EvaluateState {
     failed: { stage, code: error.code }, writeOutcome: { status: "FAILED" } };
 }
 
+function runInterrupted(state: EvaluateState): EvaluateState {
+  if (state.phase !== "running") return state;
+  return { ...state, phase: "resolved", operatorToken: "", stages: [], failed: null, error: null,
+    writeOutcome: { status: "NOT_STARTED" } };
+}
+
+function recoverySucceeded(state: EvaluateState): EvaluateState {
+  if (state.phase !== "failed") return state;
+  return { ...state, phase: "completed", operatorToken: "", failed: null, error: null,
+    writeOutcome: { status: "SUCCEEDED" }, refresh: "awaiting", refreshError: null };
+}
+
+function recoveryDefinitive(state: EvaluateState): EvaluateState {
+  if (state.phase !== "failed") return state;
+  return { ...state, phase: "resolved", stages: [], failed: null, error: null,
+    writeOutcome: { status: "NOT_STARTED" } };
+}
+
 function beginCompletionRefresh(state: EvaluateState, generation: number): EvaluateState {
   if (state.phase !== "completed" || state.refresh !== "awaiting") return state;
   return { ...state, generation, refresh: "refreshing", refreshError: null };
@@ -146,13 +179,23 @@ export async function executePaidRun(state: EvaluateState, active: { current: bo
   try {
     const result = await runner({ identity: state.identity.identity, mode: "SEAL" }, state.operatorToken,
       (stage) => dispatch({ type: "STAGE_REACHED", stage }));
-    if (result.kind !== "SEALED" || result.writeOutcome.status !== "SEALED")
+    if (!sealedWriteOutcome(result))
       throw new Error("ProofLock operation requires recovery before success");
     dispatch({ type: "RUN_SUCCEEDED" }); refresh(state.agentId);
   } catch (cause) {
-    dispatch({ type: "RUN_FAILED", error: normalizeError(cause) });
+    dispatch(isAbortError(cause) ? { type: "RUN_INTERRUPTED" }
+      : { type: "RUN_FAILED", error: normalizeError(cause) });
   } finally { active.current = false; }
   return true;
+}
+
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof DOMException && cause.name === "AbortError";
+}
+
+function sealedWriteOutcome(result: import("./prooflock-types").OperatorTerminalResult): boolean {
+  return result.kind === "SEALED" ? result.writeOutcome.status === "SEALED"
+    : result.operation.writeOutcome?.status === "SEALED";
 }
 
 export function identityLocked(state: EvaluateState): boolean {

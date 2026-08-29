@@ -102,6 +102,48 @@ describe("Evaluate state", () => {
     expect(state).toMatchObject({ phase: "failed", operatorToken: "",
       failed: { stage: "UPLOADING_STORAGE", code: "UPLOAD_FAILED" }, writeOutcome: { status: "FAILED" } });
   });
+
+  it("moves a recovered sealed write into the paid-success refresh path", () => {
+    let state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "secret" });
+    state = evaluateReducer(state, { type: "BEGIN_RUN" });
+    state = evaluateReducer(state, { type: "RUN_FAILED", error: { code: "FINALIZED_READBACK_UNAVAILABLE",
+      message: "read-back failed", stage: "READING_CHAIN_BACK", retryable: false, requestId: "test" } });
+    const recovered = evaluateReducer(state, { type: "RECOVERY_SUCCEEDED" });
+    expect(recovered).toMatchObject({ phase: "completed", refresh: "awaiting", operatorToken: "",
+      writeOutcome: { status: "SUCCEEDED" }, failed: null, error: null });
+  });
+
+  it("clears stale uncertain failure after definitive no-broadcast or revert recovery", () => {
+    let state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "secret" });
+    state = evaluateReducer(state, { type: "BEGIN_RUN" });
+    state = evaluateReducer(state, { type: "RUN_FAILED", error: { code: "SUBMISSION_OUTCOME_UNKNOWN",
+      message: "uncertain", stage: "WRITING_CHAIN", retryable: false, requestId: "test" } });
+    expect(evaluateReducer(state, { type: "RECOVERY_DEFINITIVE" })).toMatchObject({ phase: "resolved",
+      stages: [], failed: null, error: null, writeOutcome: { status: "NOT_STARTED" } });
+  });
+
+  it("clears stale failure detail when recovery remains uncertain", () => {
+    let state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "secret" });
+    state = evaluateReducer(state, { type: "BEGIN_RUN" });
+    state = evaluateReducer(state, { type: "RUN_FAILED", error: { code: "OLD_FAILURE",
+      message: "uncertain", stage: "VERIFYING_STORAGE", retryable: false, requestId: "test" } });
+    expect(evaluateReducer(state, { type: "RECOVERY_PROGRESS_UPDATED" })).toMatchObject({ phase: "resolved",
+      stages: [], failed: null, error: null, writeOutcome: { status: "NOT_STARTED" } });
+  });
+
+  it("clears the one-time token immediately while a paid run is cancelling", () => {
+    let state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "secret" });
+    state = evaluateReducer(state, { type: "BEGIN_RUN" });
+    expect(state.operatorToken).toBe("secret");
+    expect(evaluateReducer(state, { type: "CLEAR_OPERATOR_TOKEN" }).operatorToken).toBe("");
+  });
+
+  it("settles an interrupted run without inventing a generic failure", () => {
+    let state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "secret" });
+    state = evaluateReducer(state, { type: "BEGIN_RUN" });
+    expect(evaluateReducer(state, { type: "RUN_INTERRUPTED" })).toMatchObject({ phase: "resolved",
+      operatorToken: "", stages: [], failed: null, error: null });
+  });
 });
 
 describe("Resolution coordinator", () => {
@@ -200,5 +242,18 @@ describe("Paid run orchestration", () => {
     await executePaidRun(state, active, existing, (action) => actions.push(action), vi.fn(),
       () => ({ code: "RUN_FAILED", message: "failed", stage: "WRITING_CHAIN", retryable: false, requestId: "test" }));
     expect(actions.map((action) => action.type)).toEqual(["BEGIN_RUN", "RUN_FAILED"]);
+  });
+
+  it("treats a deduplicated existing SEALED operation as paid success", async () => {
+    const state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "token" });
+    const active = { current: false }; const actions: EvaluateAction[] = []; const refresh = vi.fn();
+    const existing = vi.fn().mockResolvedValue({ kind: "EXISTING_OPERATION", operation: {
+      recoveryId: "rec_1234567890abcdef", phase: "TERMINAL", writeOutcome: { status: "SEALED",
+        recoveryId: "rec_1234567890abcdef", transactionHash: `0x${"1".repeat(64)}`,
+        identityKey: `0x${"2".repeat(64)}`, version: "1" } } });
+    await executePaidRun(state, active, existing, (action) => actions.push(action), refresh,
+      () => ({ code: "RUN_FAILED", message: "failed", stage: "WRITING_CHAIN", retryable: false, requestId: "test" }));
+    expect(actions.map((action) => action.type)).toEqual(["BEGIN_RUN", "RUN_SUCCEEDED"]);
+    expect(refresh).toHaveBeenCalledWith("7");
   });
 });

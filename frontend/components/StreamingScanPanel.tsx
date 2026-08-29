@@ -14,12 +14,18 @@ const LABELS: Record<RunnerStage, string> = {
   READING_CHAIN_BACK: "Read current lease back from chain", SEALED: "Evaluate AgentGateV2",
 };
 
+const STATUS_STYLE: React.CSSProperties = {
+  position: "absolute", width: 1, height: 1, padding: 0, margin: -1,
+  overflow: "hidden", clip: "rect(0, 0, 0, 0)", whiteSpace: "nowrap", border: 0,
+};
+
 export function StreamingScanPanel({ stages, failed }: Readonly<{
   stages: readonly RunnerStage[]; failed?: Readonly<{ stage: RunnerStage; code: string }>;
 }>) {
   const current = failed ? failed.stage : stages.at(-1);
-  return <section className="proof-ceremony" aria-label="ProofLock ceremony" aria-live="polite">
-    <div className="rail-line" aria-hidden="true" />
+  const announcement = current ? `Current stage: ${LABELS[current]}${failed ? ` failed with ${failed.code}` : ""}.` : "";
+  return <section className="proof-ceremony" aria-label="ProofLock ceremony">
+    <div className="proof-ceremony-rail" aria-hidden="true"><div className="rail-line" />
     {PROOFLOCK_STAGES.map((stage, index) => {
       const reached = stages.includes(stage); const isFailed = failed?.stage === stage;
       const complete = reached && current !== stage || stage === "SEALED" && reached && !failed;
@@ -29,7 +35,10 @@ export function StreamingScanPanel({ stages, failed }: Readonly<{
         <div><span className="stage-code">{stage}</span><b>{LABELS[stage]}</b>{isFailed && <small>{failed.code}</small>}</div>
       </div>;
     })}
-    {failed && <div className="lease-stop state-bad"><b>No lease issued.</b> Mandatory stage failed with <span className="mono">{failed.code}</span>.</div>}
+    </div>
+    <p role="status" style={STATUS_STYLE}>{announcement}</p>
+    {failed && <div className="lease-stop state-bad"><b>Ceremony stopped.</b>{" "}
+      Stage failed with <span className="mono">{failed.code}</span>. See the write outcome before retrying.</div>}
     {!failed && stages.includes("SEALED") && <div className="lease-stop state-good"><b>Policy-scoped admission active.</b> Chain read-back and Gate decision govern current access.</div>}
   </section>;
 }

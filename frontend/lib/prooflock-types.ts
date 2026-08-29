@@ -253,6 +253,14 @@ export type ProofLockWriteOutcome =
       identityKey: Bytes32; version: string }>
   | Readonly<{ status: "REVERTED"; recoveryId: string; transactionHash: Bytes32 }>;
 
+export type OperatorRunProgress =
+  | Readonly<{ type: "admission"; state: "ACCEPTED" | "DEDUPLICATED";
+      recoveryId: string; idempotencyKey: string }>
+  | Readonly<{ phase: "PRE_SEND" | "SUBMISSION_ATTEMPTED" }>
+  | Readonly<{ phase: "HASH_KNOWN" | "REVERTED"; transactionHash: Bytes32 }>
+  | Readonly<{ phase: "FINALIZED"; transactionHash: Bytes32; blockHash: Bytes32;
+      blockNumber: string; confirmations: number }>;
+
 export type OperatorTerminalResult =
   | Readonly<{ kind: "SEALED"; stage: "SEALED"; identity?: Readonly<Record<string, unknown>>;
       subject?: Readonly<Record<string, unknown>>; envelope?: Readonly<Record<string, unknown>>;

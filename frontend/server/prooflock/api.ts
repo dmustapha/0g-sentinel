@@ -10,9 +10,11 @@ import type { RunnerProgress } from "./runner";
 import type { PublicWriteOutcome } from "./operation-journal";
 import { WriteRecoveryError } from "./recovery";
 import { authenticateOperator } from "./auth";
+import type { CurrentAccessV1 } from "@/lib/prooflock-types";
 
 const MAX_BODY_BYTES = 16_384;
 const READ_CACHE = "no-store";
+const DETAIL_ENRICHMENT_TIMEOUT_MS = 2_000;
 
 export type ApiStage = RunnerStage | "AUTHENTICATING" | "RESOLVING_IDENTITY" | "READING_PROOF" | "VERIFYING_PROOF" | "HEALTH_CHECK" | "RECOVERING_WRITE";
 export type ApiErrorCode =
@@ -35,6 +37,7 @@ export type ProofLockReadDependencies = Readonly<{
   readProofById(identityKey: string, proofId: string, sourceTxHash: string | undefined,
     signal: AbortSignal): Promise<HistoricalProofLock | null>;
   readProofLockDetail(record: RegistryProofLockRecord, signal: AbortSignal): Promise<ProofLockDetail>;
+  readCurrentAccess(agentId: string, identityKey: string, signal: AbortSignal): Promise<CurrentAccessV1>;
   computeProofId(registryAddress: string, record: RegistryProofLockRecord): string;
   verifyStoredEvidence(record: RegistryProofLockRecord, signal: AbortSignal): Promise<Readonly<{
     envelope: unknown; retrievalVerified: true; networkProofVerified: false;
@@ -97,7 +100,9 @@ export function createLazyProofLockReadHandlers(loadDependencies: () => ProofLoc
       return createProofLockReadHandlers(loadDependencies()).resolve(request);
     },
     proofLock: async (identityKey: string, request: Request) => {
-      if (!parseNonZeroBytes32(identityKey)) return invalidReadInput("READING_PROOF");
+      const agentId = new URL(request.url).searchParams.get("agentId");
+      if (!parseNonZeroBytes32(identityKey)
+        || (agentId !== null && !isCanonicalAgentId(agentId))) return invalidReadInput("READING_PROOF");
       return createProofLockReadHandlers(loadDependencies()).proofLock(identityKey, request);
     },
     verifyProof: async (proofId: string, request: Request) => {
@@ -211,12 +216,69 @@ async function readProofLock(key: string, request: Request, deps: ProofLockReadD
   const requestId = createRequestId();
   try {
     const identityKey = bytes32(key);
+    const agentId = new URL(request.url).searchParams.get("agentId");
+    if (agentId !== null && !isCanonicalAgentId(agentId)) invalid();
     const signal = deadline(request.signal);
     const proofLock = await deps.readProofLock(identityKey, signal);
     assertRecord(identityKey, proofLock);
+    if (agentId !== null) return await currentDetailResponse(agentId, identityKey, proofLock, deps, signal);
     const detail = await deps.readProofLockDetail(proofLock, signal);
     return json({ identityKey, proofLock, detail }, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "READING_PROOF", requestId); }
+}
+
+async function currentDetailResponse(agentId: string, identityKey: Bytes32,
+  proofLock: RegistryProofLockRecord, deps: ProofLockReadDependencies, signal: AbortSignal) {
+  const sibling = new AbortController();
+  const detail = boundedLegacyDetail(proofLock, deps,
+    AbortSignal.any([signal, sibling.signal]));
+  let result: readonly [ProofLockDetail, CurrentAccessV1];
+  try {
+    result = await Promise.all([detail, deps.readCurrentAccess(agentId, identityKey, signal)]);
+  } catch (error) {
+    sibling.abort(error);
+    await detail.catch(() => undefined);
+    throw error;
+  }
+  const [sealedDetail, currentAccess] = result;
+  const sealedEvidence = Object.freeze({ schema: "sentinel.prooflock/sealed-evidence-v1" as const,
+    version: 1 as const, proofLock, detail: sealedDetail });
+  return json({ identityKey, proofLock, detail: sealedDetail, responseVersion: 2,
+    sealedEvidence, currentAccess }, 200, READ_CACHE);
+}
+
+function boundedLegacyDetail(record: RegistryProofLockRecord,
+  deps: ProofLockReadDependencies, signal: AbortSignal): Promise<ProofLockDetail> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) return reject(signal.reason ?? new DOMException("Aborted", "AbortError"));
+    const controller = new AbortController();
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal.removeEventListener("abort", abort);
+      callback();
+    };
+    const abort = () => finish(() => { controller.abort(signal.reason);
+      reject(signal.reason ?? new DOMException("Aborted", "AbortError")); });
+    const timer = setTimeout(() => finish(() => {
+      controller.abort(new Error("Sealed detail enrichment timed out"));
+      resolve(unavailableLegacyDetail(new Error("Sealed detail enrichment timed out"), signal));
+    }), DETAIL_ENRICHMENT_TIMEOUT_MS);
+    signal.addEventListener("abort", abort, { once: true });
+    Promise.resolve().then(() => deps.readProofLockDetail(record, controller.signal)).then(
+      (value) => finish(() => resolve(value)),
+      (error) => signal.aborted ? abort() : finish(() => resolve(unavailableLegacyDetail(error, signal))),
+    );
+  });
+}
+
+function unavailableLegacyDetail(error: unknown, signal: AbortSignal): ProofLockDetail {
+  if (signal.aborted) throw signal.reason ?? error;
+  return Object.freeze({ status: "UNAVAILABLE", code: "EVIDENCE_UNAVAILABLE",
+    identity: null, resolution: null, gate: Object.freeze({ status: "UNKNOWN",
+      allowed: false, reason: null }), consumer: Object.freeze({ status: "UNKNOWN", accepted: false }) });
 }
 
 async function verifyProof(proof: string, request: Request, deps: ProofLockReadDependencies): Promise<Response> {

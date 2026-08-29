@@ -4,7 +4,8 @@ import { canonicalize } from "json-canonicalize";
 
 import type {
   ApiErrorShape, CanonicalIdentity, DiscoveryRecord, HealthSnapshot, OperatorRunInput,
-  OperatorTerminalResult, ProofLockDetailResponse, ProofLockRecord, ProofLockWriteOutcome, RunnerStage, VerifiedProof,
+  OperatorRunProgress, OperatorTerminalResult, ProofLockDetailResponse, ProofLockRecord,
+  ProofLockWriteOutcome, RunnerStage, VerifiedProof,
 } from "./prooflock-types";
 
 const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
@@ -148,6 +149,7 @@ export async function runProofLock(
   onStage: (stage: RunnerStage) => void,
   signal?: AbortSignal,
   idempotencyKey?: string,
+  onProgress?: (progress: OperatorRunProgress) => void,
 ): Promise<OperatorTerminalResult> {
   const inputKey = canonicalize(input) ?? JSON.stringify(input);
   const storageKey = `${ACTIVE_KEY_PREFIX}${keccak256(toUtf8Bytes(inputKey))}`;
@@ -157,7 +159,10 @@ export async function runProofLock(
   const response = await fetch("/api/admin/prooflocks/stream", { method: "POST", signal, cache: "no-store",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}`,
       "idempotency-key": stableKey }, body: JSON.stringify(input) });
-  if (!response.ok || !response.body) await throwResponse(response);
+  if (!response.ok || !response.body) {
+    try { await throwResponse(response); }
+    catch (cause) { if (cause instanceof ProofLockApiError) forgetActiveOperation(storageKey, inputKey); throw cause; }
+  }
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
@@ -172,13 +177,15 @@ export async function runProofLock(
       const payload = frame.startsWith("data: ") ? JSON.parse(frame.slice(6)) as Record<string, unknown> : null;
       if (payload?.type === "stage") onStage(runnerStageSchema.parse(payload.stage) as RunnerStage);
       if (payload?.type === "progress") {
-        const progress = progressSchema.parse(payload.progress);
+        const progress = progressSchema.parse(payload.progress) as OperatorRunProgress;
+        safeProgress(onProgress, progress);
         if ("type" in progress) { admittedRecoveryId = progress.recoveryId;
           rememberActiveOperation(storageKey, inputKey, { idempotencyKey: stableKey, recoveryId: admittedRecoveryId }); }
       }
       if (payload?.type === "error") {
         const terminal = z.object({ error: errorSchema.shape.error, writeOutcome: writeOutcomeSchema.optional() }).parse(payload);
-        if (terminal.writeOutcome?.status === "NOT_BROADCAST" || terminal.writeOutcome?.status === "REVERTED")
+        if (!terminal.writeOutcome || terminal.writeOutcome.status === "NOT_BROADCAST"
+          || terminal.writeOutcome.status === "REVERTED")
           forgetActiveOperation(storageKey, inputKey);
         throw new ProofLockApiError(terminal.error as ApiErrorShape, 500,
           terminal.writeOutcome as ProofLockWriteOutcome | undefined);
@@ -186,12 +193,18 @@ export async function runProofLock(
       if (payload?.type === "complete") {
         const result = terminalSchema.parse(payload.result) as OperatorTerminalResult;
         if (result.kind === "SEALED" || result.operation.writeOutcome?.status === "NOT_BROADCAST"
-          || result.operation.writeOutcome?.status === "REVERTED") forgetActiveOperation(storageKey, inputKey);
+          || result.operation.writeOutcome?.status === "REVERTED"
+          || result.operation.writeOutcome?.status === "SEALED") forgetActiveOperation(storageKey, inputKey);
         return result;
       }
     }
   }
   throw new ProofLockStreamInterruptedError(admittedRecoveryId, stableKey);
+}
+
+function safeProgress(report: ((progress: OperatorRunProgress) => void) | undefined,
+  progress: OperatorRunProgress): void {
+  try { report?.(progress); } catch { /* UI observation cannot change the paid operation */ }
 }
 
 type ActiveOperation = Readonly<{ idempotencyKey: string; recoveryId?: string }>;

@@ -47,6 +47,23 @@ describe("operator mutation request", () => {
     vi.unstubAllGlobals();
   });
 
+  it("clears active continuity after a structured pre-journal failure", async () => {
+    const failed = { type: "error", error: { code: "MISMATCH", message: "pre-journal",
+      stage: "VERIFYING_STORAGE", retryable: false, requestId: "req-1" } };
+    const sealed = { type: "complete", result: { kind: "SEALED", stage: "SEALED", writeOutcome: { status: "SEALED",
+      recoveryId: "rec_abcdefabcdefabcd", transactionHash: `0x${"3".repeat(64)}`,
+      identityKey: `0x${"4".repeat(64)}`, version: "1" } } };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(`data: ${JSON.stringify(failed)}\n\n`))
+      .mockResolvedValueOnce(new Response(`data: ${JSON.stringify(sealed)}\n\n`)); vi.stubGlobal("fetch", fetchMock);
+    const input = { identity: { namespace: "eip155" as const, chainId: 16661 as const,
+      registryAddress: `0x${"1".repeat(40)}` as `0x${string}`, agentId: "82" }, mode: "SEAL" as const };
+    await expect(runProofLock(input, "secret", vi.fn())).rejects.toBeInstanceOf(ProofLockApiError);
+    await expect(runProofLock(input, "secret", vi.fn())).resolves.toMatchObject({ kind: "SEALED" });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers["idempotency-key"])
+      .not.toBe(fetchMock.mock.calls[0]?.[1]?.headers["idempotency-key"]);
+    vi.unstubAllGlobals();
+  });
+
   it("persists active idempotency and recovery continuity across a module reload", async () => {
     const values = new Map<string, string>(); vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
@@ -62,6 +79,29 @@ describe("operator mutation request", () => {
     vi.resetModules(); const reloaded = await import("../../lib/prooflock-client");
     await expect(reloaded.runProofLock(input, "secret", vi.fn())).resolves.toMatchObject({ kind: "EXISTING_OPERATION" });
     expect(fetchMock.mock.calls[1]?.[1]?.headers["idempotency-key"]).toBe(fetchMock.mock.calls[0]?.[1]?.headers["idempotency-key"]);
+    vi.unstubAllGlobals();
+  });
+
+  it("clears persisted continuity for a deduplicated existing SEALED operation", async () => {
+    const values = new Map<string, string>(); vi.stubGlobal("localStorage", { getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => values.set(key, value), removeItem: (key: string) => values.delete(key) });
+    const recoveryId = "rec_1234567890abcdef";
+    const admission = { type: "progress", progress: { type: "admission", state: "DEDUPLICATED",
+      recoveryId, idempotencyKey: "client-stable-key" } };
+    const writeOutcome = { status: "SEALED", recoveryId, transactionHash: `0x${"3".repeat(64)}`,
+      identityKey: `0x${"4".repeat(64)}`, version: "1" };
+    const existing = { type: "complete", result: { kind: "EXISTING_OPERATION", operation: {
+      recoveryId, phase: "TERMINAL", writeOutcome } } };
+    const sealed = { type: "complete", result: { kind: "SEALED", stage: "SEALED", writeOutcome: {
+      ...writeOutcome, recoveryId: "rec_abcdefabcdefabcd" } } };
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(`data: ${JSON.stringify(admission)}\n\ndata: ${JSON.stringify(existing)}\n\n`))
+      .mockResolvedValueOnce(new Response(`data: ${JSON.stringify(sealed)}\n\n`)); vi.stubGlobal("fetch", fetchMock);
+    const input = { identity: { namespace: "eip155" as const, chainId: 16661 as const,
+      registryAddress: `0x${"1".repeat(40)}` as `0x${string}`, agentId: "92" }, mode: "SEAL" as const };
+    await expect(runProofLock(input, "secret", vi.fn())).resolves.toMatchObject({ kind: "EXISTING_OPERATION" });
+    await expect(runProofLock(input, "secret", vi.fn())).resolves.toMatchObject({ kind: "SEALED" });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers["idempotency-key"])
+      .not.toBe(fetchMock.mock.calls[0]?.[1]?.headers["idempotency-key"]);
     vi.unstubAllGlobals();
   });
   it("sends only identity and lifecycle intent, never client-controlled provenance or policy", async () => {
@@ -117,6 +157,26 @@ describe("operator mutation request", () => {
     vi.unstubAllGlobals();
   });
 
+  it("reuses the active idempotency key when cancellation beats the admission frame", async () => {
+    const controller = new AbortController();
+    const sealed = { type: "complete", result: { kind: "SEALED", stage: "SEALED", writeOutcome: {
+      status: "SEALED", recoveryId: "rec_abcdefabcdefabcd", transactionHash: `0x${"3".repeat(64)}`,
+      identityKey: `0x${"4".repeat(64)}`, version: "1" } } };
+    const fetchMock = vi.fn().mockImplementationOnce((_url: string, init: RequestInit) => new Promise((_resolve, reject) =>
+      (init.signal as AbortSignal).addEventListener("abort",
+        () => reject(new DOMException("canceled", "AbortError")), { once: true })))
+      .mockResolvedValueOnce(new Response(`data: ${JSON.stringify(sealed)}\n\n`));
+    vi.stubGlobal("fetch", fetchMock);
+    const input = { identity: { namespace: "eip155" as const, chainId: 16661 as const,
+      registryAddress: `0x${"1".repeat(40)}` as `0x${string}`, agentId: "93" }, mode: "SEAL" as const };
+    const pending = runProofLock(input, "secret", vi.fn(), controller.signal); controller.abort();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+    await expect(runProofLock(input, "secret", vi.fn())).resolves.toMatchObject({ kind: "SEALED" });
+    expect(fetchMock.mock.calls[1]?.[1]?.headers["idempotency-key"])
+      .toBe(fetchMock.mock.calls[0]?.[1]?.headers["idempotency-key"]);
+    vi.unstubAllGlobals();
+  });
+
   it("throws a typed terminal error that preserves exact write certainty", async () => {
     const frame = { type: "error", error: { code: "SUBMISSION_OUTCOME_UNKNOWN",
       message: "Submission attempted; broadcast not yet proven", stage: "WRITING_CHAIN", retryable: false,
@@ -131,6 +191,44 @@ describe("operator mutation request", () => {
     expect(caught).toBeInstanceOf(ProofLockApiError);
     expect(caught).toMatchObject({ writeOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN",
       recoveryId: "rec_1234567890abcdef" } });
+    vi.unstubAllGlobals();
+  });
+
+  it("reports sanitized admission and chain boundaries to cancellation logic", async () => {
+    const recoveryId = "rec_1234567890abcdef"; const transactionHash = `0x${"2".repeat(64)}`;
+    const frames = [
+      { type: "progress", progress: { type: "admission", state: "ACCEPTED", recoveryId,
+        idempotencyKey: "client-stable-key" } },
+      { type: "progress", progress: { phase: "SUBMISSION_ATTEMPTED" } },
+      { type: "progress", progress: { phase: "HASH_KNOWN", transactionHash } },
+      { type: "error", error: { code: "SUBMISSION_OUTCOME_UNKNOWN", message: "uncertain",
+        stage: "WRITING_CHAIN", retryable: false, requestId: "req-1" },
+        writeOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN", recoveryId, transactionHash } },
+    ];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(frames
+      .map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""), { status: 200 })));
+    const progress = vi.fn(); const input = { identity: { namespace: "eip155" as const, chainId: 16661 as const,
+      registryAddress: `0x${"1".repeat(40)}` as `0x${string}`, agentId: "177" }, mode: "SEAL" as const };
+    await expect(runProofLock(input, "secret", vi.fn(), undefined, undefined, progress)).rejects.toMatchObject({
+      writeOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN", recoveryId, transactionHash },
+    });
+    expect(progress.mock.calls.map(([value]) => value)).toEqual(frames.slice(0, 3).map(({ progress: value }) => value));
+    expect(JSON.stringify(progress.mock.calls)).not.toContain("secret");
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps progress reporting observational when a UI callback throws", async () => {
+    const sealed = { type: "complete", result: { kind: "SEALED", stage: "SEALED", writeOutcome: { status: "SEALED",
+      recoveryId: "rec_abcdefabcdefabcd", transactionHash: `0x${"3".repeat(64)}`,
+      identityKey: `0x${"4".repeat(64)}`, version: "1" } } };
+    const admission = { type: "progress", progress: { type: "admission", state: "ACCEPTED",
+      recoveryId: "rec_abcdefabcdefabcd", idempotencyKey: "client-stable-key" } };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      `data: ${JSON.stringify(admission)}\n\ndata: ${JSON.stringify(sealed)}\n\n`, { status: 200 })));
+    const input = { identity: { namespace: "eip155" as const, chainId: 16661 as const,
+      registryAddress: `0x${"1".repeat(40)}` as `0x${string}`, agentId: "178" }, mode: "SEAL" as const };
+    await expect(runProofLock(input, "secret", vi.fn(), undefined, undefined,
+      () => { throw new Error("render observer failed"); })).resolves.toMatchObject({ kind: "SEALED" });
     vi.unstubAllGlobals();
   });
 

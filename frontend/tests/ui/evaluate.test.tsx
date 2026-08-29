@@ -50,6 +50,7 @@ describe("Evaluate ceremony", () => {
     expect(html).not.toContain("Issue first ProofLock");
     expect(html).not.toContain("operator-token");
     expect(html).not.toContain("Run verified evaluation");
+    expect(html).not.toContain('role="status"');
   });
 
   it("renders refresh failure as successful write plus a do-not-retry alert", () => {
@@ -82,15 +83,28 @@ describe("Evaluate ceremony", () => {
     expect(identityInputState("7", "resolved")).toBe("VALID");
   });
 
-  it("renders all ten ProofLock stages and stops with no lease after failure", () => {
+  it("renders all ten ProofLock stages without guessing write certainty after failure", () => {
     const html = renderToStaticMarkup(React.createElement(StreamingScanPanel, {
       stages: ["VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT"],
       failed: { stage: "CLASSIFYING_SUBJECT", code: "IDENTITY_MISMATCH" },
     }));
     for (const stage of STAGES) expect(html).toContain(stage);
-    expect(html).toContain("No lease issued");
+    expect(html).toContain("Ceremony stopped");
     expect(html).toContain("IDENTITY_MISMATCH");
+    expect(html).not.toContain("No lease issued");
     expect(html).not.toContain("Policy-scoped admission active");
+    expect(html).not.toContain('role="alert"');
+    expect(html.match(/role="status"/g)).toHaveLength(1);
+  });
+
+  it("keeps the visual stage rail silent and announces only the current stage once", () => {
+    const html = renderToStaticMarkup(React.createElement(StreamingScanPanel, {
+      stages: ["VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT", "RUNNING_DETERMINISTIC_CHECKS"],
+    }));
+    expect(html).toContain('class="proof-ceremony-rail" aria-hidden="true"');
+    expect(html.match(/role="status"/g)).toHaveLength(1);
+    expect(html).toContain("Current stage: Run typed deterministic checks");
+    expect(html).not.toContain('aria-live="polite"');
   });
 
   it("renders typed 0x7f coverage without calling missing checks verified", () => {

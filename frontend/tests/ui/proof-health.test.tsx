@@ -1,12 +1,72 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { SealLifecycle } from "../../components/SealLifecycle";
 import { SubsystemHealthGrid } from "../../components/SubsystemHealthGrid";
-import { currentAccessFor, HistoricalProofDetails, VerificationResult, verificationStateForError, VerifyEvidenceButton } from "../../components/VerifyEvidenceButton";
+import { currentAccessFor, HistoricalProofDetails, ProofLocatorNotice, VerificationResult, verificationStateForError, VerifyEvidenceButton } from "../../components/VerifyEvidenceButton";
 import { ProofLockApiError } from "../../lib/prooflock-client";
-import type { HealthSnapshot, ProofVerificationState } from "../../lib/prooflock-types";
+import { verifyLinkedHistoricalProof } from "../../lib/prooflock-routes";
+import type { HealthSnapshot, ProofVerificationState, VerifiedProof } from "../../lib/prooflock-types";
 
 describe("public proof verification", () => {
+  it("rejects a substituted proof tuple as an explicit mismatch with no proof", async () => {
+    const requested = historicalProof();
+    const other = { ...requested, proofId: h("a"), source: { ...requested.source, transactionHash: h("b") } };
+    const verify = vi.fn().mockResolvedValue(other);
+    const result = await verifyLinkedHistoricalProof({ proofId: requested.proofId,
+      identityKey: requested.identityKey, sourceTxHash: requested.source.transactionHash },
+    new AbortController().signal, verify);
+    expect(verify).toHaveBeenCalledWith(requested.proofId, requested.identityKey,
+      expect.any(AbortSignal), requested.source.transactionHash);
+    expect(result).toEqual({ status: "MISMATCH" });
+    expect(result).not.toHaveProperty("proof");
+  });
+
+  it("treats only a hinted NOT_FOUND as stale", async () => {
+    const requested = historicalProof();
+    const notFound = vi.fn().mockRejectedValue(new ProofLockApiError({ code: "NOT_FOUND",
+      message: "not found", stage: "VERIFYING_PROOF", retryable: false, requestId: "req" }, 404));
+    await expect(verifyLinkedHistoricalProof({ proofId: requested.proofId,
+      identityKey: requested.identityKey, sourceTxHash: requested.source.transactionHash },
+    new AbortController().signal, notFound)).resolves.toEqual({ status: "STALE_LINK" });
+
+    const wrongSource = { ...requested, source: { ...requested.source, transactionHash: h("b") } };
+    await expect(verifyLinkedHistoricalProof({ proofId: requested.proofId,
+      identityKey: requested.identityKey, sourceTxHash: requested.source.transactionHash },
+    new AbortController().signal, vi.fn().mockResolvedValue(wrongSource)))
+      .resolves.toEqual({ status: "MISMATCH" });
+  });
+
+  it.each([h("0"), "invalid-source"])("rejects returned source transaction %s without a hint", async (transactionHash) => {
+    const requested = historicalProof();
+    const contradictory = { ...requested, source: { ...requested.source, transactionHash } } as VerifiedProof;
+    const result = await verifyLinkedHistoricalProof({ proofId: requested.proofId,
+      identityKey: requested.identityKey }, new AbortController().signal,
+    vi.fn().mockResolvedValue(contradictory));
+    expect(result).toEqual({ status: "MISMATCH" });
+    expect(result).not.toHaveProperty("proof");
+  });
+
+  it("preserves a hinted cryptographic MISMATCH with no returned proof", async () => {
+    const requested = historicalProof();
+    const mismatch = vi.fn().mockRejectedValue(new ProofLockApiError({ code: "MISMATCH",
+      message: "mismatch", stage: "VERIFYING_PROOF", retryable: false, requestId: "req" }, 409));
+    const result = await verifyLinkedHistoricalProof({ proofId: requested.proofId,
+      identityKey: requested.identityKey, sourceTxHash: requested.source.transactionHash },
+    new AbortController().signal, mismatch);
+    expect(result).toEqual({ status: "MISMATCH" });
+    expect(result).not.toHaveProperty("proof");
+  });
+
+  it("preserves the precise bounded-locator result for an old URL without a hint", async () => {
+    const requested = historicalProof();
+    const verify = vi.fn().mockRejectedValue(new ProofLockApiError({ code: "HINT_REQUIRED",
+      message: "hint required", stage: "VERIFYING_PROOF", retryable: false, requestId: "req" }, 422));
+    await expect(verifyLinkedHistoricalProof({ proofId: requested.proofId,
+      identityKey: requested.identityKey }, new AbortController().signal, verify))
+      .resolves.toEqual({ status: "HINT_REQUIRED" });
+  });
+
   it("keys the stateful verifier by the complete identifier tuple", () => {
     const first = VerifyEvidenceButton({ proofId: "proof", identityKey: "identity", sourceTxHash: "tx-1" });
     const same = VerifyEvidenceButton({ proofId: "proof", identityKey: "identity", sourceTxHash: "tx-1" });
@@ -21,6 +81,7 @@ describe("public proof verification", () => {
     const error = (code: string, status: number) => new ProofLockApiError({ code, message: code, stage: "VERIFYING_PROOF",
       retryable: status === 503, requestId: "req" }, status);
     expect(verificationStateForError(error("MISMATCH", 409))).toBe("MISMATCH");
+    expect(verificationStateForError(error("HINT_REQUIRED", 422))).toBe("HINT_REQUIRED");
     expect(verificationStateForError(error("DEPENDENCY_UNAVAILABLE", 503))).toBe("UNAVAILABLE");
     expect(verificationStateForError(new DOMException("Aborted", "AbortError"), "TIMEOUT")).toBe("TIMEOUT");
     expect(verificationStateForError(new DOMException("Aborted", "AbortError"), "CANCELED")).toBe("CANCELED");
@@ -45,11 +106,38 @@ describe("public proof verification", () => {
       explorerBase: "https://chainscan.0g.ai" }));
     for (const value of ["block 123", "Version 2", "provider-tee", "model-tee", `0x${"55".repeat(32)}`, `0x${"66".repeat(32)}`]) expect(html).toContain(value);
     expect(html).toContain(`/tx/0x${"77".repeat(32)}`); expect(html).toContain(`/address/0x${"88".repeat(20)}`);
+    expect(html).toContain("Registry source transaction");
+    expect(html).toContain("Storage upload transaction");
+    expect(html).toContain(`/tx/0x${"66".repeat(32)}`);
+  });
+  it("labels a predecessor without a source transaction as a locator that may need a hint", () => {
+    const html = renderToStaticMarkup(React.createElement(SealLifecycle, { currentVersion: "2",
+      previousProofId: h("3"), identityKey: h("2") }));
+    expect(html).toContain("locator may require source transaction");
+    expect(html).toContain(`/proof/${h("3")}?identityKey=${h("2")}`);
+  });
+  it("renders a stale hinted link without claiming its historical proof", () => {
+    const html = renderToStaticMarkup(React.createElement(ProofLocatorNotice, {
+      status: "STALE_LINK", currentHref: "/agents/7",
+    }));
+    expect(html).toContain("Stale proof link");
+    expect(html).toContain("source transaction does not identify the current record");
+    expect(html).toContain("Retry current record without source locator");
+    expect(html).not.toContain("Historical artifact matches");
+  });
+  it("renders cryptographic mismatch separately from stale-link advancement", () => {
+    const html = renderToStaticMarkup(React.createElement(ProofLocatorNotice, {
+      status: "MISMATCH", currentHref: "/agents/7",
+    }));
+    expect(html).toContain("Historical proof mismatch");
+    expect(html).toContain("cryptographic or finalized provenance checks");
+    expect(html).not.toContain("Stale proof link");
+    expect(html).not.toContain("Historical artifact matches");
   });
   it.each([
     ["MATCH", "Historical artifact matches"], ["MISMATCH", "Historical artifact mismatch"],
     ["UNAVAILABLE", "Evidence unavailable"], ["TIMEOUT", "Verification timed out"], ["CANCELED", "Verification canceled"],
-    ["RETRYING", "Retrying verification"],
+    ["HINT_REQUIRED", "Source transaction required"], ["RETRYING", "Retrying verification"],
   ] satisfies readonly (readonly [ProofVerificationState, string])[])("renders %s explicitly", (state, label) => {
     const html = renderToStaticMarkup(React.createElement(VerificationResult, { state })); expect(html).toContain(label);
   });
@@ -71,7 +159,6 @@ describe("public proof verification", () => {
 });
 
 function historicalProof() {
-  const h = (byte: string) => `0x${byte.repeat(64)}` as `0x${string}`;
   return { proofId: h("1"), identityKey: h("2"), source: { kind: "ProofLocked" as const, registryAddress: `0x${"88".repeat(20)}` as `0x${string}`,
     transactionHash: h("7"), blockNumber: 123, blockHash: h("9"), logIndex: 4 }, proofLock: {
     identityKey: h("2"), subject: `0x${"33".repeat(20)}` as `0x${string}`, envelopeDigest: h("4"), storageRoot: h("5"), computeRoot: h("6"),
@@ -79,6 +166,8 @@ function historicalProof() {
     behavioralScore: 10, codeRisk: 0, coverage: 127, state: 1, stateReason: 0 }, storage: { retrievalVerified: true as const,
     networkProofVerified: false as const, storageCommitment: { uploadTxHash: h("6") }, envelope: { computeProofs: [{ provider: "provider-tee", model: "model-tee" }] } } };
 }
+
+const h = (byte: string) => `0x${byte.repeat(64)}` as `0x${string}`;
 
 describe("independent subsystem health", () => {
   it("renders all six probes with independent states, latency, and observation time", () => {

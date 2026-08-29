@@ -7,7 +7,7 @@ import type {
 } from "./prooflock-types";
 
 type HistoricalFailure = Extract<ProofVerificationState,
-  "MISMATCH" | "UNAVAILABLE" | "TIMEOUT" | "CANCELED">;
+  "MISMATCH" | "HINT_REQUIRED" | "UNAVAILABLE" | "TIMEOUT" | "CANCELED">;
 type CurrentFailure = Extract<CurrentVerification["status"],
   "UNAVAILABLE" | "TIMEOUT" | "CANCELED">;
 

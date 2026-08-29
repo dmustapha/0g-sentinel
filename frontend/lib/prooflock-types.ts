@@ -54,7 +54,7 @@ export type GateDecision = Readonly<{
 export type LeaseStatus = "ACTIVE" | "EXPIRING" | "EXPIRED" | "REVOKED" | "DRIFTED" | "INCOMPLETE";
 export type ProofVerificationState =
   | "IDLE" | "VERIFYING" | "MATCH" | "MISMATCH"
-  | "UNAVAILABLE" | "TIMEOUT" | "CANCELED" | "RETRYING";
+  | "HINT_REQUIRED" | "UNAVAILABLE" | "TIMEOUT" | "CANCELED" | "RETRYING";
 export type HistoricalVerification =
   | Readonly<{ status: Exclude<ProofVerificationState, "MATCH"> }>
   | Readonly<{ status: "MATCH"; proof: VerifiedProof }>;

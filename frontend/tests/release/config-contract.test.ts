@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import GlobalError from "../../app/error";
+import NotFound from "../../app/not-found";
 
 const PUBLIC_V2 = [
   "NEXT_PUBLIC_APP_URL", "NEXT_PUBLIC_RPC_URL", "NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS",
@@ -28,6 +32,54 @@ const DEPLOY_V2 = [
 ];
 
 describe("release configuration and legacy boundary", () => {
+  it("publishes a truthful generated root social image", () => {
+    const layout = readFileSync(resolve(process.cwd(), "app/layout.tsx"), "utf8");
+    const image = readFileSync(resolve(process.cwd(), "app/opengraph-image.tsx"), "utf8");
+    expect(layout).not.toContain("/dashboard.png");
+    expect(image).toContain('contentType = "image/png"');
+    expect(image).toContain("Policy-scoped agent admission");
+    expect(image).not.toMatch(/\b(?:LIVE|ADMITTED|SAFE|BLOCKED)\b/);
+  });
+
+  it.each([
+    ["error", GlobalError, { error: new Error("test"), reset: () => undefined }],
+    ["404", NotFound, {}],
+  ] as const)("renders exactly one h1 on the %s surface", (_name, Component, props) => {
+    const html = renderToStaticMarkup(React.createElement(Component as React.ComponentType<any>, props));
+    expect(html.match(/<h1(?:\s|>)/g)).toHaveLength(1);
+  });
+
+  it("preserves the exact baseline response headers", async () => {
+    const config = (await import("../../next.config.mjs")).default;
+    expect(config.headers).toBeTypeOf("function");
+    const definitions = await config.headers!();
+    expect(definitions).toEqual([{ source: "/(.*)", headers: [
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    ] }]);
+  });
+
+  it("runs the packaged standalone release smoke with guaranteed teardown", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = readFileSync(resolve(process.cwd(), "scripts/test-release.mjs"), "utf8");
+    expect(packageJson.scripts?.["test:release"]).toBe("node scripts/test-release.mjs");
+    for (const contract of [".next/standalone/server.js", 'property="og:image"', "X-Frame-Options",
+      "X-Content-Type-Options", "Referrer-Policy", "SIGTERM"]) expect(script).toContain(contract);
+  });
+
+  it("checks every exercised route asset and observes server exit without a listener race", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/test-release.mjs"), "utf8");
+    expect(script).toContain('const routes = ["/", "/proof", "/agents", "/operator"]');
+    expect(script).toContain("for (const page of pages) await requirePackagedAssets(page)");
+    const exitPromise = script.indexOf("const serverExit = new Promise");
+    expect(exitPromise).toBeGreaterThan(script.indexOf("const server = spawn"));
+    expect(exitPromise).toBeLessThan(script.indexOf("try {"));
+    expect(script).not.toContain("function onceExit");
+  });
+
   it("packages browser assets into the standalone runtime after every build", () => {
     const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8")) as {
       scripts?: Record<string, string>;

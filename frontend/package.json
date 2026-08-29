@@ -20,7 +20,8 @@
     "test:e2e": "node scripts/run-playwright.mjs",
     "test:e2e:mocked": "node scripts/run-playwright.mjs --project=chromium-mocked",
     "test:e2e:standalone": "node scripts/run-playwright.mjs --project=standalone-smoke",
-    "test:e2e:install": "playwright install chromium firefox webkit"
+    "test:e2e:install": "playwright install chromium firefox webkit",
+    "test:release": "node scripts/test-release.mjs"
   },
   "dependencies": {
     "@0gfoundation/0g-compute-ts-sdk": "^0.9.0",

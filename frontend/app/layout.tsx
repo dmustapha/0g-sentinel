@@ -34,7 +34,6 @@ export const metadata: Metadata = {
     title: "0G Sentinel ProofLock",
     description: "Policy-scoped agent admission with versioned, append-preserved proof history on 0G.",
     siteName: "0G Sentinel",
-    images: [{ url: "/dashboard.png", width: 1280, height: 800, alt: "0G Sentinel ProofLock evidence ledger" }],
   },
   twitter: {
     card: "summary_large_image",

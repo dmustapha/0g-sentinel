@@ -170,7 +170,9 @@ describe("Resolution coordinator", () => {
 describe("Paid run orchestration", () => {
   it("detaches paid work from component cancellation and rejects a duplicate active start", async () => {
     let state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "secret" });
-    const pending = deferred<unknown>(); const active = { current: false }; const actions: EvaluateAction[] = [];
+    const pending = deferred<{ kind: "SEALED"; stage: "SEALED"; writeOutcome: { status: "SEALED";
+      recoveryId: string; transactionHash: `0x${string}`; identityKey: `0x${string}`; version: string } }>();
+    const active = { current: false }; const actions: EvaluateAction[] = [];
     const runner = vi.fn(() => pending.promise); const refresh = vi.fn();
     const first = executePaidRun(state, active, runner, (action) => actions.push(action), refresh,
       () => ({ code: "RUN_FAILED", message: "failed", stage: "VALIDATING_IDENTITY", retryable: true, requestId: "test" }));
@@ -180,10 +182,23 @@ describe("Paid run orchestration", () => {
     expect(runner).toHaveBeenCalledTimes(1);
     expect(runner.mock.calls[0]).toHaveLength(3);
     expect(runner.mock.calls[0].some((value: unknown) => value instanceof AbortSignal)).toBe(false);
-    pending.resolve({}); await expect(first).resolves.toBe(true);
+    pending.resolve({ kind: "SEALED", stage: "SEALED", writeOutcome: { status: "SEALED",
+      recoveryId: "rec_1234567890abcdef", transactionHash: `0x${"1".repeat(64)}`,
+      identityKey: `0x${"2".repeat(64)}`, version: "1" } }); await expect(first).resolves.toBe(true);
     expect(actions.map(({ type }) => type)).toEqual(["BEGIN_RUN", "RUN_SUCCEEDED"]);
     expect(refresh).toHaveBeenCalledWith("7"); expect(active.current).toBe(false);
     state = actions.reduce(evaluateReducer, state);
     expect(state).toMatchObject({ phase: "completed", operatorToken: "", writeOutcome: { status: "SUCCEEDED" } });
+  });
+
+  it("marks success only for a validated discriminated SEALED terminal", async () => {
+    const state = evaluateReducer(resolvedState(), { type: "EDIT_OPERATOR_TOKEN", token: "token" });
+    const active = { current: false }; const actions: EvaluateAction[] = [];
+    const existing = vi.fn().mockResolvedValue({ kind: "EXISTING_OPERATION", operation: {
+      recoveryId: "rec_1234567890abcdef", phase: "RECOVERY_REQUIRED",
+      writeOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN", recoveryId: "rec_1234567890abcdef" } } });
+    await executePaidRun(state, active, existing, (action) => actions.push(action), vi.fn(),
+      () => ({ code: "RUN_FAILED", message: "failed", stage: "WRITING_CHAIN", retryable: false, requestId: "test" }));
+    expect(actions.map((action) => action.type)).toEqual(["BEGIN_RUN", "RUN_FAILED"]);
   });
 });

@@ -12,6 +12,7 @@ import { ERC8004_IDENTITY_REGISTRY, type Bytes32, type EvidenceEnvelopeV1 } from
 import {
   apiErrorResponse,
   createDriftHandler,
+  createRecoveryHandler,
   createProofLockReadHandlers,
   createProofLockStreamHandler,
   methodNotAllowedResponse,
@@ -425,6 +426,36 @@ describe("historical ProofLocked recovery", () => {
 });
 
 describe("admin ProofLock stream", () => {
+  it("describes REVERTED as a finalized reverted transaction", async () => {
+    const outcome = { status: "REVERTED" as const, recoveryId: "rec_1234567890abcdef", transactionHash: hex("88", 32) };
+    const run = vi.fn(async () => { throw new ProofLockStageError("WRITING_CHAIN", "private", undefined, outcome); });
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}`,
+        "content-type": "application/json" }, body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661,
+          registryAddress: hex("80", 20), agentId: "7" }, mode: "SEAL" }) }));
+    const text = await response.text(); expect(text).toContain("Registry transaction finalized and reverted");
+    expect(text).not.toContain("was not attempted");
+  });
+  it("streams sanitized chain progress and a structured uncertain-write outcome", async () => {
+    const outcome = { status: "SUBMISSION_OUTCOME_UNKNOWN" as const,
+      recoveryId: "rec_1234567890abcdef" };
+    const run = vi.fn(async (_input, _stage, _signal, progress) => {
+      progress({ type: "chain", progress: { phase: "SUBMISSION_ATTEMPTED" } });
+      throw new ProofLockStageError("WRITING_CHAIN", "private provider token", new Error("Bearer secret"), outcome);
+    });
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}`,
+        "idempotency-key": "idem-12345678" }, body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661,
+          registryAddress: ERC8004_IDENTITY_REGISTRY, agentId: "7" }, mode: "SEAL" }) }),
+    );
+    const frames = await response.text();
+    expect(frames).toContain('"phase":"SUBMISSION_ATTEMPTED"');
+    expect(frames).toContain('"code":"SUBMISSION_OUTCOME_UNKNOWN"');
+    expect(frames).toContain('"writeOutcome":{"status":"SUBMISSION_OUTCOME_UNKNOWN","recoveryId":"rec_1234567890abcdef"}');
+    expect(frames).not.toContain("private provider token");
+    expect(frames).not.toContain("Bearer secret");
+  });
+
   it("authenticates before loading an operator or constructing a stream", async () => {
     const loadRunner = vi.fn();
     const response = await createProofLockStreamHandler({ operatorToken, loadRunner })(
@@ -451,7 +482,12 @@ describe("admin ProofLock stream", () => {
     const run = vi.fn(async (_input, report, _signal?: AbortSignal) => {
       report("VALIDATING_IDENTITY");
       report("SEALED");
-      return { stage: "SEALED", chain: { transactionHash: hex("aa", 32) } };
+      return { kind: "SEALED", stage: "SEALED", identity: { owner: hex("11", 20) }, subject: { kind: "EOA" },
+        envelope: { schema: "sentinel.prooflock/evidence-v1" }, storage: { envelopeDigest: hex("21", 32),
+          storageRoot: hex("22", 32), uploadTxHash: hex("23", 32), retrievedDigest: hex("21", 32), finalizedAtBlock: "9",
+          retrievalVerified: true, networkProofVerified: false }, chain: { transactionHash: hex("aa", 32),
+          expectedVersion: 1n, signer: hex("11", 20) }, proofLock: { identityKey }, writeOutcome: { status: "SEALED",
+          recoveryId: "rec_1234567890abcdef", transactionHash: hex("aa", 32), identityKey, version: "1" } };
     });
     const request = new Request("https://sentinel.test", {
         method: "POST", headers: { authorization: `Bearer ${operatorToken}`, "content-type": "application/json" },
@@ -464,6 +500,7 @@ describe("admin ProofLock stream", () => {
     const frames = await response.text();
     expect(frames).toContain('"type":"stage","stage":"VALIDATING_IDENTITY"');
     expect(frames).toContain('"type":"complete"');
+    expect(frames).toContain('"envelope":{"schema":"sentinel.prooflock/evidence-v1"}');
     expect(run).toHaveBeenCalledTimes(1);
     expect(run.mock.calls[0]?.[2]).toBeInstanceOf(AbortSignal);
     expect(run.mock.calls[0]?.[2]).not.toBe(request.signal);
@@ -480,6 +517,18 @@ describe("admin ProofLock stream", () => {
     expect(frames).toContain('"code":"COMPUTE_UNVERIFIED"');
     expect(frames).toContain('"stage":"RUNNING_COMPUTE"');
     expect(frames).not.toContain("private provider detail");
+  });
+
+  it("preserves a stable idempotency conflict without exposing journal internals", async () => {
+    const run = vi.fn().mockRejectedValue(new ProofLockStageError("RUNNING_COMPUTE",
+      "private journal path", undefined, undefined, "IDEMPOTENCY_CONFLICT"));
+    const response = await createProofLockStreamHandler({ operatorToken, loadRunner: async () => ({ run }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` },
+        body: JSON.stringify({ identity: { namespace: "eip155", chainId: 16661,
+          registryAddress: ERC8004_IDENTITY_REGISTRY, agentId: "7" }, mode: "SEAL" }) }));
+    const frames = await response.text();
+    expect(frames).toContain('"code":"IDEMPOTENCY_CONFLICT"');
+    expect(frames).not.toContain("private journal path");
   });
 
   it("aborts the runner when the response reader is cancelled", async () => {
@@ -522,6 +571,37 @@ describe("admin ProofLock stream", () => {
     expect(response.status).toBe(400);
     expect(loadRunner).not.toHaveBeenCalled();
     expect(cancelled).toHaveBeenCalled();
+  });
+});
+
+describe("admin ProofLock recovery", () => {
+  it("authenticates before validating or loading recovery dependencies", async () => {
+    const loadRecovery = vi.fn();
+    const response = await createRecoveryHandler({ operatorToken, loadRecovery })(
+      new Request("https://sentinel.test", { method: "POST", body: "{" }));
+    expect(response.status).toBe(401);
+    expect(loadRecovery).not.toHaveBeenCalled();
+  });
+
+  it("validates a bounded recovery request then performs only a read-only recovery", async () => {
+    const recover = vi.fn().mockResolvedValue({ status: "SEALED", recoveryId: "rec_1234567890abcdef",
+      transactionHash: hex("88", 32), identityKey, version: "1" });
+    const response = await createRecoveryHandler({ operatorToken, loadRecovery: async () => ({ recover }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` },
+        body: JSON.stringify({ recoveryId: "rec_1234567890abcdef", transactionHash: hex("88", 32) }) }));
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(recover).toHaveBeenCalledWith("rec_1234567890abcdef", hex("88", 32), expect.any(AbortSignal));
+  });
+
+  it("returns a sanitized validated REVERTED recovery outcome", async () => {
+    const recover = vi.fn().mockResolvedValue({ status: "REVERTED", recoveryId: "rec_1234567890abcdef",
+      transactionHash: hex("88", 32), privateMessage: "provider secret" });
+    const response = await createRecoveryHandler({ operatorToken, loadRecovery: async () => ({ recover }) })(
+      new Request("https://sentinel.test", { method: "POST", headers: { authorization: `Bearer ${operatorToken}` },
+        body: JSON.stringify({ recoveryId: "rec_1234567890abcdef", transactionHash: hex("88", 32) }) }));
+    const text = await response.text();
+    expect(text).toContain('"status":"REVERTED"'); expect(text).not.toContain("provider secret");
   });
 });
 

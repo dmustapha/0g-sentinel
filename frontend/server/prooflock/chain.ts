@@ -1,4 +1,4 @@
-import { AbiCoder, Interface, getAddress, keccak256, toUtf8Bytes, type Provider, type Signer } from "ethers";
+import { AbiCoder, Interface, getAddress, keccak256, toUtf8Bytes, zeroPadValue, type Provider, type Signer } from "ethers";
 import { canonicalize } from "json-canonicalize";
 
 import { ERC8004_IDENTITY_REGISTRY, type AgentIdentity, type Bytes32, type HexAddress } from "./types";
@@ -9,6 +9,8 @@ const STATE_ACTIVE = 1;
 const MAX_CONFIRMATIONS = 64;
 const MAX_TIMEOUT_MS = 120_000;
 const UINT64_MAX = (1n << 64n) - 1n;
+const RECOVERY_LOOKBACK_BLOCKS = 50_000;
+const MAX_RECOVERY_CANDIDATES = 32;
 
 export const REGISTRY_V2_INTERFACE = new Interface([
   "function seal(bytes32 identityKey,address subject,(bytes32 envelopeDigest,bytes32 storageRoot,bytes32 computeRoot,bytes32 artifactHash,bytes32 expectedRuntimeCodeHash,uint48 validForSeconds,uint32 policyVersion,uint8 behavioralScore,uint8 codeRisk,uint8 coverage) input)",
@@ -47,6 +49,12 @@ export type ChainWriteRequest = Readonly<{
 }>;
 
 export type ChainWriteResult = Readonly<{ transactionHash: Bytes32; expectedVersion: bigint; signer: HexAddress }>;
+export type ChainWriteProgress =
+  | Readonly<{ phase: "PRE_SEND" | "SUBMISSION_ATTEMPTED" }>
+  | Readonly<{ phase: "HASH_KNOWN"; transactionHash: Bytes32 }>
+  | Readonly<{ phase: "REVERTED"; transactionHash: Bytes32 }>
+  | Readonly<{ phase: "FINALIZED"; transactionHash: Bytes32; blockHash: Bytes32;
+      blockNumber: string; confirmations: number }>;
 export type DriftWriteRequest = Readonly<{
   registryAddress: HexAddress; identityKey: Bytes32; expectedVersion: bigint; reason: number;
 }>;
@@ -59,12 +67,13 @@ export type RegistryReceipt = Readonly<{
 
 export interface RegistryChainAdapter {
   readonly registryAddress: HexAddress;
-  getChainId(): Promise<bigint>;
-  getCode(address: string): Promise<string>;
-  getProofLock(identityKey: Bytes32): Promise<RegistryProofLockRecord>;
+  getChainId(signal?: AbortSignal): Promise<bigint>;
+  getCode(address: string, signal?: AbortSignal): Promise<string>;
+  getProofLock(identityKey: Bytes32, signal?: AbortSignal): Promise<RegistryProofLockRecord>;
   sendTransaction(transaction: Readonly<{ to: HexAddress; data: string }>): Promise<Readonly<{ hash: string; to: string; data: string; from: string }>>;
-  waitForReceipt(hash: string, confirmations: number, timeoutMs: number): Promise<RegistryReceipt | null>;
-  getTransaction(hash: string): Promise<Readonly<{ hash: string; to: string; data: string; from: string }> | null>;
+  waitForReceipt(hash: string, confirmations: number, timeoutMs: number, signal?: AbortSignal): Promise<RegistryReceipt | null>;
+  getTransaction(hash: string, signal?: AbortSignal): Promise<Readonly<{ hash: string; to: string; data: string; from: string }> | null>;
+  findProofLockTransactionHashes?(input: ChainWriteRequest, confirmations: number, signal?: AbortSignal): Promise<readonly Bytes32[]>;
 }
 
 export function createEthersRegistryChainAdapter(
@@ -75,15 +84,15 @@ export function createEthersRegistryChainAdapter(
   const registry = normalizeAddress(registryAddress, "registry");
   const adapter: RegistryChainAdapter = {
     registryAddress: registry,
-    getChainId: async () => (await provider.getNetwork()).chainId,
-    getCode: (address) => provider.getCode(address),
-    getProofLock: (identityKey) => getEthersProofLock(provider, registry, identityKey),
+    getChainId: async (signal) => (await chainAbortable(provider.getNetwork(), signal)).chainId,
+    getCode: (address, signal) => chainAbortable(provider.getCode(address), signal),
+    getProofLock: (identityKey, signal) => chainAbortable(getEthersProofLock(provider, registry, identityKey), signal),
     sendTransaction: async (transaction) => {
       const sent = await signer.sendTransaction(transaction);
       return { hash: sent.hash, to: transaction.to, data: transaction.data, from: sent.from };
     },
-    waitForReceipt: async (hash, confirmations, timeoutMs) => {
-      const receipt = await provider.waitForTransaction(hash, confirmations, timeoutMs);
+    waitForReceipt: async (hash, confirmations, timeoutMs, signal) => {
+      const receipt = await chainAbortable(provider.waitForTransaction(hash, confirmations, timeoutMs), signal);
       if (!receipt) return null;
       return {
         transactionHash: receipt.hash,
@@ -94,13 +103,51 @@ export function createEthersRegistryChainAdapter(
         logs: receipt.logs.map((log) => ({ address: log.address, topics: log.topics, data: log.data })),
       };
     },
-    getTransaction: async (hash) => {
-      const transaction = await provider.getTransaction(hash);
+    getTransaction: async (hash, signal) => {
+      const transaction = await chainAbortable(provider.getTransaction(hash), signal);
       if (!transaction?.to) return null;
       return { hash: transaction.hash, to: transaction.to, data: transaction.data, from: transaction.from };
     },
+    findProofLockTransactionHashes: (input, confirmations, signal) => discoverExactTransactions(
+      provider, registry, input, confirmations, signal),
   };
   return Object.freeze(adapter);
+}
+
+async function discoverExactTransactions(provider: Provider, registry: HexAddress, input: ChainWriteRequest,
+  confirmations: number, signal?: AbortSignal): Promise<readonly Bytes32[]> {
+  const latest = await chainAbortable(provider.getBlockNumber(), signal);
+  const finalized = latest - confirmations + 1;
+  if (finalized < 0) return [];
+  const logs = await chainAbortable(provider.getLogs({ address: registry,
+    topics: [REGISTRY_V2_INTERFACE.getEvent("ProofLocked")!.topicHash, input.identityKey,
+      zeroPadValue(input.subject, 32)], fromBlock: Math.max(0, finalized - RECOVERY_LOOKBACK_BLOCKS + 1), toBlock: finalized }), signal);
+  if (logs.length > MAX_RECOVERY_CANDIDATES) return [];
+  const matches: Bytes32[] = [];
+  for (const log of logs) {
+    const transaction = await chainAbortable(provider.getTransaction(log.transactionHash), signal);
+    const receipt = await chainAbortable(provider.getTransactionReceipt(log.transactionHash), signal);
+    if (!transaction?.to || !receipt || receipt.status !== 1
+      || transaction.hash.toLowerCase() !== log.transactionHash.toLowerCase()
+      || receipt.hash.toLowerCase() !== log.transactionHash.toLowerCase()
+      || transaction.from.toLowerCase() !== input.scanner.toLowerCase()
+      || transaction.to.toLowerCase() !== registry || transaction.data !== encodeWrite(input)) continue;
+    const observedConfirmations = latest - receipt.blockNumber + 1;
+    if (observedConfirmations < confirmations) continue;
+    const normalized: RegistryReceipt = { transactionHash: receipt.hash, status: receipt.status,
+      blockNumber: BigInt(receipt.blockNumber), blockHash: receipt.blockHash, confirmations: observedConfirmations,
+      logs: receipt.logs.map((item) => ({ address: item.address, topics: item.topics, data: item.data })) };
+    try { assertLockEvent(normalized, input, input.mode === "SEAL" ? 1n : input.expectedPriorVersion! + 1n);
+      matches.push(receipt.hash.toLowerCase() as Bytes32); } catch { /* exact commitment mismatch */ }
+  }
+  return Object.freeze(matches);
+}
+
+function chainAbortable<T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return operation;
+  signal.throwIfAborted();
+  return Promise.race([operation, new Promise<never>((_, reject) => signal.addEventListener("abort",
+    () => reject(signal.reason), { once: true }))]);
 }
 
 async function getEthersProofLock(
@@ -149,6 +196,7 @@ export async function writeProofLock(
   adapter: RegistryChainAdapter,
   rawRequest: ChainWriteRequest,
   rawOptions: Readonly<{ confirmations: number; timeoutMs: number }>,
+  report?: (progress: ChainWriteProgress) => void,
 ): Promise<ChainWriteResult> {
   const request = validateRequest(rawRequest);
   const options = validateOptions(rawOptions);
@@ -157,10 +205,18 @@ export async function writeProofLock(
   const current = await adapter.getProofLock(request.identityKey);
   const expectedVersion = requireWriteState(request, current);
   const data = encodeWrite(request);
-  const transaction = await send(adapter, request.registryAddress, data, request.scanner);
-  const receipt = await finalize(adapter, transaction.hash, options);
+  report?.(Object.freeze({ phase: "PRE_SEND" }));
+  const transaction = await send(adapter, request.registryAddress, data, request.scanner, report);
+  const receipt = await finalize(adapter, transaction.hash, options, true);
+  if (receipt.status === 0) {
+    report?.(Object.freeze({ phase: "REVERTED", transactionHash: transaction.hash as Bytes32 }));
+    throw new ChainProofError("TRANSACTION_REVERTED", "Registry transaction reverted");
+  }
   await assertTransaction(adapter, transaction.hash, request.registryAddress, data, request.scanner);
   assertLockEvent(receipt, request, expectedVersion);
+  report?.(Object.freeze({ phase: "FINALIZED", transactionHash: transaction.hash as Bytes32,
+    blockHash: receipt.blockHash.toLowerCase() as Bytes32, blockNumber: receipt.blockNumber.toString(),
+    confirmations: receipt.confirmations }));
   return Object.freeze({ transactionHash: bytes32(transaction.hash, false, "transaction hash"),
     expectedVersion, signer: request.scanner });
 }
@@ -374,24 +430,32 @@ function encodeWrite(request: ChainWriteRequest): string {
   ]);
 }
 
-async function send(adapter: RegistryChainAdapter, to: HexAddress, data: string, expectedFrom?: HexAddress) {
+async function send(adapter: RegistryChainAdapter, to: HexAddress, data: string, expectedFrom?: HexAddress,
+  report?: (progress: ChainWriteProgress) => void) {
+  report?.(Object.freeze({ phase: "SUBMISSION_ATTEMPTED" }));
+  let transaction;
   try {
-    const transaction = await adapter.sendTransaction({ to, data });
-    if (!transaction || normalizeAddress(transaction.to, "transaction target") !== to || transaction.data !== data
-      || (expectedFrom && normalizeAddress(transaction.from, "transaction sender") !== expectedFrom)) {
-      throw new ChainProofError("TRANSACTION_MISMATCH", "Submitted transaction differs from request");
-    }
-    bytes32(transaction.hash, false, "transaction hash");
-    return transaction;
+    transaction = await adapter.sendTransaction({ to, data });
   } catch (error) {
     if (error instanceof ChainProofError) throw error;
     throw new ChainProofError("TRANSACTION_FAILED", "Registry transaction submission failed", error);
   }
+  const transactionHash = bytes32(transaction.hash, false, "transaction hash");
+  report?.(Object.freeze({ phase: "HASH_KNOWN", transactionHash }));
+  if (normalizeAddress(transaction.to, "transaction target") !== to || transaction.data !== data
+    || (expectedFrom && normalizeAddress(transaction.from, "transaction sender") !== expectedFrom)) {
+    throw new ChainProofError("TRANSACTION_MISMATCH", "Submitted transaction differs from request");
+  }
+  return transaction;
 }
 
-async function finalize(adapter: RegistryChainAdapter, hash: string, options: { confirmations: number; timeoutMs: number }) {
+async function finalize(adapter: RegistryChainAdapter, hash: string,
+  options: { confirmations: number; timeoutMs: number }, allowReverted = false) {
   const receipt = await adapter.waitForReceipt(hash, options.confirmations, options.timeoutMs);
-  if (!receipt || receipt.status !== 1) throw new ChainProofError("TRANSACTION_REVERTED", "Registry transaction did not succeed");
+  if (!receipt || (receipt.status !== 0 && receipt.status !== 1))
+    throw new ChainProofError("TRANSACTION_REVERTED", "Registry transaction outcome is unavailable");
+  if (receipt.status === 0 && !allowReverted)
+    throw new ChainProofError("TRANSACTION_REVERTED", "Registry transaction did not succeed");
   if (receipt.transactionHash.toLowerCase() !== hash.toLowerCase()) {
     throw new ChainProofError("TRANSACTION_MISMATCH", "Receipt transaction hash mismatch");
   }

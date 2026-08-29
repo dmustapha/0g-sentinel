@@ -1,9 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import { AbiCoder, keccak256, toUtf8Bytes } from "ethers";
 import { canonicalize } from "json-canonicalize";
 
 import { canonicalizeEvidence, canonicalizeStorageCommitment } from "./canonical";
-import { computeIdentityKey, type ChainWriteRequest, type ChainWriteResult, type RegistryProofLockRecord } from "./chain";
+import { computeIdentityKey, type ChainWriteProgress, type ChainWriteRequest, type ChainWriteResult, type RegistryProofLockRecord } from "./chain";
 import type { SubjectCheckReport } from "./checks";
+import { OperationJournalError, type OperationJournal, type OperationRecord, type PaidStage, type PublicWriteOutcome } from "./operation-journal";
 import type { ClassifiedSubject } from "./subject/classify";
 import type {
   AgentIdentity, Bytes32, ComputeProof, DeterministicCheck, EvidenceEnvelopeV1,
@@ -20,6 +23,7 @@ export type RunnerStage = (typeof PROOFLOCK_RUNNER_STAGES)[number];
 export type RunnerInput = Readonly<{
   identity: AgentIdentity; registryAddress: HexAddress; policyVersion: number; scanner: HexAddress; scannerSoftwareVersion: string;
   validForSeconds: number; mode: "SEAL" | "RESEAL"; expectedPriorVersion?: bigint; previousProofId?: Bytes32;
+  idempotencyKey?: string;
 }>;
 export type DeterministicStageResult = Readonly<{
   checks: readonly DeterministicCheck[]; report?: SubjectCheckReport;
@@ -38,25 +42,40 @@ export type RunnerContext = Readonly<{
 }>;
 export type RunnerChainInput = ChainWriteRequest;
 export type RunnerResult = Readonly<{
+  kind: "SEALED";
   stage: "SEALED"; identity: ResolvedAgentIdentity; subject: ClassifiedSubject;
   envelope: EvidenceEnvelopeV1; storage: StorageCommitment; chain: ChainWriteResult;
-  proofLock: RegistryProofLockRecord;
+  proofLock: RegistryProofLockRecord; writeOutcome?: Extract<PublicWriteOutcome, { status: "SEALED" }>;
+}>;
+export type ExistingOperationResult = Readonly<{ kind: "EXISTING_OPERATION"; operation: Readonly<{
+  recoveryId: string; phase: OperationRecord["phase"]; writeOutcome?: PublicWriteOutcome;
+}> }>;
+export type RunnerTerminalResult = RunnerResult | ExistingOperationResult;
+export type PaidCostController = Readonly<{
+  reserve(stage: PaidStage): void; reconcile(stage: PaidStage, disposition: "CONSUMED" | "RELEASED"): void;
 }>;
 
 export type ProofLockRunnerDependencies = Readonly<{
   validateIdentity(input: AgentIdentity, signal?: AbortSignal): Promise<ResolvedAgentIdentity>;
   classifySubject(identity: ResolvedAgentIdentity, signal?: AbortSignal): Promise<ClassifiedSubject>;
   runDeterministicChecks(identity: ResolvedAgentIdentity, subject: ClassifiedSubject, signal?: AbortSignal): Promise<DeterministicStageResult>;
-  runCompute(identity: ResolvedAgentIdentity, subject: ClassifiedSubject, deterministic: DeterministicStageResult, signal?: AbortSignal): Promise<ComputeStageResult>;
+  runCompute(identity: ResolvedAgentIdentity, subject: ClassifiedSubject, deterministic: DeterministicStageResult,
+    signal?: AbortSignal, costs?: PaidCostController): Promise<ComputeStageResult>;
   buildEvidenceEnvelope(context: RunnerContext, signal?: AbortSignal): Promise<EvidenceEnvelopeV1>;
   uploadStorage(canonical: CanonicalEvidenceResult, signal?: AbortSignal): Promise<unknown>;
   verifyStorage(upload: unknown, canonical: CanonicalEvidenceResult, signal?: AbortSignal): Promise<StorageCommitment>;
-  writeChain(input: RunnerChainInput, signal?: AbortSignal): Promise<ChainWriteResult>;
+  writeChain(input: RunnerChainInput, signal?: AbortSignal, report?: (progress: ChainWriteProgress) => void): Promise<ChainWriteResult>;
   readChainBack(input: RunnerChainInput, write: ChainWriteResult, signal?: AbortSignal): Promise<RegistryProofLockRecord>;
+  operationJournal?: OperationJournal;
+  costSchedule?: Readonly<Record<PaidStage, number>>;
 }>;
 
+export type RunnerProgress = Readonly<{ type: "chain"; progress: ChainWriteProgress }>
+  | Readonly<{ type: "admission"; state: "ACCEPTED" | "DEDUPLICATED"; recoveryId: string; idempotencyKey: string }>;
+
 export class ProofLockStageError extends Error {
-  constructor(readonly stage: RunnerStage, message: string, readonly cause?: unknown) {
+  constructor(readonly stage: RunnerStage, message: string, readonly cause?: unknown,
+    readonly outcome?: PublicWriteOutcome, readonly code?: string) {
     super(message);
     this.name = "ProofLockStageError";
   }
@@ -64,7 +83,8 @@ export class ProofLockStageError extends Error {
 
 export function createProofLockRunner(dependencies: ProofLockRunnerDependencies) {
   return Object.freeze({
-    run: (input: RunnerInput, report?: (stage: RunnerStage) => void, signal?: AbortSignal) => run(input, dependencies, report, signal),
+    run: (input: RunnerInput, report?: (stage: RunnerStage) => void, signal?: AbortSignal,
+      reportProgress?: (progress: RunnerProgress) => void) => run(input, dependencies, report, signal, reportProgress),
   });
 }
 
@@ -73,8 +93,24 @@ async function run(
   dependencies: ProofLockRunnerDependencies,
   report?: (stage: RunnerStage) => void,
   signal?: AbortSignal,
-): Promise<RunnerResult> {
-  const input = validateRunnerInput(rawInput);
+  reportProgress?: (progress: RunnerProgress) => void,
+): Promise<RunnerTerminalResult> {
+  const validated = validateRunnerInput(rawInput);
+  const input = Object.freeze({ ...validated, idempotencyKey: validated.idempotencyKey ?? `auto-${randomUUID()}` });
+  const stableDigest = requestDigest(input);
+  const journal = dependencies.operationJournal;
+  try {
+    const existing = journal?.lookup(input.idempotencyKey, stableDigest);
+    if (existing) {
+      safeProgress(reportProgress, { type: "admission", state: "DEDUPLICATED", recoveryId: existing.operation.recoveryId,
+        idempotencyKey: existing.operation.idempotencyKey });
+      return existingResult(existing.operation);
+    }
+  } catch (error) {
+    if (error instanceof OperationJournalError) throw new ProofLockStageError("VALIDATING_IDENTITY",
+      "Operation admission was rejected", error, undefined, error.code);
+    throw error;
+  }
   const execute = executor(report, signal);
   const identity = await execute("VALIDATING_IDENTITY", () => signal
     ? dependencies.validateIdentity(input.identity, signal) : dependencies.validateIdentity(input.identity));
@@ -85,32 +121,160 @@ async function run(
   const deterministic = await execute("RUNNING_DETERMINISTIC_CHECKS", () => signal
     ? dependencies.runDeterministicChecks(identity, subject, signal) : dependencies.runDeterministicChecks(identity, subject));
   assertDeterministic(subject, deterministic);
-  const compute = await execute("RUNNING_COMPUTE", () => signal
-    ? dependencies.runCompute(identity, subject, deterministic, signal) : dependencies.runCompute(identity, subject, deterministic));
-  assertCompute(subject, deterministic, compute);
-  const computeRoot = computeProofRoot(compute.proofs);
-  const context = Object.freeze({ input, identity, subject, deterministic, compute, computeRoot });
-  const canonical = await execute("CANONICALIZING_EVIDENCE", async () => {
-    const envelope = signal ? await dependencies.buildEvidenceEnvelope(context, signal)
-      : await dependencies.buildEvidenceEnvelope(context);
-    assertEnvelopeBinding(context, envelope);
-    return makeCanonicalEvidence(envelope);
-  });
-  const upload = await execute("UPLOADING_STORAGE", () => signal
-    ? dependencies.uploadStorage(canonical, signal) : dependencies.uploadStorage(canonical));
-  const storage = await execute("VERIFYING_STORAGE", () => signal
-    ? dependencies.verifyStorage(upload, canonical, signal) : dependencies.verifyStorage(upload, canonical));
-  assertStorageBinding(canonical, storage);
-  let chainInput!: RunnerChainInput;
-  const chain = await execute("WRITING_CHAIN", () => {
+  let admission: ReturnType<OperationJournal["begin"]> | undefined;
+  try { admission = journal?.begin(operationAdmission(input, identity, subject, stableDigest,
+    reservedBudget(subject, dependencies.costSchedule))); }
+  catch (error) {
+    if (error instanceof OperationJournalError) throw new ProofLockStageError("RUNNING_COMPUTE",
+      "Operation admission was rejected", error, undefined, error.code);
+    throw error;
+  }
+  if (admission) safeProgress(reportProgress, { type: "admission", state: admission.kind,
+    recoveryId: admission.operation.recoveryId, idempotencyKey: admission.operation.idempotencyKey });
+  if (admission?.kind === "DEDUPLICATED") return existingResult(admission.operation);
+  const operation = admission?.operation;
+  const costs = costController(journal, operation, dependencies.costSchedule);
+  const paid = executor(report);
+  let chainInput: RunnerChainInput | undefined;
+  let chain: ChainWriteResult | undefined;
+  const writeState: { attempted: boolean; finalized: boolean; reverted: boolean; transactionHash?: Bytes32 } = {
+    attempted: false, finalized: false, reverted: false };
+  try {
+    const compute = await paid("RUNNING_COMPUTE", () => dependencies.runCompute(identity, subject, deterministic, undefined, costs));
+    assertCompute(subject, deterministic, compute);
+    const computeRoot = computeProofRoot(compute.proofs);
+    journalOperation(journal, operation, "compute", { computeRoot, commitments: computeCommitments(compute.proofs) });
+    const context = Object.freeze({ input, identity, subject, deterministic, compute, computeRoot });
+    const canonical = await paid("CANONICALIZING_EVIDENCE", async () => {
+      const envelope = await dependencies.buildEvidenceEnvelope(context);
+      assertEnvelopeBinding(context, envelope);
+      return makeCanonicalEvidence(envelope);
+    });
+    costs.reserve("STORAGE");
+    const upload = await paid("UPLOADING_STORAGE", async () => {
+      try { return await dependencies.uploadStorage(canonical); }
+      finally { costs.reconcile("STORAGE", "CONSUMED"); }
+    });
+    const storage = await paid("VERIFYING_STORAGE", () => dependencies.verifyStorage(upload, canonical));
+    assertStorageBinding(canonical, storage);
+    const artifactHash = storageArtifactHash(storage);
+    journalOperation(journal, operation, "storage", { storageRoot: storage.storageRoot,
+      uploadTxHash: storage.uploadTxHash, artifactHash, envelopeDigest: storage.envelopeDigest,
+      retrievedDigest: storage.retrievedDigest, finalizedAtBlock: storage.finalizedAtBlock,
+      retrievalVerified: true, networkProofVerified: false });
     chainInput = createChainInput(context, canonical, storage);
-    return signal ? dependencies.writeChain(chainInput, signal) : dependencies.writeChain(chainInput);
+    journalOperation(journal, operation, "chain", chainInput);
+    costs.reserve("REGISTRY");
+    const onChainProgress = (progress: ChainWriteProgress) => {
+      applyChainProgress(journal, operation, progress, writeState);
+      safeProgress(reportProgress, Object.freeze({ type: "chain", progress }));
+    };
+    chain = await paid("WRITING_CHAIN", async () => {
+      let completed = false;
+      try { const result = await dependencies.writeChain(chainInput!, undefined, onChainProgress); completed = true; return result; }
+      finally { costs.reconcile("REGISTRY", writeState.attempted || completed ? "CONSUMED" : "RELEASED"); }
+    });
+    writeState.finalized = true; writeState.transactionHash = chain.transactionHash;
+    const proofLock = await paid("READING_CHAIN_BACK", () => dependencies.readChainBack(chainInput!, chain!));
+    assertReadback(chainInput, chain, proofLock);
+    const outcome = operation ? sealedOutcome(operation, chainInput, chain) : undefined;
+    if (operation && outcome) journal!.complete(operation.recoveryId, outcome);
+    safeReport(report, "SEALED");
+    return Object.freeze({ kind: "SEALED", stage: "SEALED", identity, subject, envelope: canonical.envelope, storage, chain, proofLock,
+      ...(outcome?.status === "SEALED" ? { writeOutcome: outcome } : {}) });
+  } catch (error) {
+    if (!operation) throw error;
+    const outcome = writeOutcome(operation, chainInput, chain, writeState);
+    try { journal!.complete(operation.recoveryId, outcome); } catch (journalError) {
+      if (!(error instanceof ProofLockStageError)) error = journalError;
+    }
+    const stageError = error instanceof ProofLockStageError ? error
+      : new ProofLockStageError("RUNNING_COMPUTE", "ProofLock paid ceremony stopped", error);
+    throw new ProofLockStageError(stageError.stage, stageError.message, stageError.cause, outcome, stageError.code);
+  }
+}
+
+function operationAdmission(input: RunnerInput, identity: ResolvedAgentIdentity, subject: ClassifiedSubject,
+  inputDigest: Bytes32, reservedCostUnits: number) {
+  const identityKey = computeIdentityKey(identity.identity);
+  return Object.freeze({ idempotencyKey: input.idempotencyKey!, inputDigest, identityKey, operator: input.scanner,
+    subject: subject.address, expectedVersion: (input.mode === "SEAL" ? 1n : input.expectedPriorVersion! + 1n).toString(),
+    policyVersion: input.policyVersion, runtimeCodeHash: subject.runtimeCodeHash, reservedCostUnits });
+}
+
+function requestDigest(input: RunnerInput): Bytes32 {
+  const canonical = canonicalize({ identity: input.identity, mode: input.mode,
+    expectedPriorVersion: input.expectedPriorVersion?.toString(), previousProofId: input.previousProofId,
+    registryAddress: input.registryAddress, scanner: input.scanner, scannerSoftwareVersion: input.scannerSoftwareVersion,
+    policyVersion: input.policyVersion, validForSeconds: input.validForSeconds });
+  if (typeof canonical !== "string") throw new ProofLockStageError("VALIDATING_IDENTITY", "Operation request could not be committed");
+  return keccak256(toUtf8Bytes(canonical)) as Bytes32;
+}
+function existingResult(operation: OperationRecord): ExistingOperationResult { return Object.freeze({ kind: "EXISTING_OPERATION",
+  operation: Object.freeze({ recoveryId: operation.recoveryId, phase: operation.phase,
+    ...(operation.terminalOutcome ? { writeOutcome: operation.terminalOutcome } : {}) }) }); }
+function reservedBudget(subject: ClassifiedSubject, configured?: Readonly<Record<PaidStage, number>>): number {
+  const schedule = configured ?? { COMPUTE_BEHAVIORAL: 1, COMPUTE_CONTRACT: 1, STORAGE: 1, REGISTRY: 1 };
+  return schedule.COMPUTE_BEHAVIORAL + schedule.STORAGE + schedule.REGISTRY
+    + (subject.kind === "EOA" ? 0 : schedule.COMPUTE_CONTRACT);
+}
+
+function computeCommitments(proofs: readonly ComputeProof[]) {
+  return Object.freeze(proofs.map((proof) => Object.freeze({ purpose: proof.purpose,
+    provider: proof.provider, model: proof.model, proofClass: proof.proofClass,
+    processResponseVerified: proof.processResponseVerified, receiptDigest: proof.receiptDigest,
+    requestDigest: proof.requestDigest, responseDigest: proof.responseDigest,
+    signedTextSha256: proof.signedTextSha256, requestSha256: proof.requestSha256,
+    rawResponseSha256: proof.rawResponseSha256, responseHeadersSha256: proof.responseHeadersSha256 })));
+}
+function storageArtifactHash(storage: StorageCommitment): Bytes32 {
+  return keccak256(toUtf8Bytes(canonicalizeStorageCommitment(storage))) as Bytes32;
+}
+function journalOperation(journal: OperationJournal | undefined, operation: OperationRecord | undefined,
+  phase: "compute" | "storage" | "chain", value: unknown): void {
+  if (!journal || !operation) return;
+  if (phase === "compute") journal.recordCompute(operation.recoveryId, value as Parameters<OperationJournal["recordCompute"]>[1]);
+  else if (phase === "storage") journal.recordStorage(operation.recoveryId, value as Parameters<OperationJournal["recordStorage"]>[1]);
+  else journal.recordChainInput(operation.recoveryId, value as RunnerChainInput);
+}
+function applyChainProgress(journal: OperationJournal | undefined, operation: OperationRecord | undefined,
+  progress: ChainWriteProgress, state: { attempted: boolean; finalized: boolean; reverted: boolean; transactionHash?: Bytes32 }): void {
+  if (progress.phase === "SUBMISSION_ATTEMPTED") { if (journal && operation) journal.recordSubmissionAttempt(operation.recoveryId); state.attempted = true; }
+  else if (progress.phase === "HASH_KNOWN") { state.transactionHash = progress.transactionHash;
+    if (journal && operation) journal.recordTransactionHash(operation.recoveryId, progress.transactionHash); }
+  else if (progress.phase === "FINALIZED") { state.finalized = true; state.transactionHash = progress.transactionHash;
+    if (journal && operation) journal.recordFinalized(operation.recoveryId, progress); }
+  else if (progress.phase === "REVERTED") { state.reverted = true; state.transactionHash = progress.transactionHash; }
+}
+
+function costController(journal: OperationJournal | undefined, operation: OperationRecord | undefined,
+  configured?: Readonly<Record<PaidStage, number>>): PaidCostController {
+  const schedule = configured ?? { COMPUTE_BEHAVIORAL: 1, COMPUTE_CONTRACT: 1, STORAGE: 1, REGISTRY: 1 };
+  return Object.freeze({ reserve: (stage: PaidStage) => { if (journal && operation) journal.reserveCost(operation.recoveryId, stage, schedule[stage]); },
+    reconcile: (stage: PaidStage, disposition: "CONSUMED" | "RELEASED") => {
+      if (journal && operation) journal.reconcileCost(operation.recoveryId, stage, disposition);
+    } });
+}
+
+function safeProgress(report: ((progress: RunnerProgress) => void) | undefined, progress: RunnerProgress): void {
+  try { report?.(progress); } catch { /* client status reporting is observational */ }
+}
+function writeOutcome(operation: OperationRecord, chainInput: RunnerChainInput | undefined,
+  chain: ChainWriteResult | undefined, state: { attempted: boolean; finalized: boolean; reverted: boolean; transactionHash?: Bytes32 }): PublicWriteOutcome {
+  const transactionHash = chain?.transactionHash ?? state.transactionHash;
+  if (state.reverted && transactionHash) return Object.freeze({ status: "REVERTED", recoveryId: operation.recoveryId, transactionHash });
+  if ((chain || state.finalized) && transactionHash && chainInput) return Object.freeze({
+    status: "FINALIZED_READBACK_UNAVAILABLE", recoveryId: operation.recoveryId, transactionHash,
+    identityKey: chainInput.identityKey, version: (chain?.expectedVersion
+      ?? (chainInput.mode === "SEAL" ? 1n : chainInput.expectedPriorVersion! + 1n)).toString(),
   });
-  const proofLock = await execute("READING_CHAIN_BACK", () => signal
-    ? dependencies.readChainBack(chainInput, chain, signal) : dependencies.readChainBack(chainInput, chain));
-  assertReadback(chainInput, chain, proofLock);
-  safeReport(report, "SEALED");
-  return Object.freeze({ stage: "SEALED", identity, subject, envelope: canonical.envelope, storage, chain, proofLock });
+  if (state.attempted) return Object.freeze({ status: "SUBMISSION_OUTCOME_UNKNOWN",
+    recoveryId: operation.recoveryId, ...(transactionHash ? { transactionHash } : {}) });
+  return Object.freeze({ status: "NOT_BROADCAST", recoveryId: operation.recoveryId });
+}
+function sealedOutcome(operation: OperationRecord, input: RunnerChainInput, chain: ChainWriteResult): PublicWriteOutcome {
+  return Object.freeze({ status: "SEALED", recoveryId: operation.recoveryId, transactionHash: chain.transactionHash,
+    identityKey: input.identityKey, version: chain.expectedVersion.toString() });
 }
 
 function assertReadback(

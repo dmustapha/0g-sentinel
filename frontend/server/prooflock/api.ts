@@ -1,21 +1,28 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import { isCanonicalAgentId, parseNonZeroBytes32 } from "@/lib/prooflock-validation";
 import type { RegistryProofLockRecord } from "./chain";
 import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
-import { ProofLockStageError, type RunnerResult, type RunnerStage } from "./runner";
+import { ProofLockStageError, type RunnerStage, type RunnerTerminalResult } from "./runner";
+import type { RunnerProgress } from "./runner";
+import type { PublicWriteOutcome } from "./operation-journal";
+import { WriteRecoveryError } from "./recovery";
 import { authenticateOperator } from "./auth";
 
 const MAX_BODY_BYTES = 16_384;
 const READ_CACHE = "no-store";
 
-export type ApiStage = RunnerStage | "AUTHENTICATING" | "RESOLVING_IDENTITY" | "READING_PROOF" | "VERIFYING_PROOF" | "HEALTH_CHECK";
+export type ApiStage = RunnerStage | "AUTHENTICATING" | "RESOLVING_IDENTITY" | "READING_PROOF" | "VERIFYING_PROOF" | "HEALTH_CHECK" | "RECOVERING_WRITE";
 export type ApiErrorCode =
   | "INVALID_INPUT" | "UNAUTHORIZED" | "NOT_FOUND" | "GONE" | "METHOD_NOT_ALLOWED"
   | "AGENT_NOT_FOUND" | "AGENT_WALLET_UNSET" | "IDENTITY_UNAVAILABLE"
   | "DEPENDENCY_UNAVAILABLE" | "COMPUTE_UNVERIFIED" | "MISMATCH" | "HINT_REQUIRED"
-  | "REQUEST_ABORTED" | "INTERNAL_ERROR";
+  | "REQUEST_ABORTED" | "INTERNAL_ERROR" | "SUBMISSION_OUTCOME_UNKNOWN"
+  | "FINALIZED_READBACK_UNAVAILABLE" | "NOT_BROADCAST" | "SEALED" | "REVERTED" | "RECOVERY_NOT_FOUND"
+  | "IDEMPOTENCY_CONFLICT" | "IDENTITY_ACTIVE" | "CONCURRENCY_LIMIT" | "RATE_LIMIT"
+  | "OPERATOR_CONCURRENCY_LIMIT" | "GLOBAL_CONCURRENCY_LIMIT" | "DAILY_CEREMONY_LIMIT" | "DAILY_COST_LIMIT";
 
 export type ApiErrorOptions = Readonly<{
   code: ApiErrorCode; message: string; stage: ApiStage; retryable: boolean;
@@ -58,11 +65,12 @@ export type ProofLockResolutionSummary = Readonly<{ owner: HexAddress; agentWall
 
 export type StreamRunner = Readonly<{
   run(input: OperatorRequestInput, report?: (stage: RunnerStage) => void,
-    signal?: AbortSignal): Promise<RunnerResult | unknown>;
+    signal?: AbortSignal, reportProgress?: (progress: RunnerProgress) => void): Promise<RunnerTerminalResult | unknown>;
 }>;
 export type OperatorRequestInput = Readonly<{ identity: AgentIdentity; mode: "SEAL" | "RESEAL";
-  expectedPriorVersion?: bigint; previousProofId?: Bytes32 }>;
+  expectedPriorVersion?: bigint; previousProofId?: Bytes32; idempotencyKey?: string }>;
 export type DriftRunner = Readonly<{ run(identityKey: string, mark: boolean): Promise<unknown> }>;
+export type RecoveryRunner = Readonly<{ recover(recoveryId: string, transactionHash?: string, signal?: AbortSignal): Promise<PublicWriteOutcome> }>;
 type LinkedAbort = Readonly<{ controller: AbortController; cleanup(): void }>;
 
 export function apiErrorResponse(_cause: unknown, options: ApiErrorOptions): Response {
@@ -123,6 +131,34 @@ export function createProofLockStreamHandler(config: Readonly<{
     } catch (error) {
       linked.cleanup();
       return mapApiError(error, "VALIDATING_IDENTITY", requestId);
+    }
+  };
+}
+
+export function createRecoveryHandler(config: Readonly<{
+  operatorToken: string | undefined; loadRecovery(signal?: AbortSignal): Promise<RecoveryRunner>;
+}>) {
+  return async (request: Request): Promise<Response> => {
+    const requestId = createRequestId();
+    if (!authenticateOperator(request.headers.get("authorization"), config.operatorToken)) {
+      return apiErrorResponse(null, unauthorized(requestId));
+    }
+    try {
+      const signal = deadline(request.signal);
+      const body = await parseSmallObject(request, signal);
+      if (Object.keys(body).some((key) => !["recoveryId", "transactionHash"].includes(key))
+        || typeof body.recoveryId !== "string" || !/^rec_[0-9a-f]{16,64}$/i.test(body.recoveryId)
+        || (body.transactionHash !== undefined && (typeof body.transactionHash !== "string"
+          || !parseNonZeroBytes32(body.transactionHash)))) invalid();
+      const recovery = await config.loadRecovery(signal);
+      const result = writeOutcomeDto(await recovery.recover(body.recoveryId, body.transactionHash as string | undefined, signal));
+      return json({ result }, 200, "no-store");
+    } catch (error) {
+      if (error instanceof WriteRecoveryError) return apiErrorResponse(error, { code: error.code === "RECOVERY_NOT_FOUND"
+        ? "RECOVERY_NOT_FOUND" : "INVALID_INPUT", message: error.code === "RECOVERY_NOT_FOUND"
+          ? "Recovery operation was not found" : "Recovery input is invalid", stage: "RECOVERING_WRITE",
+        retryable: false, status: error.code === "RECOVERY_NOT_FOUND" ? 404 : 400, requestId });
+      return mapApiError(error, "RECOVERING_WRITE", requestId);
     }
   };
 }
@@ -217,8 +253,9 @@ function streamRun(runner: StreamRunner, input: OperatorRequestInput, linked: Li
         const result = await runner.run(input, (stage) => {
           linked.controller.signal.throwIfAborted();
           send({ type: "stage", stage, requestId });
-        }, linked.controller.signal);
-        if (!linked.controller.signal.aborted) send({ type: "complete", result, requestId });
+        }, linked.controller.signal, (progress) => send({ type: "progress", progress: progressDto(
+          progress.type === "chain" ? progress.progress : progress), requestId }));
+        if (!linked.controller.signal.aborted) send({ type: "complete", result: terminalDto(result), requestId });
       } catch (error) {
         if (!linked.controller.signal.aborted) send({ type: "error", ...runnerErrorBody(error, requestId) });
       } finally {
@@ -257,7 +294,11 @@ async function parseRunnerInput(request: Request, signal: AbortSignal): Promise<
   const previousProofId = raw.previousProofId === undefined ? undefined : bytes32(String(raw.previousProofId));
   if (raw.mode === "SEAL" && (expectedPriorVersion !== undefined || previousProofId !== undefined)) invalid();
   if (raw.mode === "RESEAL" && (expectedPriorVersion === undefined || previousProofId === undefined)) invalid();
-  return Object.freeze({ identity, mode: raw.mode, ...(expectedPriorVersion ? { expectedPriorVersion } : {}),
+  const suppliedKey = request.headers.get("idempotency-key");
+  if (suppliedKey !== null && !/^[A-Za-z0-9._:-]{8,128}$/.test(suppliedKey)) invalid();
+  const idempotencyKey = suppliedKey ?? `request-${randomUUID()}`;
+  return Object.freeze({ identity, mode: raw.mode, idempotencyKey,
+    ...(expectedPriorVersion ? { expectedPriorVersion } : {}),
     ...(previousProofId ? { previousProofId: previousProofId as Bytes32 } : {}) });
 }
 
@@ -353,6 +394,22 @@ function errorBody(_error: unknown, code: ApiErrorCode, message: string, stage: 
 function deadline(signal: AbortSignal): AbortSignal { return AbortSignal.any([signal, AbortSignal.timeout(10_000)]); }
 function runnerErrorBody(error: unknown, requestId: string) {
   if (error instanceof ProofLockStageError) {
+    if (error.outcome) {
+      const code = error.outcome.status;
+      const message = code === "SUBMISSION_OUTCOME_UNKNOWN"
+        ? "Submission attempted; broadcast not yet proven"
+        : code === "FINALIZED_READBACK_UNAVAILABLE"
+          ? "Registry write finalized; exact readback is temporarily unavailable"
+          : code === "REVERTED" ? "Registry transaction finalized and reverted"
+            : "Registry submission was not attempted";
+      return { ...errorBody(error, code, message, error.stage, code === "NOT_BROADCAST", requestId),
+        writeOutcome: writeOutcomeDto(error.outcome) };
+    }
+    const admissionCodes = new Set<ApiErrorCode>(["IDEMPOTENCY_CONFLICT", "IDENTITY_ACTIVE", "CONCURRENCY_LIMIT",
+      "OPERATOR_CONCURRENCY_LIMIT", "GLOBAL_CONCURRENCY_LIMIT",
+      "RATE_LIMIT", "DAILY_CEREMONY_LIMIT", "DAILY_COST_LIMIT"]);
+    if (error.code && admissionCodes.has(error.code as ApiErrorCode)) return errorBody(error,
+      error.code as ApiErrorCode, "Operation admission was rejected", error.stage, false, requestId);
     const compute = error.stage === "RUNNING_COMPUTE";
     return errorBody(error, compute ? "COMPUTE_UNVERIFIED" : "DEPENDENCY_UNAVAILABLE",
       compute ? "0G Compute response verification failed" : "ProofLock run stopped safely",
@@ -360,6 +417,43 @@ function runnerErrorBody(error: unknown, requestId: string) {
   }
   return errorBody(error, "INTERNAL_ERROR", "ProofLock run failed", "VALIDATING_IDENTITY", true, requestId);
 }
+
+const recoveryIdSchema = z.string().regex(/^rec_[0-9a-f]{16,64}$/i);
+const hashSchema = z.string().regex(/^0x[0-9a-f]{64}$/i);
+const decimalSchema = z.string().regex(/^(0|[1-9]\d*)$/);
+const writeOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("NOT_BROADCAST"), recoveryId: recoveryIdSchema }),
+  z.object({ status: z.literal("SUBMISSION_OUTCOME_UNKNOWN"), recoveryId: recoveryIdSchema, transactionHash: hashSchema.optional() }),
+  z.object({ status: z.literal("FINALIZED_READBACK_UNAVAILABLE"), recoveryId: recoveryIdSchema, transactionHash: hashSchema,
+    identityKey: hashSchema, version: decimalSchema }),
+  z.object({ status: z.literal("SEALED"), recoveryId: recoveryIdSchema, transactionHash: hashSchema,
+    identityKey: hashSchema, version: decimalSchema }),
+  z.object({ status: z.literal("REVERTED"), recoveryId: recoveryIdSchema, transactionHash: hashSchema }),
+]);
+const terminalSchema = z.union([
+  z.object({ kind: z.literal("SEALED"), stage: z.literal("SEALED"),
+    identity: z.record(z.string(), z.unknown()).optional(), subject: z.record(z.string(), z.unknown()).optional(),
+    envelope: z.record(z.string(), z.unknown()).optional(), storage: z.object({ envelopeDigest: hashSchema,
+      storageRoot: hashSchema, uploadTxHash: hashSchema, retrievedDigest: hashSchema, finalizedAtBlock: decimalSchema,
+      retrievalVerified: z.literal(true), networkProofVerified: z.literal(false) }).optional(),
+    chain: z.object({ transactionHash: hashSchema, expectedVersion: z.bigint(), signer: z.string().regex(/^0x[0-9a-f]{40}$/i) }).optional(),
+    proofLock: z.record(z.string(), z.unknown()).optional(),
+    writeOutcome: writeOutcomeSchema.refine((value) => value.status === "SEALED") }),
+  z.object({ kind: z.literal("EXISTING_OPERATION"), operation: z.object({ recoveryId: recoveryIdSchema,
+    phase: z.enum(["REQUESTED", "COMPUTE_VERIFIED", "STORAGE_VERIFIED", "CHAIN_INPUT_COMMITTED", "SUBMISSION_ATTEMPTED",
+      "HASH_KNOWN", "FINALIZED", "RECOVERY_REQUIRED", "TERMINAL"]), writeOutcome: writeOutcomeSchema.optional() }) }),
+]);
+const progressSchema = z.union([
+  z.object({ type: z.literal("admission"), state: z.enum(["ACCEPTED", "DEDUPLICATED"]), recoveryId: recoveryIdSchema,
+    idempotencyKey: z.string().min(8).max(128) }),
+  z.object({ phase: z.literal("PRE_SEND") }), z.object({ phase: z.literal("SUBMISSION_ATTEMPTED") }),
+  z.object({ phase: z.enum(["HASH_KNOWN", "REVERTED"]), transactionHash: hashSchema }),
+  z.object({ phase: z.literal("FINALIZED"), transactionHash: hashSchema, blockHash: hashSchema,
+    blockNumber: decimalSchema, confirmations: z.number().int().positive() }),
+]);
+function writeOutcomeDto(value: unknown): PublicWriteOutcome { return writeOutcomeSchema.parse(value) as PublicWriteOutcome; }
+function terminalDto(value: unknown): unknown { return terminalSchema.parse(value); }
+function progressDto(value: unknown): unknown { return progressSchema.parse(value); }
 
 function linkedAbort(parent: AbortSignal): LinkedAbort {
   const controller = new AbortController();

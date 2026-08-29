@@ -11,6 +11,7 @@ import {
 import {
   REGISTRY_V2_INTERFACE,
   ChainProofError,
+  createEthersRegistryChainAdapter,
   computeIdentityKey,
   computeProofLockId,
   markProofLockDrift,
@@ -168,7 +169,114 @@ function dependencies(calls: RunnerStage[]): ProofLockRunnerDependencies {
   };
 }
 
+function withJournal(deps: ProofLockRunnerDependencies) {
+  const operation = { recoveryId: "rec_1234567890abcdef", idempotencyKey: "idem-12345678",
+    inputDigest: H1, identityKey: computeIdentityKey(identity().identity), operator: A, subject: B,
+    expectedVersion: "1", policyVersion: 1, runtimeCodeHash: ZERO_BYTES32, reservedCostUnits: 0,
+    phase: "REQUESTED" as const, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const journal = { lookup: vi.fn(() => null), begin: vi.fn(() => ({ kind: "ACCEPTED" as const, operation })), get: vi.fn(),
+    reserveCost: vi.fn(), reconcileCost: vi.fn(), releaseReservedCosts: vi.fn(),
+    recordCompute: vi.fn(), recordStorage: vi.fn(), recordChainInput: vi.fn(),
+    recordSubmissionAttempt: vi.fn(), recordTransactionHash: vi.fn(), recordFinalized: vi.fn(), complete: vi.fn() };
+  return { deps: { ...deps, operationJournal: journal }, journal };
+}
+
 describe("controlled ProofLock runner", () => {
+
+  it("returns the exact SEALED write outcome after readback and journals completion", async () => {
+    const setup = withJournal(dependencies([]));
+    const compute = setup.deps.runCompute;
+    setup.deps.runCompute = vi.fn(async (identity, subject, deterministic, signal, costs) => {
+      costs?.reserve("COMPUTE_BEHAVIORAL");
+      try { return await compute(identity, subject, deterministic, signal); }
+      finally { costs?.reconcile("COMPUTE_BEHAVIORAL", "CONSUMED"); }
+    });
+    const result = await createProofLockRunner(setup.deps).run({ identity: identity().identity,
+      registryAddress: REGISTRY, policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3",
+      validForSeconds: 604800, mode: "SEAL", idempotencyKey: "idem-12345678" });
+    expect(result).toMatchObject({ kind: "SEALED", writeOutcome: { status: "SEALED", recoveryId: "rec_1234567890abcdef",
+      transactionHash: H6, version: "1" } });
+    expect(setup.journal.complete).toHaveBeenCalledWith("rec_1234567890abcdef",
+      expect.objectContaining({ status: "SEALED" }));
+    expect(setup.journal.begin).toHaveBeenCalledWith(expect.objectContaining({ reservedCostUnits: 3 }));
+    expect(setup.journal.recordCompute).toHaveBeenCalledWith("rec_1234567890abcdef",
+      expect.objectContaining({ commitments: [expect.objectContaining({ provider: A, model: "model-tee",
+        proofClass: "DECENTRALIZED_MODEL_TEE", processResponseVerified: true, receiptDigest: computeProof().receiptDigest })] }));
+    expect(setup.journal.recordStorage).toHaveBeenCalledWith("rec_1234567890abcdef",
+      expect.objectContaining({ envelopeDigest: expect.any(String), retrievedDigest: expect.any(String),
+        retrievalVerified: true, networkProofVerified: false, finalizedAtBlock: "456" }));
+    expect(setup.journal.reserveCost.mock.calls.map((call) => call.slice(1))).toEqual([
+      ["COMPUTE_BEHAVIORAL", 1], ["STORAGE", 1], ["REGISTRY", 1],
+    ]);
+    expect(setup.journal.reconcileCost).toHaveBeenCalledWith("rec_1234567890abcdef", "REGISTRY", "CONSUMED");
+  });
+
+  it("returns a discriminated existing operation without pretending it sealed", async () => {
+    const setup = withJournal(dependencies([]));
+    setup.journal.lookup.mockImplementationOnce(() => ({ kind: "DEDUPLICATED", operation: {
+      ...setup.journal.begin().operation, phase: "RECOVERY_REQUIRED",
+      terminalOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN", recoveryId: "rec_1234567890abcdef" },
+    } }) as never);
+    const result = await createProofLockRunner(setup.deps).run({ identity: identity().identity,
+      registryAddress: REGISTRY, policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3",
+      validForSeconds: 604800, mode: "SEAL", idempotencyKey: "idem-12345678" });
+    expect(result).toEqual({ kind: "EXISTING_OPERATION", operation: {
+      recoveryId: "rec_1234567890abcdef", phase: "RECOVERY_REQUIRED",
+      writeOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN", recoveryId: "rec_1234567890abcdef" },
+    } });
+    expect(setup.deps.runCompute).not.toHaveBeenCalled();
+    expect(setup.deps.validateIdentity).not.toHaveBeenCalled();
+    expect(setup.journal.lookup).toHaveBeenCalledWith("idem-12345678", expect.stringMatching(/^0x[0-9a-f]{64}$/));
+    expect(result).not.toHaveProperty("stage", "SEALED");
+  });
+
+  it("classifies a failure before send as NOT_BROADCAST with its durable recovery ID", async () => {
+    const setup = withJournal(dependencies([]));
+    vi.mocked(setup.deps.writeChain).mockRejectedValueOnce(new Error("pre-send private detail"));
+    await expect(createProofLockRunner(setup.deps).run({ identity: identity().identity, registryAddress: REGISTRY,
+      policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800,
+      mode: "SEAL", idempotencyKey: "idem-12345678" })).rejects.toMatchObject({
+        stage: "WRITING_CHAIN", outcome: { status: "NOT_BROADCAST", recoveryId: "rec_1234567890abcdef" },
+      });
+  });
+
+  it("classifies a provider throw after send invocation as SUBMISSION_OUTCOME_UNKNOWN", async () => {
+    const setup = withJournal(dependencies([]));
+    setup.deps.writeChain = vi.fn(async (_input, _signal, report) => {
+      report?.({ phase: "PRE_SEND" }); report?.({ phase: "SUBMISSION_ATTEMPTED" });
+      throw new Error("provider secret");
+    });
+    await expect(createProofLockRunner(setup.deps).run({ identity: identity().identity, registryAddress: REGISTRY,
+      policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800,
+      mode: "SEAL", idempotencyKey: "idem-12345678" })).rejects.toMatchObject({
+        outcome: { status: "SUBMISSION_OUTCOME_UNKNOWN", recoveryId: "rec_1234567890abcdef" },
+      });
+  });
+
+  it("reports a validated status-0 receipt as REVERTED rather than unknown", async () => {
+    const setup = withJournal(dependencies([]));
+    setup.deps.writeChain = vi.fn(async (_input, _signal, report) => {
+      report?.({ phase: "PRE_SEND" }); report?.({ phase: "SUBMISSION_ATTEMPTED" });
+      report?.({ phase: "HASH_KNOWN", transactionHash: H6 }); report?.({ phase: "REVERTED", transactionHash: H6 });
+      throw new ChainProofError("TRANSACTION_REVERTED", "sanitized");
+    });
+    await expect(createProofLockRunner(setup.deps).run({ identity: identity().identity, registryAddress: REGISTRY,
+      policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800,
+      mode: "SEAL", idempotencyKey: "reverted-idem" })).rejects.toMatchObject({ outcome: {
+        status: "REVERTED", recoveryId: "rec_1234567890abcdef", transactionHash: H6 } });
+  });
+
+  it("preserves finalized certainty when exact readback is unavailable", async () => {
+    const setup = withJournal(dependencies([]));
+    vi.mocked(setup.deps.readChainBack).mockRejectedValueOnce(new Error("rpc unavailable"));
+    await expect(createProofLockRunner(setup.deps).run({ identity: identity().identity, registryAddress: REGISTRY,
+      policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800,
+      mode: "SEAL", idempotencyKey: "idem-12345678" })).rejects.toMatchObject({
+        stage: "READING_CHAIN_BACK", outcome: { status: "FINALIZED_READBACK_UNAVAILABLE",
+          recoveryId: "rec_1234567890abcdef", transactionHash: H6, version: "1" },
+      });
+  });
+
   it("executes the frozen stages in order and seals only after exact readback", async () => {
     const calls: RunnerStage[] = [];
     const reported: RunnerStage[] = [];
@@ -185,8 +293,7 @@ describe("controlled ProofLock runner", () => {
 
     expect(calls).toEqual(PROOFLOCK_RUNNER_STAGES.slice(0, -1));
     expect(reported).toEqual(PROOFLOCK_RUNNER_STAGES);
-    expect(result.stage).toBe("SEALED");
-    expect(result.chain.transactionHash).toBe(H6);
+    expect(result).toMatchObject({ kind: "SEALED", stage: "SEALED", chain: { transactionHash: H6 } });
   });
 
   for (const [index, stage] of PROOFLOCK_RUNNER_STAGES.slice(0, -1).entries()) {
@@ -289,7 +396,7 @@ describe("controlled ProofLock runner", () => {
       identity: identity().identity, registryAddress: REGISTRY, policyVersion: 1,
       scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800, mode: "SEAL",
     }, () => { throw new Error("SSE disconnected"); });
-    expect(result.stage).toBe("SEALED");
+    expect(result).toMatchObject({ kind: "SEALED", stage: "SEALED" });
   });
 
   it("requires explicit prior-version and prior-proof bindings for reseal", async () => {
@@ -338,7 +445,7 @@ describe("controlled ProofLock runner", () => {
     });
     expect(deps.writeChain).toHaveBeenCalledWith(expect.objectContaining({
       runtimeCodeHash: ZERO_BYTES32, expectedPriorVersion: 1n, previousProofId: H6,
-    }));
+    }), undefined, expect.any(Function));
   });
 });
 
@@ -410,7 +517,81 @@ const chainRequest = {
   coverage: 0x7f,
 };
 
+it("discovers no-hash production candidates only through a bounded exact transaction and event match", async () => {
+  const base = chainAdapter();
+  const receipt = await base.waitForReceipt(H6, 3, 1_000);
+  const transaction = await base.getTransaction(H6);
+  const provider = { getBlockNumber: vi.fn(async () => 100_000), getLogs: vi.fn(async () => [{ transactionHash: H6 }]),
+    getTransaction: vi.fn(async () => transaction), getTransactionReceipt: vi.fn(async () => ({ hash: H6, status: 1,
+      blockNumber: 99_998, blockHash: BLOCK, logs: receipt!.logs })), getNetwork: vi.fn(), getCode: vi.fn(),
+    waitForTransaction: vi.fn(), call: vi.fn() };
+  const adapter = createEthersRegistryChainAdapter(provider as never, {} as never, REGISTRY);
+  await expect(adapter.findProofLockTransactionHashes!(chainRequest, 3)).resolves.toEqual([H6]);
+  expect(provider.getLogs).toHaveBeenCalledWith(expect.objectContaining({ fromBlock: 49_999, toBlock: 99_998 }));
+  provider.getTransaction.mockResolvedValueOnce({ ...transaction!, from: B });
+  await expect(adapter.findProofLockTransactionHashes!(chainRequest, 3)).resolves.toEqual([]);
+});
+
 describe("strict registry chain writer", () => {
+  it("reports sanitized submission progress at every irreversible boundary", async () => {
+    const progress: unknown[] = [];
+    await writeProofLock(chainAdapter(), chainRequest, { confirmations: 3, timeoutMs: 10_000 },
+      (event) => progress.push(event));
+    expect(progress).toEqual([
+      { phase: "PRE_SEND" },
+      { phase: "SUBMISSION_ATTEMPTED" },
+      { phase: "HASH_KNOWN", transactionHash: H6 },
+      { phase: "FINALIZED", transactionHash: H6, blockHash: BLOCK, blockNumber: "456", confirmations: 3 },
+    ]);
+    expect(JSON.stringify(progress)).not.toContain("data");
+  });
+
+  it("reports submission attempted even when the provider throws before returning a hash", async () => {
+    const progress: unknown[] = [];
+    await expect(writeProofLock(chainAdapter({ sendTransaction: vi.fn().mockRejectedValue(new Error("private provider URL")) }),
+      chainRequest, { confirmations: 3, timeoutMs: 10_000 }, (event) => progress.push(event)))
+      .rejects.toMatchObject({ code: "TRANSACTION_FAILED" });
+    expect(progress).toEqual([{ phase: "PRE_SEND" }, { phase: "SUBMISSION_ATTEMPTED" }]);
+    expect(JSON.stringify(progress)).not.toContain("private provider URL");
+  });
+
+  it("prevents send when the durable submission-attempt append fails", async () => {
+    const adapter = chainAdapter();
+    await expect(writeProofLock(adapter, chainRequest, { confirmations: 3, timeoutMs: 10_000 }, (progress) => {
+      if (progress.phase === "SUBMISSION_ATTEMPTED") throw new Error("journal unavailable");
+    })).rejects.toThrow(/journal unavailable/);
+    expect(adapter.sendTransaction).not.toHaveBeenCalled();
+  });
+
+  it("preserves known hash and exact finality when later durable appends fail", async () => {
+    for (const failedPhase of ["HASH_KNOWN", "FINALIZED"] as const) {
+      const setup = withJournal(dependencies([]));
+      setup.deps.writeChain = vi.fn(async (_input, _signal, report) => {
+        report?.({ phase: "PRE_SEND" }); report?.({ phase: "SUBMISSION_ATTEMPTED" });
+        report?.({ phase: "HASH_KNOWN", transactionHash: H6 });
+        if (failedPhase === "HASH_KNOWN") throw new Error("hash journal failed");
+        report?.({ phase: "FINALIZED", transactionHash: H6, blockHash: BLOCK, blockNumber: "456", confirmations: 3 });
+        throw new Error("finality journal failed");
+      });
+      if (failedPhase === "HASH_KNOWN") setup.journal.recordTransactionHash.mockImplementation(() => { throw new Error("disk"); });
+      else setup.journal.recordFinalized.mockImplementation(() => { throw new Error("disk"); });
+      await expect(createProofLockRunner(setup.deps).run({ identity: identity().identity, registryAddress: REGISTRY,
+        policyVersion: 1, scanner: A, scannerSoftwareVersion: "sentinel-wave3", validForSeconds: 604800,
+        mode: "SEAL", idempotencyKey: `failure-${failedPhase}` })).rejects.toMatchObject({ outcome: failedPhase === "HASH_KNOWN"
+          ? { status: "SUBMISSION_OUTCOME_UNKNOWN", transactionHash: H6 }
+          : { status: "FINALIZED_READBACK_UNAVAILABLE", transactionHash: H6 } });
+    }
+  });
+
+  it("does not report exact finality until transaction calldata and the ProofLocked event are bound", async () => {
+    const progress: unknown[] = [];
+    const wrongTx = chainAdapter({ getTransaction: vi.fn(async () => ({ hash: H6, to: A, data: "0x", from: A })) });
+    await expect(writeProofLock(wrongTx, chainRequest, { confirmations: 3, timeoutMs: 10_000 },
+      (event) => progress.push(event))).rejects.toMatchObject({ code: "TRANSACTION_MISMATCH" });
+    expect(progress).toEqual([{ phase: "PRE_SEND" }, { phase: "SUBMISSION_ATTEMPTED" },
+      { phase: "HASH_KNOWN", transactionHash: H6 }]);
+  });
+
   it("binds identity keys to mainnet ERC-8004 identities", () => {
     expect(computeIdentityKey(identity().identity)).toBe(
       keccak256(AbiCoder.defaultAbiCoder().encode(

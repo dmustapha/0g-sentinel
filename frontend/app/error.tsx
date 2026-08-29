@@ -16,7 +16,7 @@ export default function Error({
   return (
     <div className="centered-state">
       <span className="eyebrow">Fail-closed interface</span>
-      <h2>Proof surface unavailable</h2>
+      <h1>Proof surface unavailable</h1>
       <p>The requested proof data could not be rendered. No admission state has been inferred.</p>
       <div className="action-row">
         <button onClick={reset} className="button primary">Retry read</button>

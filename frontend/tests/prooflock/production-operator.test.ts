@@ -45,6 +45,11 @@ async function validEnv() {
     PROOFLOCK_SPEND_AUTHORIZED: "true",
     PROOFLOCK_CHAIN_CONFIRMATIONS: "3",
     PROOFLOCK_TRANSACTION_TIMEOUT_MS: "60000",
+    PROOFLOCK_OPERATOR_MAX_CONCURRENCY: "2",
+    PROOFLOCK_OPERATOR_RATE_WINDOW_MS: "60000",
+    PROOFLOCK_OPERATOR_RATE_LIMIT: "4",
+    PROOFLOCK_OPERATOR_DAILY_CEREMONY_LIMIT: "20",
+    PROOFLOCK_OPERATOR_DAILY_COST_UNITS_LIMIT: "40",
     SENTINEL_0G_PRIVATE_KEY: SCANNER_KEY,
     PROOFLOCK_GUARDIAN_PRIVATE_KEY: GUARDIAN_KEY,
     PROOFLOCK_COMPUTE_PRIVATE_KEY: COMPUTE_KEY,
@@ -70,11 +75,17 @@ describe("production ProofLock operator", () => {
     expect(config.stateDirectory).toBe(env.PROOFLOCK_STATE_DIRECTORY);
     expect(config.confirmations).toBe(3);
     expect(config.spendAuthorized).toBe(true);
+    expect(config.operationLimits).toEqual({ maxConcurrency: 2, globalMaxConcurrency: 2, rateWindowMs: 60000,
+      rateLimit: 4, dailyCeremonyLimit: 20, dailyCostUnitsLimit: 40 });
 
     expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_STATE_DIRECTORY: undefined }, "24.10.0"))
       .toThrow(/STATE_DIRECTORY/);
     expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_SPEND_AUTHORIZED: "false" }, "24.10.0"))
       .toThrow(/SPEND_AUTHORIZED/);
+    expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_OPERATOR_RATE_LIMIT: undefined }, "24.10.0"))
+      .toThrow(/PROOFLOCK_OPERATOR_RATE_LIMIT/);
+    expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_OPERATOR_RATE_LIMIT: "0" }, "24.10.0"))
+      .toThrow(/PROOFLOCK_OPERATOR_RATE_LIMIT/);
     expect(() => readProductionOperatorConfig(env, "22.0.0")).toThrow(/Node 24/);
     expect(() => readProductionOperatorConfig({ ...env, ZERO_G_RPC: "https://evmrpc-testnet.0g.ai" }, "24.10.0"))
       .toThrow(/mainnet RPC/);
@@ -108,13 +119,17 @@ describe("production ProofLock operator", () => {
   });
 
   it("injects registry, scanner, software, policy, and TTL on the server", async () => {
-    const run = vi.fn(async (input: RunnerInput) => input);
+    const progress = vi.fn();
+    const run = vi.fn(async (input: RunnerInput, _report?: unknown, _signal?: unknown,
+      reportProgress?: (value: unknown) => void) => { reportProgress?.({ type: "admission", recoveryId: "rec" }); return input; });
     const bound = bindOperatorRunner({ run }, { registryAddress: REGISTRY, scanner: SCANNER,
       scannerSoftwareVersion: "sentinel-prooflock-v2", policyVersion: 7, validForSeconds: 604800 });
     await bound.run({ identity: { namespace: "eip155", chainId: 16661,
-      registryAddress: "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", agentId: "42" }, mode: "SEAL" });
+      registryAddress: "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432", agentId: "42" }, mode: "SEAL" },
+    undefined, undefined, progress);
     expect(run).toHaveBeenCalledWith(expect.objectContaining({ registryAddress: REGISTRY,
       scanner: SCANNER, scannerSoftwareVersion: "sentinel-prooflock-v2",
-      policyVersion: 7, validForSeconds: 604800 }), undefined, undefined);
+      policyVersion: 7, validForSeconds: 604800 }), undefined, undefined, progress);
+    expect(progress).toHaveBeenCalledWith({ type: "admission", recoveryId: "rec" });
   });
 });

@@ -136,7 +136,7 @@ export function canStartPaidRun(state: EvaluateState, active: boolean): state is
 }
 
 type PaidRunner = (input: OperatorRunInput, token: string,
-  onStage: (stage: RunnerStage) => void) => Promise<unknown>;
+  onStage: (stage: RunnerStage) => void) => Promise<import("./prooflock-types").OperatorTerminalResult>;
 
 export async function executePaidRun(state: EvaluateState, active: { current: boolean }, runner: PaidRunner,
   dispatch: (action: EvaluateAction) => void, refresh: (agentId: string) => unknown,
@@ -144,8 +144,10 @@ export async function executePaidRun(state: EvaluateState, active: { current: bo
   if (!canStartPaidRun(state, active.current)) return false;
   active.current = true; dispatch({ type: "BEGIN_RUN" });
   try {
-    await runner({ identity: state.identity.identity, mode: "SEAL" }, state.operatorToken,
+    const result = await runner({ identity: state.identity.identity, mode: "SEAL" }, state.operatorToken,
       (stage) => dispatch({ type: "STAGE_REACHED", stage }));
+    if (result.kind !== "SEALED" || result.writeOutcome.status !== "SEALED")
+      throw new Error("ProofLock operation requires recovery before success");
     dispatch({ type: "RUN_SUCCEEDED" }); refresh(state.agentId);
   } catch (cause) {
     dispatch({ type: "RUN_FAILED", error: normalizeError(cause) });

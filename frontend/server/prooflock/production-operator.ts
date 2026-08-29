@@ -14,7 +14,9 @@ import { createProductionStrictComputeDependencies, runStrictCompute } from "./c
 import { buildDriftFingerprint, type DriftFingerprint } from "./drift";
 import { createErc8004Adapter, resolveAgentIdentity } from "./identity/erc8004";
 import { createProductionReadDependencies } from "./read-api";
-import type { DeterministicStageResult, ProofLockRunnerDependencies, RunnerContext } from "./runner";
+import { createSqliteOperationJournal, type OperationJournalLimits } from "./operation-journal";
+import { createWriteRecoveryService } from "./recovery";
+import type { DeterministicStageResult, PaidCostController, ProofLockRunnerDependencies, RunnerContext } from "./runner";
 import { createEthersFinalityAdapter, createFileUploadJournal, createZeroGStorageAdapter,
   persistVerifiedEvidence } from "./storage";
 import { classifySubject, type ClassifiedSubject, type SubjectChainAdapter } from "./subject/classify";
@@ -39,6 +41,7 @@ export type ProductionOperatorConfig = Readonly<{
   guardianPrivateKey: string; computePrivateKey: string; scannerSoftwareVersion: string; policyVersion: number;
   computeProvider: HexAddress; computeModel: string; stateDirectory: string;
   spendAuthorized: true; confirmations: number; timeoutMs: number;
+  operationLimits: OperationJournalLimits;
 }>;
 
 export type ProductionOperatorBinding = Readonly<{
@@ -48,6 +51,7 @@ export type ProductionOperatorBinding = Readonly<{
 
 type Composition = Readonly<{
   runner: ProofLockRunnerDependencies;
+  recovery: ReturnType<typeof createWriteRecoveryService>;
   drift: Readonly<{
     chainAdapter: RegistryChainAdapter; registryAddress: HexAddress; confirmations: number; timeoutMs: number;
     verifyAuthority(): Promise<void>;
@@ -94,6 +98,14 @@ export function readProductionOperatorConfig(
     spendAuthorized: spendConsent(env),
     confirmations: integer(env, "PROOFLOCK_CHAIN_CONFIRMATIONS", 3, 64),
     timeoutMs: integer(env, "PROOFLOCK_TRANSACTION_TIMEOUT_MS", 1, 120_000),
+    operationLimits: Object.freeze({
+      maxConcurrency: integer(env, "PROOFLOCK_OPERATOR_MAX_CONCURRENCY", 1, 1_000),
+      globalMaxConcurrency: integer(env, "PROOFLOCK_OPERATOR_MAX_CONCURRENCY", 1, 1_000),
+      rateWindowMs: integer(env, "PROOFLOCK_OPERATOR_RATE_WINDOW_MS", 1, 86_400_000),
+      rateLimit: integer(env, "PROOFLOCK_OPERATOR_RATE_LIMIT", 1, 1_000_000),
+      dailyCeremonyLimit: integer(env, "PROOFLOCK_OPERATOR_DAILY_CEREMONY_LIMIT", 1, 1_000_000),
+      dailyCostUnitsLimit: integer(env, "PROOFLOCK_OPERATOR_DAILY_COST_UNITS_LIMIT", 1, 1_000_000_000),
+    }),
   });
 }
 
@@ -110,6 +122,10 @@ export async function createProofLockDependencies(): Promise<ProofLockRunnerDepe
 
 export async function createProofLockDriftOperator(): Promise<Composition["drift"]> {
   return (await productionComposition()).drift;
+}
+
+export async function createProofLockRecoveryOperator(): Promise<Composition["recovery"]> {
+  return (await productionComposition()).recovery;
 }
 
 async function productionComposition(): Promise<Composition> {
@@ -130,6 +146,8 @@ async function compose(config: ProductionOperatorConfig): Promise<Composition> {
   const snapshots = new Map<Bytes32, EvidenceEnvelopeV1>();
   return Object.freeze({
     runner: runnerDependencies(config, provider, subjectAdapter, scannerChain, state),
+    recovery: createWriteRecoveryService({ journal: state.operations, chain: scannerChain,
+      confirmations: config.confirmations, timeoutMs: config.timeoutMs }),
     drift: driftDependencies(config, provider, subjectAdapter, guardianChain, state.reads, snapshots),
   });
 }
@@ -144,6 +162,8 @@ function createState(config: ProductionOperatorConfig, provider: JsonRpcProvider
     storage: Object.freeze({ storage, chain: createEthersFinalityAdapter(provider),
       journal: createFileUploadJournal(join(config.stateDirectory, "storage-journal")) }),
     reads: createProductionReadDependencies(process.env),
+    operations: createSqliteOperationJournal({ directory: join(config.stateDirectory, "operation-journal"),
+      limits: config.operationLimits, audit: (event) => console.info(JSON.stringify({ scope: "prooflock-operation", ...event })) }),
   });
 }
 
@@ -159,16 +179,17 @@ function runnerDependencies(
       { adapter: createErc8004Adapter(provider), finalityConfirmations: config.confirmations }),
     classifySubject: (identity) => classifyResolved(subjectAdapter, identity),
     runDeterministicChecks: (_identity, subject) => deterministicResult(subjectAdapter, subject),
-    runCompute: (identity, subject, deterministic) => computeResult(config, state.compute,
-      identity, subject, deterministic),
+    runCompute: (identity, subject, deterministic, _signal, costs) => computeResult(config, state.compute,
+      identity, subject, deterministic, costs),
     buildEvidenceEnvelope: (context) => Promise.resolve(evidenceEnvelope(context)),
     uploadStorage: (canonical) => persistVerifiedEvidence(canonical, state.storage,
       { confirmations: config.confirmations, receiptTimeoutMs: config.timeoutMs,
         expectedFlowAddress: config.flowAddress }),
     verifyStorage: (upload) => Promise.resolve(upload as Awaited<ReturnType<typeof persistVerifiedEvidence>>),
-    writeChain: async (input) => {
+    operationJournal: state.operations,
+    writeChain: async (input, _signal, report) => {
       await requireCustody(provider, config);
-      return writeProofLock(chain, input, { confirmations: config.confirmations, timeoutMs: config.timeoutMs });
+      return writeProofLock(chain, input, { confirmations: config.confirmations, timeoutMs: config.timeoutMs }, report);
     },
     readChainBack: (input, write) => readProofLockBack(chain, input, write),
   });
@@ -257,16 +278,19 @@ async function computeResult(
   identity: ResolvedAgentIdentity,
   subject: ClassifiedSubject,
   deterministic: DeterministicStageResult,
+  costs?: PaidCostController,
 ) {
   const context = canonicalize({ identity: identity.identity, subject: deterministic.evidenceSubject,
     deterministicChecks: deterministic.checks });
   if (typeof context !== "string") throw new Error("Compute context could not be canonicalized");
-  const behavioral = await runStrictCompute(computeInput(config, "behavioral-risk", context), dependencies);
+  const behavioral = await paidCompute("COMPUTE_BEHAVIORAL", costs,
+    () => runStrictCompute(computeInput(config, "behavioral-risk", context), dependencies));
   const score = parseRiskScore(behavioral.content);
   const proofs = [behavioral.proof];
   let aiCodeRisk = 0;
   if (subject.kind !== "EOA") {
-    const code = await runStrictCompute(computeInput(config, "contract-risk", context), dependencies);
+    const code = await paidCompute("COMPUTE_CONTRACT", costs,
+      () => runStrictCompute(computeInput(config, "contract-risk", context), dependencies));
     aiCodeRisk = parseContractCodeRisk(code.content);
     proofs.push(code.proof);
   }
@@ -274,6 +298,13 @@ async function computeResult(
   const label = score < 30 ? "SAFE" as const : score < 60 ? "CAUTION" as const : "FLAGGED" as const;
   return Object.freeze({ proofs: Object.freeze(proofs), behavioralScore: score, codeRisk,
     verdict: Object.freeze({ riskScore: score, codeRisk, label }) });
+}
+
+async function paidCompute<T>(stage: "COMPUTE_BEHAVIORAL" | "COMPUTE_CONTRACT",
+  costs: PaidCostController | undefined, run: () => Promise<T>): Promise<T> {
+  costs?.reserve(stage);
+  try { return await run(); }
+  finally { costs?.reconcile(stage, "CONSUMED"); }
 }
 
 function computeInput(

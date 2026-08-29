@@ -4,7 +4,7 @@ import { canonicalize } from "json-canonicalize";
 
 import type {
   ApiErrorShape, CanonicalIdentity, DiscoveryRecord, HealthSnapshot, OperatorRunInput,
-  ProofLockDetailResponse, ProofLockRecord, RunnerStage, VerifiedProof,
+  OperatorTerminalResult, ProofLockDetailResponse, ProofLockRecord, ProofLockWriteOutcome, RunnerStage, VerifiedProof,
 } from "./prooflock-types";
 
 const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
@@ -38,11 +38,64 @@ const detailSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("UNAVAILABLE"), code: z.enum(["EVIDENCE_UNAVAILABLE", "EVIDENCE_INVALID", "IDENTITY_UNAVAILABLE", "IDENTITY_INVALID"]),
     identity: z.null(), resolution: z.null(), gate: unknownGateSchema, consumer: unknownConsumerSchema }),
 ]);
-const errorSchema = z.object({ error: z.object({ code: z.string(), message: z.string(), stage: z.string(),
-  retryable: z.boolean(), requestId: z.string() }) });
+const apiCodeSchema = z.enum(["INVALID_INPUT", "UNAUTHORIZED", "NOT_FOUND", "GONE", "METHOD_NOT_ALLOWED",
+  "AGENT_NOT_FOUND", "AGENT_WALLET_UNSET", "IDENTITY_UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", "COMPUTE_UNVERIFIED",
+  "MISMATCH", "HINT_REQUIRED", "REQUEST_ABORTED", "INTERNAL_ERROR", "SUBMISSION_OUTCOME_UNKNOWN",
+  "FINALIZED_READBACK_UNAVAILABLE", "NOT_BROADCAST", "SEALED", "REVERTED", "RECOVERY_NOT_FOUND",
+  "IDEMPOTENCY_CONFLICT", "IDENTITY_ACTIVE", "CONCURRENCY_LIMIT", "OPERATOR_CONCURRENCY_LIMIT",
+  "GLOBAL_CONCURRENCY_LIMIT", "RATE_LIMIT", "DAILY_CEREMONY_LIMIT", "DAILY_COST_LIMIT"]);
+const apiStageSchema = z.enum(["VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT", "RUNNING_DETERMINISTIC_CHECKS",
+  "RUNNING_COMPUTE", "CANONICALIZING_EVIDENCE", "UPLOADING_STORAGE", "VERIFYING_STORAGE", "WRITING_CHAIN",
+  "READING_CHAIN_BACK", "SEALED", "AUTHENTICATING", "RESOLVING_IDENTITY", "READING_PROOF", "VERIFYING_PROOF",
+  "HEALTH_CHECK", "RECOVERING_WRITE"]);
+const errorSchema = z.object({ error: z.object({ code: apiCodeSchema, message: z.string().min(1).max(512),
+  stage: apiStageSchema, retryable: z.boolean(), requestId: z.string().min(1).max(128) }).strict() }).strict();
+const recoveryId = z.string().regex(/^rec_[0-9a-f]{16,64}$/i);
+const writeOutcomeSchema = z.discriminatedUnion("status", [
+  z.object({ status: z.literal("NOT_BROADCAST"), recoveryId }),
+  z.object({ status: z.literal("SUBMISSION_OUTCOME_UNKNOWN"), recoveryId, transactionHash: hex32.optional() }),
+  z.object({ status: z.literal("FINALIZED_READBACK_UNAVAILABLE"), recoveryId, transactionHash: hex32,
+    identityKey: hex32, version: decimal }),
+  z.object({ status: z.literal("SEALED"), recoveryId, transactionHash: hex32, identityKey: hex32, version: decimal }),
+  z.object({ status: z.literal("REVERTED"), recoveryId, transactionHash: hex32 }),
+]);
+const runnerStageSchema = z.enum(["VALIDATING_IDENTITY", "CLASSIFYING_SUBJECT", "RUNNING_DETERMINISTIC_CHECKS",
+  "RUNNING_COMPUTE", "CANONICALIZING_EVIDENCE", "UPLOADING_STORAGE", "VERIFYING_STORAGE", "WRITING_CHAIN",
+  "READING_CHAIN_BACK", "SEALED"]);
+const phaseSchema = z.enum(["REQUESTED", "COMPUTE_VERIFIED", "STORAGE_VERIFIED", "CHAIN_INPUT_COMMITTED",
+  "SUBMISSION_ATTEMPTED", "HASH_KNOWN", "FINALIZED", "RECOVERY_REQUIRED", "TERMINAL"]);
+const terminalSchema = z.union([
+  z.object({ kind: z.literal("SEALED"), stage: z.literal("SEALED"),
+    identity: z.record(z.string(), z.unknown()).optional(), subject: z.record(z.string(), z.unknown()).optional(),
+    envelope: z.record(z.string(), z.unknown()).optional(), storage: z.record(z.string(), z.unknown()).optional(),
+    chain: z.record(z.string(), z.unknown()).optional(), proofLock: z.record(z.string(), z.unknown()).optional(),
+    writeOutcome: writeOutcomeSchema.refine((value) => value.status === "SEALED") }).strict(),
+  z.object({ kind: z.literal("EXISTING_OPERATION"), operation: z.object({ recoveryId, phase: phaseSchema,
+    writeOutcome: writeOutcomeSchema.optional() }).strict() }).strict(),
+]);
+const progressSchema = z.union([
+  z.object({ type: z.literal("admission"), state: z.enum(["ACCEPTED", "DEDUPLICATED"]), recoveryId,
+    idempotencyKey: z.string().min(8).max(128) }).strict(),
+  z.object({ phase: z.literal("PRE_SEND") }).strict(),
+  z.object({ phase: z.literal("SUBMISSION_ATTEMPTED") }).strict(),
+  z.object({ phase: z.literal("HASH_KNOWN"), transactionHash: hex32 }).strict(),
+  z.object({ phase: z.literal("REVERTED"), transactionHash: hex32 }).strict(),
+  z.object({ phase: z.literal("FINALIZED"), transactionHash: hex32, blockHash: hex32,
+    blockNumber: decimal, confirmations: z.number().int().positive() }).strict(),
+]);
+const activeKeys = new Map<string, string>();
+const recoveryInputs = new Map<string, string>();
+const ACTIVE_KEY_PREFIX = "sentinel.prooflock.active.v1:";
+const RECOVERY_KEY_PREFIX = "sentinel.prooflock.recovery.v1:";
 
 export class ProofLockApiError extends Error {
-  constructor(readonly detail: ApiErrorShape, readonly status: number) { super(detail.message); this.name = "ProofLockApiError"; }
+  constructor(readonly detail: ApiErrorShape, readonly status: number,
+    readonly writeOutcome?: ProofLockWriteOutcome) { super(detail.message); this.name = "ProofLockApiError"; }
+}
+export class ProofLockStreamInterruptedError extends Error {
+  constructor(readonly recoveryId: string | undefined, readonly idempotencyKey: string) {
+    super("ProofLock stream ended before a validated terminal result"); this.name = "ProofLockStreamInterruptedError";
+  }
 }
 
 export async function resolveIdentity(agentId: string, signal?: AbortSignal): Promise<CanonicalIdentity> {
@@ -94,13 +147,21 @@ export async function runProofLock(
   token: string,
   onStage: (stage: RunnerStage) => void,
   signal?: AbortSignal,
-): Promise<unknown> {
+  idempotencyKey?: string,
+): Promise<OperatorTerminalResult> {
+  const inputKey = canonicalize(input) ?? JSON.stringify(input);
+  const storageKey = `${ACTIVE_KEY_PREFIX}${keccak256(toUtf8Bytes(inputKey))}`;
+  const saved = readActiveOperation(storageKey);
+  const stableKey = idempotencyKey ?? saved?.idempotencyKey ?? activeKeys.get(inputKey) ?? `client-${crypto.randomUUID()}`;
+  rememberActiveOperation(storageKey, inputKey, { idempotencyKey: stableKey, recoveryId: saved?.recoveryId });
   const response = await fetch("/api/admin/prooflocks/stream", { method: "POST", signal, cache: "no-store",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(input) });
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}`,
+      "idempotency-key": stableKey }, body: JSON.stringify(input) });
   if (!response.ok || !response.body) await throwResponse(response);
   const reader = response.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let admittedRecoveryId: string | undefined;
   while (true) {
     const chunk = await reader.read();
     if (chunk.done) break;
@@ -109,12 +170,68 @@ export async function runProofLock(
     buffer = frames.pop() ?? "";
     for (const frame of frames) {
       const payload = frame.startsWith("data: ") ? JSON.parse(frame.slice(6)) as Record<string, unknown> : null;
-      if (payload?.type === "stage") onStage(payload.stage as RunnerStage);
-      if (payload?.type === "error") throw new ProofLockApiError(payload.error as unknown as ApiErrorShape, 500);
-      if (payload?.type === "complete") return payload.result;
+      if (payload?.type === "stage") onStage(runnerStageSchema.parse(payload.stage) as RunnerStage);
+      if (payload?.type === "progress") {
+        const progress = progressSchema.parse(payload.progress);
+        if ("type" in progress) { admittedRecoveryId = progress.recoveryId;
+          rememberActiveOperation(storageKey, inputKey, { idempotencyKey: stableKey, recoveryId: admittedRecoveryId }); }
+      }
+      if (payload?.type === "error") {
+        const terminal = z.object({ error: errorSchema.shape.error, writeOutcome: writeOutcomeSchema.optional() }).parse(payload);
+        if (terminal.writeOutcome?.status === "NOT_BROADCAST" || terminal.writeOutcome?.status === "REVERTED")
+          forgetActiveOperation(storageKey, inputKey);
+        throw new ProofLockApiError(terminal.error as ApiErrorShape, 500,
+          terminal.writeOutcome as ProofLockWriteOutcome | undefined);
+      }
+      if (payload?.type === "complete") {
+        const result = terminalSchema.parse(payload.result) as OperatorTerminalResult;
+        if (result.kind === "SEALED" || result.operation.writeOutcome?.status === "NOT_BROADCAST"
+          || result.operation.writeOutcome?.status === "REVERTED") forgetActiveOperation(storageKey, inputKey);
+        return result;
+      }
     }
   }
-  throw new Error("ProofLock stream ended without a terminal result");
+  throw new ProofLockStreamInterruptedError(admittedRecoveryId, stableKey);
+}
+
+type ActiveOperation = Readonly<{ idempotencyKey: string; recoveryId?: string }>;
+function readActiveOperation(key: string): ActiveOperation | undefined {
+  try { const value = localStorage.getItem(key); if (!value) return undefined;
+    return z.object({ idempotencyKey: z.string().min(8).max(128), recoveryId: recoveryId.optional() }).parse(JSON.parse(value));
+  } catch { return undefined; }
+}
+function rememberActiveOperation(key: string, inputKey: string, value: ActiveOperation): void {
+  activeKeys.set(inputKey, value.idempotencyKey);
+  if (value.recoveryId) recoveryInputs.set(value.recoveryId, inputKey);
+  try { localStorage.setItem(key, JSON.stringify(value));
+    if (value.recoveryId) localStorage.setItem(`${RECOVERY_KEY_PREFIX}${value.recoveryId}`, key);
+  } catch { /* memory fallback for SSR/private mode */ }
+}
+function forgetActiveOperation(key: string, inputKey: string): void {
+  activeKeys.delete(inputKey);
+  for (const [recoveryId, storedInput] of recoveryInputs) if (storedInput === inputKey) recoveryInputs.delete(recoveryId);
+  try { const saved = readActiveOperation(key); if (saved?.recoveryId) {
+      recoveryInputs.delete(saved.recoveryId); localStorage.removeItem(`${RECOVERY_KEY_PREFIX}${saved.recoveryId}`); }
+    localStorage.removeItem(key); } catch { /* memory-only environment */ }
+}
+
+export async function recoverProofLock(recovery: string, token: string,
+  transactionHash?: string, signal?: AbortSignal): Promise<ProofLockWriteOutcome> {
+  const body = await requestJson("/api/admin/prooflocks/recovery", { method: "POST", signal, cache: "no-store",
+    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+    body: JSON.stringify({ recoveryId: recovery, ...(transactionHash ? { transactionHash } : {}) }) });
+  const result = writeOutcomeSchema.parse(z.object({ result: writeOutcomeSchema }).parse(body).result) as ProofLockWriteOutcome;
+  if (result.status === "NOT_BROADCAST" || result.status === "REVERTED" || result.status === "SEALED")
+    forgetRecoveredOperation(result.recoveryId);
+  return result;
+}
+
+function forgetRecoveredOperation(recoveryId: string): void {
+  const inputKey = recoveryInputs.get(recoveryId); if (inputKey) activeKeys.delete(inputKey);
+  recoveryInputs.delete(recoveryId);
+  try { const indexKey = `${RECOVERY_KEY_PREFIX}${recoveryId}`; const storageKey = localStorage.getItem(indexKey);
+    if (storageKey) localStorage.removeItem(storageKey); localStorage.removeItem(indexKey);
+  } catch { /* memory-only environment */ }
 }
 
 export async function markOnDemandDrift(identityKey: string, token: string, signal?: AbortSignal): Promise<unknown> {

@@ -244,6 +244,25 @@ export type ApiErrorShape = Readonly<{
   requestId: string;
 }>;
 
+export type ProofLockWriteOutcome =
+  | Readonly<{ status: "NOT_BROADCAST"; recoveryId: string }>
+  | Readonly<{ status: "SUBMISSION_OUTCOME_UNKNOWN"; recoveryId: string; transactionHash?: Bytes32 }>
+  | Readonly<{ status: "FINALIZED_READBACK_UNAVAILABLE"; recoveryId: string; transactionHash: Bytes32;
+      identityKey: Bytes32; version: string }>
+  | Readonly<{ status: "SEALED"; recoveryId: string; transactionHash: Bytes32;
+      identityKey: Bytes32; version: string }>
+  | Readonly<{ status: "REVERTED"; recoveryId: string; transactionHash: Bytes32 }>;
+
+export type OperatorTerminalResult =
+  | Readonly<{ kind: "SEALED"; stage: "SEALED"; identity?: Readonly<Record<string, unknown>>;
+      subject?: Readonly<Record<string, unknown>>; envelope?: Readonly<Record<string, unknown>>;
+      storage?: Readonly<Record<string, unknown>>; chain?: Readonly<Record<string, unknown>>;
+      proofLock?: Readonly<Record<string, unknown>>; writeOutcome: Extract<ProofLockWriteOutcome, { status: "SEALED" }> }>
+  | Readonly<{ kind: "EXISTING_OPERATION"; operation: Readonly<{ recoveryId: string;
+      phase: "REQUESTED" | "COMPUTE_VERIFIED" | "STORAGE_VERIFIED" | "CHAIN_INPUT_COMMITTED"
+        | "SUBMISSION_ATTEMPTED" | "HASH_KNOWN" | "FINALIZED" | "RECOVERY_REQUIRED" | "TERMINAL";
+      writeOutcome?: ProofLockWriteOutcome }> }>;
+
 export type OperatorRunInput = Readonly<{
   identity: CanonicalIdentity["identity"];
   mode: "SEAL" | "RESEAL";

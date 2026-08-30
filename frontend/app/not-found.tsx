@@ -1,4 +1,10 @@
 import Link from "next/link";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Proof route not found",
+  description: "The requested ProofLock route does not exist; no approximate identity or legacy record was substituted.",
+};
 
 export default function NotFound() {
   return (

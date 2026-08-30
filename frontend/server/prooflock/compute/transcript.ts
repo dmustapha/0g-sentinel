@@ -114,9 +114,18 @@ function verifyEip191(
 }
 
 function parseSignedText(text: string) {
-  const parts = /^([0-9a-f]{64}):([0-9a-f]{64})$/.exec(text);
+  // 0G providers sign a colon-separated attestation string whose first two fields are the
+  // sha256 of the request and response bytes, followed by provenance fields such as
+  // provider type / identity / request id, e.g.
+  //   "<sha256(req)>:<sha256(resp)>:centralized:openrouter:<requestId>".
+  // The whole string is bound by the enclave EIP-191 signature (verified separately), so the
+  // trailing fields cannot be tampered with; we bind the transcript on the first two hashes.
+  const parts = /^([0-9a-f]{64}):([0-9a-f]{64})(?::.*)?$/.exec(text);
   if (!parts) {
-    throw computeFailure("COMPUTE_SIGNED_TEXT_INVALID", "signed text is not two SHA-256 hashes");
+    throw computeFailure(
+      "COMPUTE_SIGNED_TEXT_INVALID",
+      "signed text does not begin with the request and response SHA-256 hashes",
+    );
   }
   return { request: parts[1], response: parts[2] };
 }

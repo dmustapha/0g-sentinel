@@ -20,8 +20,11 @@ export function verifyOfflineComputeProof(
   assertService(snapshot, liveService, proof);
   const binding = verifyContentBinding({ text: extension.signedText, signature: proof.signature,
     signing_address: proof.expectedSigner }, proof.expectedSigner, request, response);
+  // requestDigest is the enclave-attested request commitment (signed field 1); requestSha256 is
+  // sha256 of our raw request bytes (transparency). They differ for proxying providers and are
+  // equal for direct providers — both are re-derived from the stored transcript and must match.
   if (binding.requestSha256 !== proof.requestSha256 || binding.responseSha256 !== proof.rawResponseSha256
-    || binding.signedTextSha256 !== proof.signedTextSha256 || proof.requestDigest !== proof.requestSha256) {
+    || binding.signedTextSha256 !== proof.signedTextSha256 || binding.attestedRequestSha256 !== proof.requestDigest) {
     invalid("Compute transcript digest mismatch");
   }
   assertHeaders(extension.normalizedResponseHeaders, proof);

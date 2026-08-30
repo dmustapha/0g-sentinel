@@ -86,6 +86,8 @@ export type StrictComputeResult = Readonly<{
     expectedSigner: HexAddress;
     signedText: string;
     requestSha256: `0x${string}`;
+    attestedRequestSha256: `0x${string}`;
+    requestBytesExact: boolean;
     responseSha256: `0x${string}`;
     signature: string;
     signedTextSha256: `0x${string}`;
@@ -364,9 +366,13 @@ async function fetchSignature(
   signal: AbortSignal,
 ): Promise<FetchedSignature> {
   const base = validateBaseUrl(serviceUrl).href.replace(/\/$/, "");
-  const url = `${base}/v1/proxy/signature/${encodeURIComponent(chatId)}?model=${encodeURIComponent(
-    input.model,
-  )}`;
+  // Build the signature URL EXACTLY as the 0G SDK's processResponse does:
+  //   `${serviceUrl}/v1/proxy/signature/${chatId}?model=${model}`  (raw, no percent-encoding).
+  // The subprocess worker's egress guard exact-matches our pre-fetched URL against the SDK's, so
+  // any divergence (e.g. encodeURIComponent turning "zai-org/GLM-5-FP8" into "zai-org%2FGLM-5-FP8")
+  // blocks every real provider. chatId is charset-validated in selectReceipt so it cannot break the
+  // path, and model is bound to the validated on-chain service model.
+  const url = `${base}/v1/proxy/signature/${chatId}?model=${input.model}`;
   const raw = await stage(
     (dependencies.transport ?? safeComputeTransport).request({
       url,
@@ -520,6 +526,11 @@ function selectReceipt(headers: ComputeHttpResponse["headers"], bodyId?: string)
     throw failure("COMPUTE_CHAT_ID_MISSING", "0G Compute response has no chat ID");
   if (chatId.length > 512)
     throw failure("COMPUTE_RESPONSE_INVALID", "0G Compute chat ID is too long");
+  // chatId is interpolated RAW into the signature URL path (to match the SDK). Reject any character
+  // that could alter the URL path/query/fragment or the host, so a hostile provider cannot redirect
+  // the signature fetch. Real 0G chat ids are UUID/token-shaped.
+  if (!/^[A-Za-z0-9._~-]+$/.test(chatId))
+    throw failure("COMPUTE_RESPONSE_INVALID", "0G Compute chat ID contains unsafe characters");
   return {
     chatId,
     source: header === null ? "body-id-fallback" : "ZG-Res-Key",
@@ -593,7 +604,10 @@ function buildProof(
     model: response.model,
     chatId,
     receiptDigest: receiptDigest(chatId),
-    requestDigest: binding.requestSha256,
+    // Authoritative request commitment = the enclave-attested request hash (signed field 1). For
+    // proxied providers this differs from requestSha256 (sha256 of our raw bytes, kept below for
+    // transparency); requestDigest === requestSha256 exactly when a direct provider bound the bytes.
+    requestDigest: binding.attestedRequestSha256,
     responseDigest: keccak256(toUtf8Bytes(content)) as `0x${string}`,
     proofClass: "DECENTRALIZED_MODEL_TEE",
     signatureScheme: "EIP191",

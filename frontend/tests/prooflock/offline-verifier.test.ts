@@ -46,6 +46,45 @@ async function proofFixture(models: { registered?: string; served?: string } = {
   return { proof, serviceSnapshot };
 }
 
+async function proxiedProofFixture() {
+  const wallet = Wallet.createRandom();
+  const registeredModel = "model-tee";
+  const servedModel = registeredModel;
+  const chatId = "chat-proxied-1";
+  const request = new TextEncoder().encode(JSON.stringify({ model: registeredModel, messages: [{ role: "user", content: "audit" }] }));
+  const content = JSON.stringify({ riskScore: 12 });
+  const response = new TextEncoder().encode(JSON.stringify({
+    id: chatId, model: servedModel, choices: [{ message: { content } }],
+    usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
+    x_0g_trace: { provider },
+  }));
+  // The enclave signs its OWN normalized request hash (proxy re-serialization) — NOT sha256(request).
+  const attestedRequestHash = sha256(new TextEncoder().encode("openrouter-normalized-request")).slice(2);
+  const signedText = `${attestedRequestHash}:${sha256(response).slice(2)}:centralized:openrouter:${chatId}`;
+  const signature = await wallet.signMessage(signedText);
+  const headers = [["content-type", "application/json"], ["zg-res-key", chatId]] as const;
+  const serviceSnapshot = {
+    provider, url: "https://compute.example", model: registeredModel,
+    additionalInfo: JSON.stringify({ ProviderType: "centralized", TargetSeparated: true, TEEVerifier: "dstack", TargetTeeAddress: "" }),
+    verifiability: "TeeML",
+    teeSignerAddress: wallet.address as `0x${string}`, teeSignerAcknowledged: true,
+  } as const;
+  const proof: ComputeProof = {
+    proofClass: "DECENTRALIZED_MODEL_TEE", purpose: "behavioral-risk", provider, model: servedModel, chatId,
+    receiptDigest: receiptDigest(chatId), requestDigest: `0x${attestedRequestHash}` as `0x${string}`,
+    responseDigest: keccak256(toUtf8Bytes(content)) as `0x${string}`, signatureScheme: "EIP191",
+    expectedSigner: wallet.address.toLowerCase() as `0x${string}`, signature,
+    signedTextSha256: sha256(toUtf8Bytes(signedText)) as `0x${string}`,
+    requestSha256: sha256(request) as `0x${string}`, rawResponseSha256: sha256(response) as `0x${string}`,
+    receiptSource: "ZG-Res-Key", responseHeadersSha256: responseHeadersSha256(headers),
+    usage: { promptTokens: 8, completionTokens: 4, totalTokens: 12 }, processResponseVerified: true,
+    requestBodyBase64: Buffer.from(request).toString("base64"),
+    rawResponseBodyBase64: Buffer.from(response).toString("base64"), signedText,
+    normalizedResponseHeaders: headers, serviceSnapshot,
+  };
+  return { proof, serviceSnapshot };
+}
+
 describe("offline Compute verifier", () => {
   it("re-verifies exact transcript bytes, EIP-191 signer, response, and live service snapshot", async () => {
     const { proof, serviceSnapshot } = await proofFixture();
@@ -62,6 +101,23 @@ describe("offline Compute verifier", () => {
     expect(verifyOfflineComputeProof(proof, serviceSnapshot)).toMatchObject({
       transcriptVerified: true, serviceSnapshotVerified: true,
     });
+  });
+
+  it("re-verifies a proxied proof where the request commitment is the enclave-attested hash", async () => {
+    // Simulate a proxying provider: the enclave signs its OWN normalized request hash (attested),
+    // which differs from sha256(our raw request bytes). requestDigest carries the attested hash;
+    // requestSha256 carries our raw bytes (transparency). The response stays exactly bound.
+    const { proof, serviceSnapshot } = await proxiedProofFixture();
+    expect(proof.requestDigest).not.toBe(proof.requestSha256);
+    expect(verifyOfflineComputeProof(proof, serviceSnapshot)).toMatchObject({
+      transcriptVerified: true, serviceSnapshotVerified: true, signatureVerified: true,
+    });
+  });
+
+  it("rejects a proxied proof whose requestDigest does not match the enclave-signed request hash", async () => {
+    const { proof, serviceSnapshot } = await proxiedProofFixture();
+    const tampered = { ...proof, requestDigest: `0x${"bb".repeat(32)}` } as ComputeProof;
+    expect(() => verifyOfflineComputeProof(tampered, serviceSnapshot)).toThrow();
   });
 
   it("rejects a forged signature", async () => {

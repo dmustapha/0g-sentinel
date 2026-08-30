@@ -4,7 +4,7 @@ This is the implementation contract for the 0G Sentinel Proof Ledger foundation.
 
 ## Sources and cascade
 
-`app/styles/tokens.css` is the canonical style source. `app/globals.css` only declares the fixed cascade order—reset, tokens, base, components, layouts, motion, utilities, overrides—imports the six owned stylesheets, and retains the existing Tailwind directives until their planned removal. Tailwind is isolated in named `.tailwind` sublayers because its PostCSS plugin processes imports separately; owned rules use `.prooflock` sublayers where Tailwind reserves a parent layer name. The eight parent layers remain the public cascade contract. Layer ownership is strict:
+`app/styles/tokens.css` is the canonical style source. `app/globals.css` only declares the fixed cascade order—reset, tokens, base, components, layouts, motion, utilities, overrides—and imports the six owned stylesheets. The eight parent layers remain the public cascade contract. Layer ownership is strict:
 
 - `foundations.css`: reset and element foundations
 - `tokens.css`: primitive, semantic, and compatibility custom properties

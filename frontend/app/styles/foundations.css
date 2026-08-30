@@ -1,6 +1,8 @@
 @layer reset {
   *, *::before, *::after { box-sizing: border-box; }
   * { margin: 0; padding: 0; }
+  small { font-size: 80%; }
+  table { border-collapse: collapse; border-color: inherit; text-indent: 0; }
 }
 
 @layer base.prooflock {

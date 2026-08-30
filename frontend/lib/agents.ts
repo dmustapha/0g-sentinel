@@ -6,11 +6,6 @@ import { AgentWithAttestation } from "@/lib/types";
 import { agentDisplayName } from "@/lib/constants";
 import { rankByRisk } from "@/lib/ranking";
 
-export function canonicalAgentHref(agentId: string): string {
-  if (!/^(0|[1-9]\d*)$/.test(agentId) || BigInt(agentId) >= 1n << 256n) throw new Error("Verified decimal agent ID required");
-  return `/agents/${agentId}`;
-}
-
 export async function fetchRankedAgents(): Promise<{ agents: AgentWithAttestation[]; addresses: string[] }> {
   const attestationRegistry = getAttestationRegistry();
 

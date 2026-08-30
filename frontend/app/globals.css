@@ -1,6 +1,4 @@
 @layer reset, tokens, base, components, layouts, motion, utilities, overrides;
-@layer components.tailwind, components.prooflock;
-@layer utilities.tailwind, utilities.prooflock;
 
 @import "./styles/foundations.css";
 @import "./styles/tokens.css";
@@ -8,7 +6,3 @@
 @import "./styles/layouts.css";
 @import "./styles/motion.css";
 @import "./styles/utilities.css";
-
-@layer reset.tailwind { @tailwind base; }
-@layer components.tailwind { @tailwind components; }
-@layer utilities.tailwind { @tailwind utilities; }

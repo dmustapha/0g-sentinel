@@ -91,6 +91,7 @@ export type ComputeServiceSnapshot = Readonly<{
   url: string;
   model: string;
   additionalInfo: string;
+  verifiability: string;
   teeSignerAddress: HexAddress;
   teeSignerAcknowledged: boolean;
 }>;

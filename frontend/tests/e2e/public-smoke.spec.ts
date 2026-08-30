@@ -1,12 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
-import { AbiCoder, keccak256 } from "ethers";
+import { installFixture } from "./fixtures";
 
-const address = `0x${"88".repeat(20)}`;
-const subject = `0x${"33".repeat(20)}`;
-const identityKey = keccak256(AbiCoder.defaultAbiCoder().encode(
-  ["uint256", "address", "uint256"], [16661, address, 7n],
-));
-const h = (byte: string) => `0x${byte.repeat(64)}`;
 const standaloneOrigin = "http://127.0.0.1:4318";
 
 test("@mocked public routes stay secret-free and operator work stays isolated", async ({ page }) => {
@@ -21,7 +15,7 @@ test("@mocked public routes stay secret-free and operator work stays isolated", 
 });
 
 test("@mocked blank trust roles render explicit fallbacks", async ({ page }) => {
-  await installDetailFixtures(page);
+  await installFixture(page, "full");
   await page.goto("/agents/7");
 
   await expect(page.getByRole("heading", { name: "Named trust roles" })).toBeVisible();
@@ -129,51 +123,6 @@ function assertPackagedAssets(assets: readonly AssetResponse[]): void {
       image: /^image\//i, media: /^(?:audio|video)\//i }[asset.kind];
     expect(asset.contentType, asset.url).toMatch(expected);
   }
-}
-
-async function installDetailFixtures(page: Page): Promise<void> {
-  await page.route("**/api/**", async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/identities/resolve") return json(route, { identity: identity() });
-    if (url.pathname.startsWith("/api/v1/prooflocks/")) return json(route, detail());
-    if (url.pathname.startsWith("/api/v1/proofs/")) {
-      const proofId = url.pathname.split("/").at(-2)!;
-      return json(route, proof(proofId));
-    }
-    return route.fallback();
-  });
-}
-
-function identity() {
-  return { identity: { namespace: "eip155", chainId: 16661, registryAddress: address, agentId: "7" },
-    owner: subject, agentWallet: subject, agentURI: "ipfs://agent", registrationDigest: h("a"),
-    sourceBlockNumber: "8", sourceBlockHash: h("b"), card: {} };
-}
-
-function record() {
-  return { identityKey, subject, envelopeDigest: h("4"), storageRoot: h("5"), computeRoot: h("6"),
-    artifactHash: h("7"), runtimeCodeHash: h("8"), version: "2", issuedAt: "1",
-    validUntil: "9999999999", policyVersion: 1, behavioralScore: 10, codeRisk: 0,
-    coverage: 127, state: 1, stateReason: 0 };
-}
-
-function detail() {
-  return { identityKey, proofLock: record(), detail: { status: "VERIFIED", identity: { identityKey,
-    namespace: "eip155", chainId: 16661, registryAddress: address, agentId: "7", owner: subject,
-    agentWallet: subject, registrationUri: "ipfs://agent", registrationDigest: h("a"),
-    sourceBlockNumber: "8", sourceBlockHash: h("b") }, resolution: { owner: subject,
-    agentWallet: subject, agentURI: "ipfs://agent", registrationDigest: h("a"),
-    sourceBlockNumber: "8", sourceBlockHash: h("b") }, gate: { status: "VERIFIED", allowed: true,
-    reason: 0, subject, version: "2" }, consumer: { status: "VERIFIED", accepted: true,
-    address, subject, version: "2" } } };
-}
-
-function proof(proofId: string) {
-  return { proofId, identityKey, source: { kind: "ProofLocked", registryAddress: address,
-    transactionHash: h("c"), blockNumber: 8, blockHash: h("b"), logIndex: 1 }, proofLock: record(),
-    storage: { retrievalVerified: true, networkProofVerified: false,
-      envelope: { computeProofs: [{ provider: "provider-tee", model: "model-tee" }] },
-      storageCommitment: { uploadTxHash: h("d") } } };
 }
 
 async function json(route: Route, body: unknown, status = 200): Promise<void> {

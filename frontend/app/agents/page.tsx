@@ -37,7 +37,7 @@ export default function ProofLocksPage() {
       action={<Button onClick={retryRead}>Retry read</Button>}>The observed RegistryV2 range contains no lease events. Older active leases may exist outside this bounded view.</StateMessage>}
     {state === "ready" && items.length > 0 && discovery && <AgentsTable items={items}
       referenceTimeSeconds={discovery.referenceTimeSeconds} />}
-    <aside className="legacy-banner"><b>LEGACY V1 · excluded</b><span>Older AttestationRegistry and AgentRegistry deployments do not satisfy ProofLock V2 admission.</span></aside>
+    {state !== "loading" && <aside className="legacy-banner"><b>LEGACY V1 · excluded</b><span>Older AttestationRegistry and AgentRegistry deployments do not satisfy ProofLock V2 admission.</span></aside>}
   </div></section>;
 }
 

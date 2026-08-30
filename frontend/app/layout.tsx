@@ -7,14 +7,14 @@ import { NavLinks } from "@/components/NavLinks";
 
 const chakra = Chakra_Petch({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["500", "600", "700"],
   variable: "--font-chakra",
   display: "swap",
 });
 
 const plexSans = IBM_Plex_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500"],
   variable: "--font-plex-sans",
   display: "swap",
 });

@@ -38,7 +38,7 @@ test("@mocked canceled resolution cannot publish a stale identity", async ({ pag
   await page.route("**/api/v1/identities/resolve?*", async (route) => {
     const agentId = new URL(route.request().url()).searchParams.get("agentId") ?? "";
     if (agentId === "7") await firstResponse;
-    await json(route, { identity: identity(agentId) }).catch(() => undefined);
+    await json(route, { identity: identity(agentId), identityKey: hash("e") }).catch(() => undefined);
   });
   await page.route("**/api/v1/prooflocks/**", (route) => missingProofLock(route));
 
@@ -133,7 +133,7 @@ async function assertOperatorSecretIsEphemeral(page: Page, observed: ObservedTra
 async function installOperatorResolution(page: Page): Promise<void> {
   await page.route("**/api/v1/identities/resolve?*", async (route) => {
     const agentId = new URL(route.request().url()).searchParams.get("agentId") ?? "7";
-    await json(route, { identity: identity(agentId) });
+    await json(route, { identity: identity(agentId), identityKey: hash("e") });
   });
   await page.route("**/api/v1/prooflocks/**", (route) => missingProofLock(route));
 }

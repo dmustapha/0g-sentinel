@@ -1,6 +1,5 @@
 "use client";
 
-import { AbiCoder, keccak256 } from "ethers";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
@@ -15,7 +14,7 @@ import { ProofLocatorNotice } from "@/components/VerifyEvidenceButton";
 import { Button } from "@/components/ui/Button";
 import { DataRow } from "@/components/ui/DataRow";
 import { ProofPlane } from "@/components/ui/ProofPlane";
-import { computeProofId, readProofLockDetail, resolveIdentity, verifyProof } from "@/lib/prooflock-client";
+import { readProofLockDetail, resolveIdentityLocator, verifyProof } from "@/lib/prooflock-client";
 import { currentRefreshDelay, initialProofDetailState, mapCurrentPlane, mapHistoricalPlane,
   proofDetailReducer, safeSealedObservedAt, type ProofDetailState } from "@/lib/proof-detail-state";
 import { canonicalAgentHref, canonicalProofHref, parseSourceTxHashParam,
@@ -127,12 +126,13 @@ async function loadInitial(agentId: string, sourceStatus: ReturnType<typeof pars
   onBase: (identity: CanonicalIdentity, detail: ProofLockDetailResponse, key: string) => void) {
   if (!isCanonicalAgentId(agentId)) throw new Error("Canonical decimal Agent ID required");
   if (sourceStatus === "INVALID") throw new Error("Exact nonzero Registry source transaction required");
-  const identity = await resolveIdentity(agentId, signal); const key = identityKey(identity);
+  const resolved = await resolveIdentityLocator(agentId, signal);
+  const { identity, identityKey: key } = resolved;
   const detail = await readCompatibleDetail(key, signal, agentId);
-  const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
-  if (!registry) throw new Error("RegistryV2 is not configured");
-  const proofId = computeProofId(registry, detail.proofLock); onBase(identity, detail, key);
-  const result = await verifyLinkedHistoricalProof({ proofId, identityKey: key, sourceTxHash }, signal, verifyProof);
+  if (!detail.locator) throw new Error("Server-derived Registry locator is unavailable");
+  onBase(identity, detail, key);
+  const result = await verifyLinkedHistoricalProof({ proofId: detail.locator.proofId,
+    identityKey: key, sourceTxHash }, signal, verifyProof);
   return { result, observedAt: safeSealedObservedAt(detail.proofLock.issuedAt) };
 }
 
@@ -157,8 +157,7 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
   const currentLeaseStatus = currentLease ? observationStatusAt(currentLease.observation, state.nowMs) : "UNAVAILABLE";
   const currentLeaseReason = currentLeaseStatus === "STALE" ? "OBSERVATION_EXPIRED" : currentLease?.reason;
   const pinnedNowSeconds = current ? Number(current.access.observationBlock.timestamp) : undefined;
-  const registry = process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS;
-  const proofId = registry ? computeProofId(registry, record) : null;
+  const proofId = state.route.base.locator?.proofId;
   const isFixture = process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId;
   const sameHistoricalVersion = historical?.status === "MATCH"
     && (!currentRecord || currentRecord.version === record.version);
@@ -214,7 +213,6 @@ function IdentityHeader({ fixture, identity }: Readonly<{
     {fixture ? <DemoFixtureBadge /> : null}</header>;
 }
 
-function LoadingView() { return <section className="workspace-section"><div className="wrap loading-ledger"><h1>ProofLock detail</h1><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate with pinned current access…</span></div></section>; }
-function ErrorView({ message }: { message: string }) { return <section className="workspace-section"><div className="wrap empty-ledger"><h1>ProofLock unavailable</h1><p><bdi>{message}</bdi></p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>; }
+function LoadingView() { return <section className="workspace-section detail-page"><div className="wrap loading-ledger"><h1>ProofLock detail</h1><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate with pinned current access…</span></div></section>; }
+function ErrorView({ message }: { message: string }) { return <section className="workspace-section detail-page"><div className="wrap empty-ledger"><h1>ProofLock unavailable</h1><p><bdi>{message}</bdi></p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>; }
 function errorMessage(cause: unknown): string { return safeDisplayText(cause instanceof Error ? cause.message : "ProofLock detail is unavailable", { maxGraphemes: 256 }); }
-function identityKey(identity: CanonicalIdentity): string { return keccak256(AbiCoder.defaultAbiCoder().encode(["uint256", "address", "uint256"], [16661, identity.identity.registryAddress, BigInt(identity.identity.agentId)])); }

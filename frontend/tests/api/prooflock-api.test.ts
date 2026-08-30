@@ -131,7 +131,7 @@ describe("structured API errors", () => {
 describe("public read handlers", () => {
   afterEach(() => vi.useRealTimers());
   const identity = {
-    identity: { namespace: "eip155", chainId: 16661, registryAddress: hex("80", 20), agentId: "7" },
+    identity: { namespace: "eip155", chainId: 16661, registryAddress: ERC8004_IDENTITY_REGISTRY, agentId: "7" },
     owner: hex("aa", 20), agentWallet: hex("bb", 20), agentURI: "https://example.com/card.json",
     registrationDigest: hex("33", 32), sourceBlockNumber: "100", sourceBlockHash: hex("44", 32),
     card: { type: "https://eips.ethereum.org/EIPS/eip-8004#registration-v1", registrations: [] },
@@ -172,11 +172,21 @@ describe("public read handlers", () => {
   it("resolves an ERC-8004 identity with bounded strict input", async () => {
     const deps = dependencies();
     const response = await createProofLockReadHandlers(deps).resolve(
-      new Request("https://sentinel.test/api/v1/identities/resolve?agentId=7"),
+      new Request("https://sentinel.test/api/v1/identities/resolve?agentId=7&locator=identity-v1"),
     );
     expect(response.status).toBe(200);
     expect(deps.resolveIdentity).toHaveBeenCalledWith("7", expect.any(AbortSignal));
+    expect(await response.json()).toMatchObject({
+      identityKey: computeIdentityKey(identity.identity), identity,
+    });
     expect(response.headers.get("cache-control")).toBe("no-store");
+  });
+
+  it("keeps the pre-locator identity response exact for compatible readers", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).resolve(
+      new Request("https://sentinel.test/api/v1/identities/resolve?agentId=7"));
+    expect(Object.keys(await response.json())).toEqual(["identity"]);
   });
 
   it.each(["", "00", "01", "+1", "-1", (1n << 256n).toString()])(
@@ -248,19 +258,32 @@ describe("public read handlers", () => {
   it("adds versioned sealed evidence and independently observed current access for new readers", async () => {
     const deps = dependencies();
     const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
-      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7&locator=registry-v1"));
     const body = await response.json();
 
     expect(response.status).toBe(200);
     expect((deps as any).readCurrentAccess).toHaveBeenCalledWith("7", identityKey,
       expect.any(AbortSignal));
-    expect(body).toMatchObject({ responseVersion: 2,
+    expect(body).toMatchObject({ responseVersion: 2, proofId,
+      registryAddress: deps.registryAddress,
+      locator: { proofId, identityKey, registryAddress: deps.registryAddress },
       sealedEvidence: { schema: "sentinel.prooflock/sealed-evidence-v1", version: 1,
         proofLock: { identityKey } },
       currentAccess: { schema: "sentinel.prooflock/current-access-v1", version: 1,
         observations: { gate: { observation: { status: "BLOCKED" } } } },
       detail: { status: "VERIFIED" },
     });
+    expect(deps.computeProofId).toHaveBeenCalledWith(deps.registryAddress, record);
+  });
+
+  it("keeps the pre-locator V2 response exact for compatible readers", async () => {
+    const deps = dependencies();
+    const response = await createProofLockReadHandlers(deps).proofLock(identityKey,
+      new Request("https://sentinel.test/api/v1/prooflocks/current?agentId=7"));
+    expect(Object.keys(await response.json()).sort()).toEqual([
+      "currentAccess", "detail", "identityKey", "proofLock", "responseVersion", "sealedEvidence",
+    ]);
+    expect(deps.computeProofId).not.toHaveBeenCalled();
   });
 
   it("keeps a blocked current Gate renderable when sealed Storage enrichment is unavailable", async () => {

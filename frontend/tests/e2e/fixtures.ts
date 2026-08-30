@@ -62,7 +62,9 @@ export function proofLockRecord(overrides: Partial<ProofLockRecord> = {}): Proof
 
 export function proofLockDetail(overrides: Partial<ProofLockRecord> = {}, stale = false) {
   const record = proofLockRecord(overrides); const detail = verifiedDetail(record);
+  const proofId = computeProofId(registryAddress, record);
   return { identityKey: record.identityKey, proofLock: record, detail, responseVersion: 2 as const,
+    proofId, registryAddress, locator: { identityKey: record.identityKey, proofId, registryAddress },
     sealedEvidence: { schema: "sentinel.prooflock/sealed-evidence-v1" as const, version: 1 as const,
       proofLock: record, detail }, currentAccess: currentAccess(record, stale) };
 }
@@ -109,7 +111,8 @@ export async function installFixture(page: Page, scenario: FixtureScenario = "fu
     if (scenario === "unavailable") return delayedApiError(route, "DEPENDENCY_UNAVAILABLE", 503);
     if (url.pathname === "/api/discover" || url.pathname === "/api/agents") return serveDiscovery(route, scenario);
     if (url.pathname === "/api/health") return json(route, healthSnapshot(scenario === "health-matrix"));
-    if (url.pathname === "/api/v1/identities/resolve") return json(route, { identity: canonicalIdentity() });
+    if (url.pathname === "/api/v1/identities/resolve") return json(route,
+      { identity: canonicalIdentity(), identityKey });
     if (url.pathname.startsWith("/api/v1/prooflocks/")) return json(route,
       proofLockDetail({}, scenario === "stale"));
     if (url.pathname.startsWith("/api/v1/proofs/")) return serveProof(route, url, scenario);
@@ -174,8 +177,11 @@ function inventoryItem(id: number) {
   const key = id === 7 ? identityKey : numberedHex32(id);
   const record = proofLockRecord({ identityKey: key, ...leaseVariant(id) });
   const detail = verifiedDetail(record, id === 7 ? 0 : (id - 1) % 17);
-  return { status: "VERIFIED" as const, identityKey: key, proofId: computeProofId(registryAddress, record),
-    transactionHash: numberedHex32(id + 1_000), blockNumber: 121 - id,
+  const proofId = computeProofId(registryAddress, record);
+  const transactionHash = numberedHex32(id + 1_000); const blockNumber = 121 - id;
+  return { status: "VERIFIED" as const, identityKey: key, proofId, registryAddress,
+    transactionHash, blockNumber,
+    locator: { identityKey: key, proofId, registryAddress, transactionHash, blockNumber },
     proofLock: record, detail: { ...detail, identity: { ...detail.identity, agentId: String(id), identityKey: key } } };
 }
 
@@ -191,8 +197,11 @@ function leaseVariant(id: number): Partial<ProofLockRecord> {
 }
 
 function unavailableItem(id: number) {
-  return { status: "ENRICHMENT_UNAVAILABLE" as const, identityKey: hex32("e"),
-    transactionHash: hex32("f"), blockNumber: 120 - id,
+  const key = hex32("e"); const proofId = numberedHex32(id + 3_000);
+  const transactionHash = hex32("f"); const blockNumber = 120 - id;
+  return { status: "ENRICHMENT_UNAVAILABLE" as const, identityKey: key,
+    proofId, registryAddress, transactionHash, blockNumber,
+    locator: { identityKey: key, proofId, registryAddress, transactionHash, blockNumber },
     code: "DEPENDENCY_UNAVAILABLE" as const };
 }
 

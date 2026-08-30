@@ -19,6 +19,8 @@ export type CanonicalIdentity = Readonly<{
 
 export type ProofLockRecord = Readonly<{
   identityKey: Bytes32;
+  proofId?: Bytes32;
+  registryAddress?: HexAddress;
   subject: HexAddress;
   envelopeDigest: Bytes32;
   storageRoot: Bytes32;
@@ -198,6 +200,21 @@ export type DiscoveryRecord = Readonly<{
   identityKey: Bytes32;
   transactionHash: Bytes32;
   blockNumber: number;
+  locator?: RegistryProofSourceLocator;
+}>;
+
+export type RegistryProofLocator = Readonly<{
+  identityKey: Bytes32;
+  proofId: Bytes32;
+  registryAddress: HexAddress;
+}>;
+export type RegistryProofSourceLocator = RegistryProofLocator & Readonly<{
+  transactionHash: Bytes32;
+  blockNumber: number;
+}>;
+export type ResolvedIdentityLocator = Readonly<{
+  identity: CanonicalIdentity;
+  identityKey: Bytes32;
 }>;
 
 export type ProofLockDetail =
@@ -281,11 +298,17 @@ type LegacyProofLockDetailResponse = Readonly<{
 }>;
 export type ProofLockDetailResponse = LegacyProofLockDetailResponse & Readonly<{
   responseVersion?: 2;
+  proofId?: Bytes32;
+  registryAddress?: HexAddress;
+  locator?: RegistryProofLocator;
   sealedEvidence?: SealedEvidenceV1;
   currentAccess?: CurrentAccessV1;
 }>;
 export type ProofLockCurrentDetailResponse = LegacyProofLockDetailResponse & Readonly<{
   responseVersion: 2;
+  proofId: Bytes32;
+  registryAddress: HexAddress;
+  locator: RegistryProofLocator;
   sealedEvidence: SealedEvidenceV1;
   currentAccess: CurrentAccessV1;
 }>;

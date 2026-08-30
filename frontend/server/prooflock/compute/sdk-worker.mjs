@@ -42,6 +42,6 @@ async function processResponse(broker, message) {
 }
 
 function normalizeService(value) {
-  const keys = ["provider", "url", "model", "additionalInfo", "teeSignerAddress", "teeSignerAcknowledged"];
+  const keys = ["provider", "url", "model", "additionalInfo", "verifiability", "teeSignerAddress", "teeSignerAcknowledged"];
   return Object.fromEntries(keys.map((key) => [key, value[key]]));
 }

@@ -10,7 +10,7 @@ export default function Error({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error(error);
+    console.error("Proof surface unavailable", error.digest ?? "no-digest");
   }, [error]);
 
   return (
@@ -18,8 +18,8 @@ export default function Error({
       <span className="eyebrow">Fail-closed interface</span>
       <h1>Proof surface unavailable</h1>
       <p>The requested proof data could not be rendered. No admission state has been inferred.</p>
-      <div className="action-row">
-        <button onClick={reset} className="button primary">Retry read</button>
+      <div className="action-row" role="group" aria-label="Recovery actions">
+        <button type="button" onClick={reset} className="button primary">Retry read</button>
         <Link href="/agents" className="button">ProofLocks →</Link>
       </div>
     </div>

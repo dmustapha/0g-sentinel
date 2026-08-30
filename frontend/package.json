@@ -21,6 +21,7 @@
     "test:e2e:mocked": "node scripts/run-playwright.mjs --project=chromium-mocked",
     "test:e2e:standalone": "node scripts/run-playwright.mjs --project=standalone-smoke",
     "test:e2e:install": "playwright install chromium firefox webkit",
+    "test:standalone": "node scripts/test-standalone.mjs",
     "test:release": "node scripts/test-release.mjs"
   },
   "dependencies": {

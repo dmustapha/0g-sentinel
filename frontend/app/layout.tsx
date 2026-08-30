@@ -28,6 +28,9 @@ const plexMono = IBM_Plex_Mono({
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
+  applicationName: "0G Sentinel ProofLock",
+  category: "technology",
+  formatDetection: { address: false, email: false, telephone: false },
   icons: { icon: "/favicon.ico" },
   title: {
     default: "0G Sentinel ProofLock · policy-scoped agent admission",
@@ -38,6 +41,8 @@ export const metadata: Metadata = {
     title: "0G Sentinel ProofLock",
     description: "Policy-scoped agent admission with versioned, append-preserved proof history on 0G.",
     siteName: "0G Sentinel",
+    type: "website",
+    locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",

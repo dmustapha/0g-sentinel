@@ -11,7 +11,7 @@ export default function Image() {
     borderTop: "12px solid #ad72ff", fontFamily: "sans-serif" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <b style={{ fontSize: 30 }}>0G SENTINEL · PROOFLOCK</b>
-      <span style={{ fontSize: 18, color: "#a7a39b" }}>0G MAINNET · 16661</span>
+      <span style={{ fontSize: 18, color: "#a7a39b" }}>NETWORK · CHAIN ID 16661</span>
     </div>
     <div style={{ display: "flex", flexDirection: "column" }}>
       <span style={{ color: "#ad72ff", fontSize: 22, letterSpacing: 3 }}>POLICY-SCOPED EVIDENCE</span>

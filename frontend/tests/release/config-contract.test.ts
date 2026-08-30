@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -34,6 +35,12 @@ const DEPLOY_V2 = [
   "PROOFLOCK_MAX_BEHAVIORAL_SCORE", "PROOFLOCK_MAX_CODE_RISK", "PROOFLOCK_REQUIRED_COVERAGE",
   "PROOFLOCK_MINIMUM_POLICY_VERSION", "PROOFLOCK_MAXIMUM_AGE_SECONDS", "PROOFLOCK_DEPLOY_CONFIRMATIONS",
 ];
+const SECURITY_HEADERS = {
+  "X-Frame-Options": "DENY",
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+  "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), clipboard-write=(self)",
+};
 
 describe("release configuration and legacy boundary", () => {
   it("publishes a truthful generated root social image", () => {
@@ -53,15 +60,34 @@ describe("release configuration and legacy boundary", () => {
     expect(html.match(/<h1(?:\s|>)/g)).toHaveLength(1);
   });
 
-  it("preserves the exact baseline response headers", async () => {
+  it("enforces the reviewed security headers and CSP without a reporting token sink", async () => {
     const config = (await import("../../next.config.mjs")).default;
     expect(config.headers).toBeTypeOf("function");
     const definitions = await config.headers!();
-    expect(definitions).toEqual([{ source: "/(.*)", headers: [
-      { key: "X-Frame-Options", value: "DENY" },
-      { key: "X-Content-Type-Options", value: "nosniff" },
-      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-    ] }]);
+    const headers = Object.fromEntries(definitions[0]!.headers.map(({ key, value }) => [key, value]));
+    expect(definitions[0]!.source).toBe("/(.*)");
+    expect(headers).toMatchObject(SECURITY_HEADERS);
+    const csp = headers["Content-Security-Policy"];
+    for (const directive of ["default-src 'self'", "base-uri 'self'", "frame-ancestors 'none'",
+      "object-src 'none'", "form-action 'self'", "script-src", "style-src", "font-src", "img-src",
+      "connect-src"]) expect(csp).toContain(directive);
+    expect(csp).not.toMatch(/report-(?:to|uri)/i);
+    expect(headers).not.toHaveProperty("Content-Security-Policy-Report-Only");
+  });
+
+  it("emits HSTS and upgrade-insecure-requests only for production HTTPS", () => {
+    const https = loadSecurityHeaders("production", "https://sentinel.example");
+    const http = loadSecurityHeaders("production", "http://127.0.0.1:3000");
+    const development = loadSecurityHeaders("development", "https://sentinel.example");
+    expect(https["Strict-Transport-Security"]).toBe("max-age=31536000; includeSubDomains");
+    expect(https["Content-Security-Policy"]).toContain("upgrade-insecure-requests");
+    expect(https["Content-Security-Policy"]).toContain("https://evmrpc.0g.ai");
+    expect(development["Content-Security-Policy"]).toContain("'unsafe-eval'");
+    for (const headers of [https, http]) expect(headers["Content-Security-Policy"]).not.toContain("'unsafe-eval'");
+    for (const headers of [http, development]) {
+      expect(headers).not.toHaveProperty("Strict-Transport-Security");
+      expect(headers["Content-Security-Policy"]).not.toContain("upgrade-insecure-requests");
+    }
   });
 
   it("runs the packaged standalone release smoke with guaranteed teardown", () => {
@@ -89,6 +115,37 @@ describe("release configuration and legacy boundary", () => {
       scripts?: Record<string, string>;
     };
     expect(packageJson.scripts?.postbuild).toBe("node scripts/prepare-standalone.mjs");
+  });
+
+  it("defines descriptive route metadata and truthful dynamic social images", () => {
+    const files = ["app/agents/layout.tsx", "app/proof/layout.tsx", "app/operator/layout.tsx",
+      "app/agents/[address]/opengraph-image.tsx", "app/proof/[proofId]/opengraph-image.tsx"];
+    const source = files.map((path) => readFileSync(resolve(process.cwd(), path), "utf8")).join("\n");
+    const dynamicImages = ["app/agents/[address]/opengraph-image.tsx",
+      "app/proof/[proofId]/opengraph-image.tsx"]
+      .map((path) => readFileSync(resolve(process.cwd(), path), "utf8")).join("\n");
+    for (const title of ["ProofLock ledger", "Historical proof verifier", "ProofLock operator"])
+      expect(source).toContain(`title: "${title}"`);
+    expect(source).not.toMatch(/\b(?:LIVE|ADMITTED|SAFE|BLOCKED)\b/);
+    for (const unverifiedClaim of ["CANONICAL ERC-8004 IDENTITY", "HISTORICAL PROOF ARTIFACT",
+      "identity-bound evidence", "Gate decision"])
+      expect(dynamicImages).not.toContain(unverifiedClaim);
+    expect(dynamicImages).toContain("ROUTE LOCATOR");
+    expect(dynamicImages).toContain("No share-card verdict");
+  });
+
+  it("adds the exhaustive standalone runtime gate", () => {
+    const packageJson = JSON.parse(readFileSync(resolve(process.cwd(), "package.json"), "utf8")) as {
+      scripts?: Record<string, string>;
+    };
+    const script = readFileSync(resolve(process.cwd(), "scripts/test-standalone.mjs"), "utf8");
+    expect(packageJson.scripts?.["test:standalone"]).toBe("node scripts/test-standalone.mjs");
+    for (const contract of [".next/standalone/server.js", "findAvailablePort", "try", "finally", "SIGTERM",
+      '"/agents/7"', "`/proof/${proofId}?identityKey=${identityKey}`", "opengraph-image", "favicon.ico",
+      "packaged font/media"])
+      expect(script).toContain(contract);
+    for (const safety of ["AbortSignal.timeout", "EADDRINUSE", "startStandalone",
+      "x-prooflock-e2e-error"]) expect(script).toContain(safety);
   });
 
   it.each([".env.example", "../.env.example"])("documents every active public V2 variable in %s", (path) => {
@@ -127,6 +184,11 @@ describe("release configuration and legacy boundary", () => {
     expect(root).toContain('<Link href="#main-content"');
     expect(root).toContain('<Link href="/" className="wordmark"');
     expect(root).toContain("Network configuration · Chain ID 16661");
+    expect(root).not.toContain('export const dynamic = "force-dynamic"');
+    const proofLayout = readFileSync(resolve(process.cwd(), "app/proof/layout.tsx"), "utf8");
+    expect(proofLayout).toContain('export const dynamic = "force-dynamic"');
+    expect(proofLayout).toContain("PROOFLOCK_E2E_ERROR_TRIGGER");
+    expect(proofLayout).toContain("x-prooflock-e2e-error");
     expect(root).not.toContain("0G MAINNET");
     expect(overview).not.toContain("0G Mainnet");
     expect(overview).toContain("export const metadata");
@@ -189,3 +251,13 @@ describe("release configuration and legacy boundary", () => {
       expect(text).not.toContain(claim);
   });
 });
+
+function loadSecurityHeaders(nodeEnv: "production" | "development", appUrl: string): Record<string, string> {
+  const program = `const c=(await import('./next.config.mjs?case=${nodeEnv}-${Date.now()}')).default;`
+    + `const d=await c.headers();console.log(JSON.stringify(Object.fromEntries(d[0].headers.map(h=>[h.key,h.value]))));`;
+  const output = execFileSync(process.execPath, ["--input-type=module", "--eval", program], {
+    cwd: process.cwd(), encoding: "utf8", env: { ...process.env, NODE_ENV: nodeEnv,
+      NEXT_PUBLIC_APP_URL: appUrl, NEXT_PUBLIC_RPC_URL: "" },
+  });
+  return JSON.parse(output) as Record<string, string>;
+}

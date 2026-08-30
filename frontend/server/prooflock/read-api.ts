@@ -301,7 +301,10 @@ async function verifyStorageEvidence(
   const broker = await raceAbort(createReadOnlyInferenceBroker(config.rpcUrl, CHAIN_ID), signal);
   const computeVerification = await Promise.all(envelope.computeProofs.map(async (proof) => {
     let live;
-    try { live = await resolveService(broker, proof.provider, proof.model, signal); }
+    // Re-resolve the live on-chain service by its registered/catalog model (serviceSnapshot.model),
+    // not the served runtime model (proof.model), which is normalized by the provider and would not
+    // match the on-chain registration.
+    try { live = await resolveService(broker, proof.provider, proof.serviceSnapshot?.model ?? proof.model, signal); }
     catch (error) { if (computeMismatch(error)) mismatch(); throw error; }
     try { return verifyOfflineComputeProof(proof, live); }
     catch (error) { rethrowMismatch(error, signal); }

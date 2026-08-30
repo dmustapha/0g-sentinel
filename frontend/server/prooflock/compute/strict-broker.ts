@@ -324,7 +324,12 @@ async function verifyAndAccept(
   signal: AbortSignal,
 ): Promise<StrictComputeResult> {
   const response = parseResponse(rawResponse.body);
-  if (response.model !== input.model) modelFailure("response");
+  // We request the on-chain registered/catalog model (input.model, already verified against the
+  // service and metadata). Providers serve it under a normalized runtime id (e.g. registered
+  // "zai-org/GLM-5-FP8" is served as "z-ai/glm-5"). The model that actually ran is the one in the
+  // signed response, so the proof binds to response.model (see buildProof) and records the
+  // registered catalog model separately in serviceSnapshot.model. Both are covered by the
+  // provider signature; requiring byte-equality here would reject every real provider.
   assertReturnedProvider(input.provider, response.x_0g_trace?.provider, rawResponse.headers);
   const receipt = selectReceipt(rawResponse.headers, response.id);
   const signature = await fetchSignature(input, service.url, receipt.chatId, dependencies, signal);

@@ -25,7 +25,7 @@ export function verifyOfflineComputeProof(
     invalid("Compute transcript digest mismatch");
   }
   assertHeaders(extension.normalizedResponseHeaders, proof);
-  assertBodies(request, response, proof);
+  assertBodies(request, response, proof, snapshot.model);
   return Object.freeze({ proofClass: "DECENTRALIZED_MODEL_TEE" as const, signatureVerified: true as const,
     transcriptVerified: true as const, serviceSnapshotVerified: true as const });
 }
@@ -52,7 +52,10 @@ function assertService(snapshot: ServiceDetail, live: ServiceDetail, proof: Comp
   if (keys.some((key) => snapshot[key] !== live[key])) invalid("Compute service snapshot mismatch");
   validateBaseUrl(live.url);
   const expectedSigner = resolveExpectedSigner(live);
-  if (live.provider !== proof.provider.toLowerCase() || live.model !== proof.model
+  // live.model is the on-chain registered/catalog model; the keys comparison above already binds it
+  // to snapshot.model. proof.model is the served runtime model and is validated against the signed
+  // response bytes in assertBodies, so it must NOT be compared to the live registered model here.
+  if (live.provider !== proof.provider.toLowerCase()
     || expectedSigner !== proof.expectedSigner.toLowerCase()) invalid("Compute proof service binding mismatch");
 }
 
@@ -64,10 +67,12 @@ function assertHeaders(headers: readonly (readonly [string, string])[], proof: C
   if (proof.receiptSource === "ZG-Res-Key" && receipt !== proof.chatId) invalid("Compute receipt header mismatch");
 }
 
-function assertBodies(requestBytes: Uint8Array, responseBytes: Uint8Array, proof: ComputeProof): void {
+function assertBodies(requestBytes: Uint8Array, responseBytes: Uint8Array, proof: ComputeProof, registeredModel: string): void {
   const request = parseObject(requestBytes);
   const response = parseObject(responseBytes);
-  if (request.model !== proof.model || response.model !== proof.model) invalid("Compute model mismatch");
+  // The request carries the registered/catalog model we invoked (serviceSnapshot.model); the
+  // response carries the served runtime model, which is what proof.model binds to.
+  if (request.model !== registeredModel || response.model !== proof.model) invalid("Compute model mismatch");
   const choices = response.choices as readonly { message?: { content?: unknown } }[] | undefined;
   const content = choices?.[0]?.message?.content;
   if (typeof content !== "string" || keccak256(toUtf8Bytes(content)) !== proof.responseDigest) invalid("Compute response content mismatch");

@@ -8,14 +8,16 @@ import type { ComputeProof, StorageCommitment } from "../../server/prooflock/typ
 
 const provider = "0x1111111111111111111111111111111111111111" as const;
 
-async function proofFixture() {
+async function proofFixture(models: { registered?: string; served?: string } = {}) {
   const wallet = Wallet.createRandom();
-  const model = "model-tee";
+  const registeredModel = models.registered ?? "model-tee";
+  const servedModel = models.served ?? registeredModel;
+  const model = servedModel;
   const chatId = "chat-offline-1";
-  const request = new TextEncoder().encode(JSON.stringify({ model, messages: [{ role: "user", content: "audit" }] }));
+  const request = new TextEncoder().encode(JSON.stringify({ model: registeredModel, messages: [{ role: "user", content: "audit" }] }));
   const content = JSON.stringify({ riskScore: 12 });
   const response = new TextEncoder().encode(JSON.stringify({
-    id: chatId, model, choices: [{ message: { content } }],
+    id: chatId, model: servedModel, choices: [{ message: { content } }],
     usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 },
     x_0g_trace: { provider },
   }));
@@ -23,7 +25,7 @@ async function proofFixture() {
   const signature = await wallet.signMessage(signedText);
   const headers = [["content-type", "application/json"], ["zg-res-key", chatId]] as const;
   const serviceSnapshot = {
-    provider, url: "https://compute.example", model,
+    provider, url: "https://compute.example", model: registeredModel,
     additionalInfo: JSON.stringify({ ProviderType: "centralized", TargetSeparated: true, TEEVerifier: "dstack", TargetTeeAddress: "" }),
     verifiability: "TeeML",
     teeSignerAddress: wallet.address as `0x${string}`, teeSignerAcknowledged: true,
@@ -49,6 +51,15 @@ describe("offline Compute verifier", () => {
     const { proof, serviceSnapshot } = await proofFixture();
     expect(verifyOfflineComputeProof(proof, serviceSnapshot)).toEqual({
       proofClass: "DECENTRALIZED_MODEL_TEE", signatureVerified: true,
+      transcriptVerified: true, serviceSnapshotVerified: true,
+    });
+  });
+
+  it("verifies when the served runtime model differs from the registered catalog model", async () => {
+    const { proof, serviceSnapshot } = await proofFixture({ registered: "0GM-1.0-35B-A3B", served: "z-ai/glm-5" });
+    expect(proof.model).toBe("z-ai/glm-5");
+    expect(serviceSnapshot.model).toBe("0GM-1.0-35B-A3B");
+    expect(verifyOfflineComputeProof(proof, serviceSnapshot)).toMatchObject({
       transcriptVerified: true, serviceSnapshotVerified: true,
     });
   });

@@ -197,8 +197,15 @@ function rawHeaderPairs(
   return pairs;
 }
 
-function pinnedLookup(address: string, family: 4 | 6): LookupFunction {
-  return (_hostname, _options, callback) => callback(null, address, family);
+export function pinnedLookup(address: string, family: 4 | 6): LookupFunction {
+  // Honor Node's `all` option: happy-eyeballs / autoSelectFamily calls the custom lookup with
+  // { all: true } and expects an array of { address, family }. Returning the single-arg form in
+  // that case makes Node read result[0].address === undefined ("Invalid IP address: undefined").
+  return (_hostname, options, callback) => {
+    const all = typeof options === "object" && options !== null && (options as { all?: boolean }).all;
+    if (all) (callback as unknown as (e: null, a: { address: string; family: number }[]) => void)(null, [{ address, family }]);
+    else callback(null, address, family);
+  };
 }
 
 function invalid(): never {

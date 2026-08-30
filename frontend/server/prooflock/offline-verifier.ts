@@ -48,7 +48,7 @@ function requireExtension(proof: ComputeProof) {
 }
 
 function assertService(snapshot: ServiceDetail, live: ServiceDetail, proof: ComputeProof): void {
-  const keys = ["provider", "url", "model", "additionalInfo", "teeSignerAddress", "teeSignerAcknowledged"] as const;
+  const keys = ["provider", "url", "model", "additionalInfo", "verifiability", "teeSignerAddress", "teeSignerAcknowledged"] as const;
   if (keys.some((key) => snapshot[key] !== live[key])) invalid("Compute service snapshot mismatch");
   validateBaseUrl(live.url);
   const expectedSigner = resolveExpectedSigner(live);

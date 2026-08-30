@@ -614,6 +614,7 @@ function buildProof(
       url: service.url,
       model: service.model,
       additionalInfo: service.additionalInfo,
+      verifiability: service.verifiability,
       teeSignerAddress: service.teeSignerAddress.toLowerCase() as HexAddress,
       teeSignerAcknowledged: service.teeSignerAcknowledged,
     },

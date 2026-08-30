@@ -67,6 +67,7 @@ const serviceSnapshotSchema = z.object({
   url: boundedString(4096),
   model: boundedString(256),
   additionalInfo: boundedString(65_536),
+  verifiability: boundedString(256),
   teeSignerAddress: address,
   teeSignerAcknowledged: z.boolean(),
 }).strict();

@@ -24,7 +24,8 @@ async function proofFixture() {
   const headers = [["content-type", "application/json"], ["zg-res-key", chatId]] as const;
   const serviceSnapshot = {
     provider, url: "https://compute.example", model,
-    additionalInfo: JSON.stringify({ ProviderType: "decentralized", TargetSeparated: true, TargetTeeAddress: wallet.address }),
+    additionalInfo: JSON.stringify({ ProviderType: "centralized", TargetSeparated: true, TEEVerifier: "dstack", TargetTeeAddress: "" }),
+    verifiability: "TeeML",
     teeSignerAddress: wallet.address as `0x${string}`, teeSignerAcknowledged: true,
   } as const;
   const proof: ComputeProof = {

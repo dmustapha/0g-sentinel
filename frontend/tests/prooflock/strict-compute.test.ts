@@ -30,7 +30,6 @@ import {
 const PROVIDER = "0x1111111111111111111111111111111111111111";
 const OTHER_PROVIDER = "0x2222222222222222222222222222222222222222";
 const SIGNER = "0x3333333333333333333333333333333333333333";
-const TARGET_SIGNER = "0x4444444444444444444444444444444444444444";
 const MODEL = "0GM-1.0-35B-A3B";
 const CONTENT = '{"riskScore":8,"label":"SAFE"}';
 const SIGNATURE = `0x${"ab".repeat(65)}`;
@@ -103,6 +102,7 @@ function harness(
     signatureText?: string;
     signatureValid?: boolean;
     serviceAdditionalInfo?: string;
+    serviceVerifiability?: string;
     serviceAcknowledged?: boolean;
     serviceValue?: unknown;
     serviceAfterProcess?: unknown;
@@ -142,10 +142,12 @@ function harness(
             additionalInfo:
               options.serviceAdditionalInfo ??
               JSON.stringify({
-                ProviderType: "decentralized",
+                ProviderType: "centralized",
                 TargetSeparated: true,
-                TargetTeeAddress: TARGET_SIGNER,
+                TEEVerifier: "dstack",
+                TargetTeeAddress: "",
               }),
+            verifiability: options.serviceVerifiability ?? "TeeML",
             teeSignerAddress: SIGNER,
             teeSignerAcknowledged: options.serviceAcknowledged ?? true,
           },
@@ -163,7 +165,7 @@ function harness(
       {
         text,
         signature: SIGNATURE,
-        signing_address: options.responseSigner ?? TARGET_SIGNER,
+        signing_address: options.responseSigner ?? SIGNER,
       },
       { headers: [["content-type", "application/json"]] },
     );
@@ -190,11 +192,11 @@ describe("strict 0G Compute", () => {
       processResponseVerified: true,
       proofClass: "DECENTRALIZED_MODEL_TEE",
       signatureScheme: "EIP191",
-      expectedSigner: TARGET_SIGNER,
+      expectedSigner: SIGNER,
       receiptSource: "ZG-Res-Key",
     });
     expect(result.contentBinding).toMatchObject({
-      expectedSigner: TARGET_SIGNER,
+      expectedSigner: SIGNER,
       signatureVerified: true,
       requestSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
       responseSha256: expect.stringMatching(/^0x[0-9a-f]{64}$/),
@@ -209,7 +211,7 @@ describe("strict 0G Compute", () => {
     expect(verifySignature).toHaveBeenCalledWith(
       result.contentBinding.signedText,
       SIGNATURE,
-      TARGET_SIGNER,
+      SIGNER,
     );
     expect(processResponse).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -297,74 +299,95 @@ describe("strict 0G Compute", () => {
     });
   });
 
-  it("uses TargetTeeAddress for a separated decentralized provider", async () => {
+  it("accepts a centralized-operator TeeML separated provider and binds to its enclave signer", async () => {
     const { dependencies, verifySignature } = harness({
-      serviceAdditionalInfo: JSON.stringify({
-        ProviderType: "decentralized",
-        TargetSeparated: true,
-        TargetTeeAddress: TARGET_SIGNER,
-      }),
-      responseSigner: TARGET_SIGNER,
-    });
-    await runStrictCompute(input(), dependencies);
-    expect(verifySignature).toHaveBeenCalledWith(expect.any(String), SIGNATURE, TARGET_SIGNER);
-  });
-
-  it("rejects a centralized router receipt as an unsupported proof class", async () => {
-    const { dependencies } = harness({
       serviceAdditionalInfo: JSON.stringify({
         ProviderType: "centralized",
         TargetSeparated: true,
-        TargetTeeAddress: TARGET_SIGNER,
+        TEEVerifier: "dstack",
+        TargetTeeAddress: "",
       }),
-      signatureText: `${"0".repeat(64)}:${"1".repeat(64)}:1:2:3`,
+      serviceVerifiability: "TeeML",
+    });
+    const result = await runStrictCompute(input(), dependencies);
+    expect(result.proof.expectedSigner).toBe(SIGNER);
+    expect(verifySignature).toHaveBeenCalledWith(expect.any(String), SIGNATURE, SIGNER);
+  });
+
+  it("rejects a non-TeeML verifiability as an unsupported proof class", async () => {
+    const { dependencies } = harness({ serviceVerifiability: "OpML" });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_PROOF_CLASS_UNSUPPORTED",
+    });
+  });
+
+  it("rejects an empty verifiability as an unsupported proof class", async () => {
+    const { dependencies } = harness({ serviceVerifiability: "" });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_PROOF_CLASS_UNSUPPORTED",
+    });
+  });
+
+  it("rejects an unseparated (TargetSeparated !== true) provider", async () => {
+    const { dependencies } = harness({
+      serviceAdditionalInfo: JSON.stringify({
+        ProviderType: "centralized",
+        TargetSeparated: false,
+        TargetTeeAddress: "",
+      }),
     });
     await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
       code: "COMPUTE_PROOF_CLASS_UNSUPPORTED",
     });
   });
 
-  it.each(["standard", "unknown", undefined] as const)(
-    "rejects ProviderType %s instead of defaulting to decentralized",
-    async (providerType) => {
-      const additionalInfo = {
-        ...(providerType === undefined ? {} : { ProviderType: providerType }),
-        TargetSeparated: true,
-        TargetTeeAddress: TARGET_SIGNER,
-      };
-      await expect(
-        runStrictCompute(
-          input(),
-          harness({ serviceAdditionalInfo: JSON.stringify(additionalInfo) }).dependencies,
-        ),
-      ).rejects.toMatchObject({ code: "COMPUTE_PROOF_CLASS_UNSUPPORTED" });
-    },
-  );
+  it("rejects a zero-address enclave signer as an unsupported proof class", async () => {
+    const { dependencies } = harness({
+      serviceValue: {
+        provider: PROVIDER,
+        url: "https://compute.example",
+        model: MODEL,
+        additionalInfo: JSON.stringify({
+          ProviderType: "centralized",
+          TargetSeparated: true,
+          TargetTeeAddress: "",
+        }),
+        verifiability: "TeeML",
+        teeSignerAddress: "0x0000000000000000000000000000000000000000",
+        teeSignerAcknowledged: true,
+      },
+    });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_PROOF_CLASS_UNSUPPORTED",
+    });
+  });
+
+  it("rejects an enclave signer equal to the provider (not separated)", async () => {
+    const { dependencies } = harness({
+      serviceValue: {
+        provider: PROVIDER,
+        url: "https://compute.example",
+        model: MODEL,
+        additionalInfo: JSON.stringify({
+          ProviderType: "centralized",
+          TargetSeparated: true,
+          TargetTeeAddress: "",
+        }),
+        verifiability: "TeeML",
+        teeSignerAddress: PROVIDER,
+        teeSignerAcknowledged: true,
+      },
+    });
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
+      code: "COMPUTE_PROOF_CLASS_UNSUPPORTED",
+    });
+  });
 
   it("rejects an unacknowledged signer from the immutable service detail", async () => {
     const { dependencies } = harness({ serviceAcknowledged: false });
     await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
       code: "COMPUTE_SIGNER_UNACKNOWLEDGED",
     });
-  });
-
-  it("requires an exact separated target TEE signer", async () => {
-    for (const additionalInfo of [
-      { ProviderType: "decentralized", TargetSeparated: false },
-      { ProviderType: "decentralized", TargetSeparated: true },
-      {
-        ProviderType: "decentralized",
-        TargetSeparated: true,
-        TargetTeeAddress: "0x0000000000000000000000000000000000000000",
-      },
-    ]) {
-      await expect(
-        runStrictCompute(
-          input(),
-          harness({ serviceAdditionalInfo: JSON.stringify(additionalInfo) }).dependencies,
-        ),
-      ).rejects.toMatchObject({ code: "COMPUTE_PROOF_CLASS_UNSUPPORTED" });
-    }
   });
 
   it("normalizes an ethers Result-shaped service tuple before validation", async () => {
@@ -376,11 +399,12 @@ describe("strict 0G Compute", () => {
       1n,
       1n,
       MODEL,
-      "TEE",
+      "TeeML",
       JSON.stringify({
-        ProviderType: "decentralized",
+        ProviderType: "centralized",
         TargetSeparated: true,
-        TargetTeeAddress: TARGET_SIGNER,
+        TEEVerifier: "dstack",
+        TargetTeeAddress: "",
       }),
       SIGNER,
       true,
@@ -389,6 +413,7 @@ describe("strict 0G Compute", () => {
       provider: tuple[0],
       url: tuple[2],
       model: tuple[6],
+      verifiability: tuple[7],
       additionalInfo: tuple[8],
       teeSignerAddress: tuple[9],
       teeSignerAcknowledged: tuple[10],
@@ -428,11 +453,12 @@ describe("strict 0G Compute", () => {
       url: "https://compute.example",
       model: MODEL,
       additionalInfo: JSON.stringify({
-        ProviderType: "decentralized",
+        ProviderType: "centralized",
         TargetSeparated: true,
-        TargetTeeAddress: TARGET_SIGNER,
+        TargetTeeAddress: "",
         ImageDigest: "changed",
       }),
+      verifiability: "TeeML",
       teeSignerAddress: SIGNER,
       teeSignerAcknowledged: true,
     };

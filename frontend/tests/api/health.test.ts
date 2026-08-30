@@ -85,15 +85,20 @@ describe("0G RPC chain guard", () => {
 describe("read-only Compute health policy", () => {
   const provider = "0x1111111111111111111111111111111111111111";
   const signer = "0x2222222222222222222222222222222222222222";
-  const service = (additional: Record<string, unknown>, acknowledged = true) => ({
+  const service = (
+    additional: Record<string, unknown>,
+    overrides: { verifiability?: string; acknowledged?: boolean; teeSignerAddress?: string } = {},
+  ) => ({
     provider, url: "https://compute.example", model: "model-tee",
-    additionalInfo: JSON.stringify(additional), teeSignerAddress: signer,
-    teeSignerAcknowledged: acknowledged,
+    additionalInfo: JSON.stringify(additional),
+    verifiability: overrides.verifiability ?? "TeeML",
+    teeSignerAddress: overrides.teeSignerAddress ?? signer,
+    teeSignerAcknowledged: overrides.acknowledged ?? true,
   });
   const broker = (value: unknown) => ({ listService: vi.fn().mockResolvedValue([value]) });
 
-  it("accepts only an acknowledged decentralized separated model TEE without spend methods", async () => {
-    const readOnly = broker(service({ ProviderType: "decentralized", TargetSeparated: true, TargetTeeAddress: signer }));
+  it("accepts a centralized-operator TeeML separated enclave signer without spend methods", async () => {
+    const readOnly = broker(service({ ProviderType: "centralized", TargetSeparated: true, TEEVerifier: "dstack", TargetTeeAddress: "" }));
     const result = await probeComputeService(readOnly, provider, "model-tee", new AbortController().signal);
     expect(result).toMatchObject({ proofClass: "DECENTRALIZED_MODEL_TEE", expectedSigner: signer,
       observation: "SERVICE_DISCOVERY", paidInference: false, inferenceExecuted: false });
@@ -101,9 +106,12 @@ describe("read-only Compute health policy", () => {
   });
 
   it.each([
-    ["centralized", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: signer })],
-    ["unseparated", service({ ProviderType: "decentralized", TargetSeparated: false, TargetTeeAddress: signer })],
-    ["unacknowledged", service({ ProviderType: "decentralized", TargetSeparated: true, TargetTeeAddress: signer }, false)],
+    ["non-TeeML verifiability", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: "" }, { verifiability: "OpML" })],
+    ["empty verifiability", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: "" }, { verifiability: "" })],
+    ["unseparated", service({ ProviderType: "centralized", TargetSeparated: false, TargetTeeAddress: "" })],
+    ["zero-address signer", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: "" }, { teeSignerAddress: "0x0000000000000000000000000000000000000000" })],
+    ["signer equal to provider", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: "" }, { teeSignerAddress: provider })],
+    ["unacknowledged", service({ ProviderType: "centralized", TargetSeparated: true, TargetTeeAddress: "" }, { acknowledged: false })],
   ])("rejects %s Compute services", async (_label, value) => {
     await expect(probeComputeService(broker(value), provider, "model-tee", new AbortController().signal)).rejects.toThrow();
   });

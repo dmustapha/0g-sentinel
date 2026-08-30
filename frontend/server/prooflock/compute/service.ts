@@ -9,6 +9,7 @@ export type ServiceDetail = Readonly<{
   url: string;
   model: string;
   additionalInfo: string;
+  verifiability: string;
   teeSignerAddress: string;
   teeSignerAcknowledged: boolean;
 }>;
@@ -29,6 +30,7 @@ const serviceSchema = z
     url: z.string().trim().min(1).max(4_096),
     model: z.string().trim().min(1).max(256),
     additionalInfo: z.string().max(65_536),
+    verifiability: z.string().max(256),
     teeSignerAddress: z.string().regex(addressPattern),
     teeSignerAcknowledged: z.boolean(),
   })
@@ -79,14 +81,20 @@ export function resolveExpectedSigner(service: ServiceDetail): HexAddress {
     throw computeFailure("COMPUTE_SIGNER_UNACKNOWLEDGED", "signer is not acknowledged");
   }
   const additional = parseAdditionalInfo(service.additionalInfo);
-  const expected = additional.TargetTeeAddress;
-  if (!isDecentralizedModelTee(additional, expected)) {
+  // 0G's real TEE attestation model (verified against the live network): the enclave signer
+  // lives in the acknowledged top-level `teeSignerAddress`, `verifiability` is "TeeML" (dstack /
+  // Intel TDX), and `TargetSeparated` marks that the enclave signing key is separated from the
+  // provider's operator key. `additionalInfo.TargetTeeAddress` is empty for every real provider,
+  // and `ProviderType` denotes the host operator identity (e.g. "centralized"/"aliyun"), NOT the
+  // attestation class — so neither may gate acceptance. We require a genuinely separated TeeML
+  // signer and verify the transcript signature against it.
+  if (!isSeparatedTeeMlSigner(service, additional)) {
     throw computeFailure(
       "COMPUTE_PROOF_CLASS_UNSUPPORTED",
-      "mandatory proofs require a separated decentralized model TEE",
+      "mandatory proofs require a separated TEE-attested (TeeML) enclave signer",
     );
   }
-  return expected.toLowerCase() as HexAddress;
+  return service.teeSignerAddress.toLowerCase() as HexAddress;
 }
 
 export function assertSameServiceSnapshot(before: ServiceDetail, after: ServiceDetail): void {
@@ -102,6 +110,7 @@ const snapshotKeys = [
   "url",
   "model",
   "additionalInfo",
+  "verifiability",
   "teeSignerAddress",
   "teeSignerAcknowledged",
 ] as const;
@@ -137,15 +146,18 @@ function parseAdditionalInfo(raw: string): Record<string, unknown> {
   }
 }
 
-function isDecentralizedModelTee(
+function isSeparatedTeeMlSigner(
+  service: ServiceDetail,
   additional: Record<string, unknown>,
-  target: unknown,
-): target is string {
+): boolean {
+  const signer = service.teeSignerAddress;
   return (
-    additional.ProviderType === "decentralized" &&
+    service.verifiability === "TeeML" &&
     additional.TargetSeparated === true &&
-    typeof target === "string" &&
-    addressPattern.test(target) &&
-    !/^0x0{40}$/i.test(target)
+    typeof signer === "string" &&
+    addressPattern.test(signer) &&
+    !/^0x0{40}$/i.test(signer) &&
+    // "separated" means the enclave signer is distinct from the provider's operator key.
+    signer.toLowerCase() !== service.provider.toLowerCase()
   );
 }

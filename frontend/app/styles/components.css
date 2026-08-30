@@ -48,7 +48,7 @@
   .decision-card h3 { margin: 8px 0 0; font-size: 2.2rem; color: var(--state); }
   .state-mark { font: 500 2rem var(--font-display); color: var(--state); }
   .reason-code { margin-top: 2px; color: var(--ink) !important; font: 600 var(--type-data)/var(--line-data) var(--font-mono); }
-  .trust-note { margin-top: 18px; font-size: var(--type-caption); }
+  .trust-note { margin-top: 18px; font-size: var(--type-data); }
   .operator-panel h3 { margin: 7px 0; }
   .proof-ceremony { position: relative; padding: 26px; border: 1px solid var(--proof-plane-border); background: var(--proof-plane-surface); box-shadow: var(--proof-plane-shadow); }
   .rail-line { position: absolute; left: 43px; top: 48px; bottom: 68px; width: 1px; background: linear-gradient(var(--violet), var(--rail-end-on-ceremony)); }
@@ -103,10 +103,16 @@
   .trust-disclosure h2 { color: var(--text); font-size: 1.1rem; }
   .health-cell { border: 1px solid currentColor; background: var(--graphite-3); padding: 16px; }
   .health-cell .card-row b { color: var(--text); font: 600 var(--type-data)/var(--line-data) var(--font-display); }
+  .health-cell dt { color: var(--text-muted-on-dark); }
   .health-cell dd { color: var(--muted); font: 500 var(--data-row-value-type)/var(--line-data) var(--font-mono); text-align: right; }
   .proof-identifiers { padding: 20px; border: 1px solid var(--line); background: var(--graphite-3); }
+  .proof-identifiers .ui-data-row { border-color: var(--border-subtle-on-dark); }
   .proof-identifiers dt { color: var(--text-muted-on-dark); }
-  .proof-identifiers dd { color: var(--text); }
+  .trust-disclosure dt { color: var(--text-muted-on-dark); }
+  .proof-identifiers .ui-data-row__value, .trust-disclosure dd { color: var(--text-on-dark); }
+  .proof-identifiers .ui-data-row__value button { color: var(--action-on-dark); }
+  .proof-identifiers .ui-data-row__value button:focus-visible { outline-color: var(--focus-on-dark); }
+  .trust-disclosure dd small { color: var(--text-muted-on-dark); }
   .verification-result > [data-plane] { min-width: 0; border: 1px solid currentColor; padding: 20px; }
   .verification-result b { font-family: var(--font-display); }
   .verification-result__action { margin-top: var(--space-3); }

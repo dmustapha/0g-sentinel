@@ -1,5 +1,9 @@
 @layer utilities.prooflock {
   .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+  .sr-only:focus { position: fixed; inset: var(--space-2) auto auto var(--space-2); z-index: calc(var(--layer-header) + 1);
+    width: auto; height: auto; min-width: var(--control-min); min-height: var(--control-min); margin: 0;
+    display: inline-flex; align-items: center; padding: var(--space-2); overflow: visible; clip: auto;
+    white-space: normal; background: var(--surface-ceremony); color: var(--action-on-dark); }
   .break { overflow-wrap: anywhere; }
   .state-good { --state: var(--status-success-on-dark); color: var(--status-success-on-dark); }
   .state-warn { --state: var(--status-caution-on-dark); color: var(--status-caution-on-dark); }

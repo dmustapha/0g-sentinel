@@ -53,7 +53,7 @@
   .inventory-card .ui-data-row__value a:focus-visible, .inventory-action-row a:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
   .inventory-card .ui-data-row__value button:focus-visible { outline-color: var(--focus-on-dark); }
   .inventory-order, .inventory-partial { margin-bottom: var(--space-2); }
-  .inventory-cards { display: none; }
+  .inventory-cards { display: none; font-size: var(--type-body); }
   .loading-ledger { display: flex; align-items: center; gap: var(--space-1); }
   .legacy-banner, .trust-disclosure { display: grid; gap: 4px; }
   .detail-header { margin: 30px 0; display: flex; justify-content: space-between; gap: var(--space-3); align-items: flex-end; }
@@ -116,6 +116,7 @@
 
   @media (max-width: 390px) {
     .wrap, .topbar-inner { padding-inline: var(--space-2); }
+    .network-tag { max-width: 100%; white-space: normal; }
     .guarantee-sheet, .evidence-card, .evaluate-form, .operator-panel, .verify-sheet { padding: var(--space-2-5); }
     .rail-stage { grid-template-columns: 30px 1fr; gap: 9px; }
     .rail-line { left: 29px; }

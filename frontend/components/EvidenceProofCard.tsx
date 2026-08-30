@@ -58,7 +58,8 @@ export function EvidenceProofCard({ record, historical, compute, explorerBase = 
       <DataRow label="Log index" value={proof.source.logIndex} />
       <DataRow label="Registry" value={proof.source.registryAddress} copyable external
         href={explorerAddressUrl(explorerBase, proof.source.registryAddress) ?? undefined} /></dl> : null}
-    {storageClaim ? <p className="trust-note"><bdi>{safeDisplayText(storageClaim, { maxGraphemes: 512 })}</bdi></p> : null}
+    {storageClaim ? <p className="trust-note"><bdi className="break">
+      {safeDisplayText(storageClaim, { maxGraphemes: 512 })}</bdi></p> : null}
   </section>;
 }
 

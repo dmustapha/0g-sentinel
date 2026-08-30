@@ -4,13 +4,16 @@ import { REGISTRY_V2_INTERFACE, type ChainWriteRequest, type RegistryChainAdapte
 import { validateOperationCommitments, type OperationJournal, type OperationRecord, type PublicWriteOutcome } from "./operation-journal";
 import type { Bytes32 } from "./types";
 
-export class WriteRecoveryError extends Error { constructor(readonly code: "INVALID_RECOVERY_INPUT" | "RECOVERY_NOT_FOUND",
+export class WriteRecoveryError extends Error { constructor(readonly code: "INVALID_RECOVERY_INPUT" | "RECOVERY_NOT_FOUND" | "RECOVERY_OPERATION_LIVE",
   message = "Recovery request is invalid") { super(message); this.name = "WriteRecoveryError"; } }
 type Journal = Pick<OperationJournal, "get"> & Partial<Pick<OperationJournal,
   "recordTransactionHash" | "recordFinalized" | "recordRecovered" | "complete" | "reconcileRecoveryCosts">>;
 
 export function createWriteRecoveryService(options: Readonly<{ journal: Journal; chain: RegistryChainAdapter;
-  confirmations: number; timeoutMs: number }>) {
+  confirmations: number; timeoutMs: number; livenessGraceMs: number; now?: () => number }>) {
+  if (!Number.isFinite(options.livenessGraceMs) || options.livenessGraceMs <= 0)
+    throw new WriteRecoveryError("INVALID_RECOVERY_INPUT", "livenessGraceMs must be a positive number");
+  const now = options.now ?? Date.now;
   return Object.freeze({ async recover(recoveryId: string, suppliedHash?: string, signal?: AbortSignal): Promise<PublicWriteOutcome> {
     validateInput(recoveryId, suppliedHash); signal?.throwIfAborted();
     const operation = options.journal.get(recoveryId);
@@ -18,6 +21,15 @@ export function createWriteRecoveryService(options: Readonly<{ journal: Journal;
     if (operation.terminalOutcome && ["SEALED", "REVERTED", "NOT_BROADCAST"].includes(operation.terminalOutcome.status))
       return operation.terminalOutcome;
     if (isPreSend(operation.phase)) {
+      // A pre-send phase means nothing was broadcast — but a live runner advancing through
+      // compute/storage/chain-input can be microseconds from sending. Declaring NOT_BROADCAST
+      // here would drive the operation TERMINAL and let a retry double-spend the very send in
+      // flight. Refuse until the operation is provably stale (no journal update within the grace
+      // window). Fail closed on an unparseable timestamp.
+      const updatedMs = Date.parse(operation.updatedAt);
+      if (!Number.isFinite(updatedMs) || now() - updatedMs < options.livenessGraceMs)
+        throw new WriteRecoveryError("RECOVERY_OPERATION_LIVE",
+          "Operation may still be in flight; refuse pre-send recovery until it goes stale");
       const outcome = Object.freeze({ status: "NOT_BROADCAST" as const, recoveryId });
       options.journal.reconcileRecoveryCosts?.(recoveryId, "RELEASED"); options.journal.complete?.(recoveryId, outcome); return outcome;
     }

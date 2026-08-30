@@ -40,7 +40,7 @@ export type ProductionOperatorConfig = Readonly<{
   scannerPrivateKey: string;
   guardianPrivateKey: string; computePrivateKey: string; scannerSoftwareVersion: string; policyVersion: number;
   computeProvider: HexAddress; computeModel: string; stateDirectory: string;
-  spendAuthorized: true; confirmations: number; timeoutMs: number;
+  spendAuthorized: true; confirmations: number; timeoutMs: number; recoveryLivenessGraceMs: number;
   operationLimits: OperationJournalLimits;
 }>;
 
@@ -98,6 +98,7 @@ export function readProductionOperatorConfig(
     spendAuthorized: spendConsent(env),
     confirmations: integer(env, "PROOFLOCK_CHAIN_CONFIRMATIONS", 3, 64),
     timeoutMs: integer(env, "PROOFLOCK_TRANSACTION_TIMEOUT_MS", 1, 120_000),
+    recoveryLivenessGraceMs: integer(env, "PROOFLOCK_RECOVERY_LIVENESS_GRACE_MS", 60_000, 3_600_000),
     operationLimits: Object.freeze({
       maxConcurrency: integer(env, "PROOFLOCK_OPERATOR_MAX_CONCURRENCY", 1, 1_000),
       globalMaxConcurrency: integer(env, "PROOFLOCK_OPERATOR_MAX_CONCURRENCY", 1, 1_000),
@@ -147,7 +148,7 @@ async function compose(config: ProductionOperatorConfig): Promise<Composition> {
   return Object.freeze({
     runner: runnerDependencies(config, provider, subjectAdapter, scannerChain, state),
     recovery: createWriteRecoveryService({ journal: state.operations, chain: scannerChain,
-      confirmations: config.confirmations, timeoutMs: config.timeoutMs }),
+      confirmations: config.confirmations, timeoutMs: config.timeoutMs, livenessGraceMs: config.recoveryLivenessGraceMs }),
     drift: driftDependencies(config, provider, subjectAdapter, guardianChain, state.reads, snapshots),
   });
 }

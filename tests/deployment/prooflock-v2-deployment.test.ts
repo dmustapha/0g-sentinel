@@ -1,7 +1,7 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { readFileSync } from "node:fs";
-import { assertMainnetChain, buildDeploymentArtifact, readDeploymentConfig } from
+import { assertDeployerDistinctFromRoles, assertMainnetChain, buildDeploymentArtifact, readDeploymentConfig } from
   "../../scripts/deploy/prooflock-v2-config";
 import { assertProductionProfile, DEPLOYMENT_ENV_NAMES, PRODUCTION_PROFILE_ENV_NAMES } from
   "../../scripts/deploy/prooflock-v2-config";
@@ -48,6 +48,15 @@ describe("ProofLock V2 deployment tooling", () => {
     expect(readDeploymentConfig(validEnv()).identityRegistry.toLowerCase()).to.equal(IDENTITY);
     expect(DEPLOYMENT_ENV_NAMES).to.have.length(9);
     expect(DEPLOYMENT_ENV_NAMES).not.to.include("PROOFLOCK_ERC8004_IDENTITY_REGISTRY_ADDRESS");
+  });
+
+  it("rejects a hot deployer key that reuses any custody role", () => {
+    const { roles } = readDeploymentConfig(validEnv());
+    for (const role of [ADMIN, SCANNER, GUARDIAN]) {
+      expect(() => assertDeployerDistinctFromRoles(role, roles)).to.throw("deployer");
+      expect(() => assertDeployerDistinctFromRoles(role.toLowerCase(), roles)).to.throw("deployer");
+    }
+    assertDeployerDistinctFromRoles("0x9000000000000000000000000000000000000009", roles);
   });
 
   it("enumerates every deployment and production-profile environment read", () => {

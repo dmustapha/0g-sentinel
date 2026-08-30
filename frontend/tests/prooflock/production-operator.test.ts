@@ -45,6 +45,7 @@ async function validEnv() {
     PROOFLOCK_SPEND_AUTHORIZED: "true",
     PROOFLOCK_CHAIN_CONFIRMATIONS: "3",
     PROOFLOCK_TRANSACTION_TIMEOUT_MS: "60000",
+    PROOFLOCK_RECOVERY_LIVENESS_GRACE_MS: "300000",
     PROOFLOCK_OPERATOR_MAX_CONCURRENCY: "2",
     PROOFLOCK_OPERATOR_RATE_WINDOW_MS: "60000",
     PROOFLOCK_OPERATOR_RATE_LIMIT: "4",
@@ -74,6 +75,7 @@ describe("production ProofLock operator", () => {
     expect(config.computeAddress).toBe(COMPUTE);
     expect(config.stateDirectory).toBe(env.PROOFLOCK_STATE_DIRECTORY);
     expect(config.confirmations).toBe(3);
+    expect(config.recoveryLivenessGraceMs).toBe(300000);
     expect(config.spendAuthorized).toBe(true);
     expect(config.operationLimits).toEqual({ maxConcurrency: 2, globalMaxConcurrency: 2, rateWindowMs: 60000,
       rateLimit: 4, dailyCeremonyLimit: 20, dailyCostUnitsLimit: 40 });
@@ -86,6 +88,10 @@ describe("production ProofLock operator", () => {
       .toThrow(/PROOFLOCK_OPERATOR_RATE_LIMIT/);
     expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_OPERATOR_RATE_LIMIT: "0" }, "24.10.0"))
       .toThrow(/PROOFLOCK_OPERATOR_RATE_LIMIT/);
+    expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_RECOVERY_LIVENESS_GRACE_MS: undefined }, "24.10.0"))
+      .toThrow(/PROOFLOCK_RECOVERY_LIVENESS_GRACE_MS/);
+    expect(() => readProductionOperatorConfig({ ...env, PROOFLOCK_RECOVERY_LIVENESS_GRACE_MS: "30000" }, "24.10.0"))
+      .toThrow(/PROOFLOCK_RECOVERY_LIVENESS_GRACE_MS/);
     expect(() => readProductionOperatorConfig(env, "22.0.0")).toThrow(/Node 24/);
     expect(() => readProductionOperatorConfig({ ...env, ZERO_G_RPC: "https://evmrpc-testnet.0g.ai" }, "24.10.0"))
       .toThrow(/mainnet RPC/);

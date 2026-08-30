@@ -126,6 +126,21 @@ export function deploymentConfigFingerprint(config: ProofLockDeploymentConfig): 
   return keccak256(toUtf8Bytes(JSON.stringify(config)));
 }
 
+export function assertDeployerDistinctFromRoles(
+  deployer: string,
+  roles: ProofLockDeploymentConfig["roles"],
+): void {
+  if (!isAddress(deployer) || getAddress(deployer) === ZeroAddress) {
+    throw new Error("deployer address must be an explicit nonzero EVM address");
+  }
+  const deployerKey = getAddress(deployer).toLowerCase();
+  if (Object.values(roles).some((role) => getAddress(role).toLowerCase() === deployerKey)) {
+    throw new Error(
+      "deployer key must remain distinct from admin, scanner, and guardian custody; discard it after deployment",
+    );
+  }
+}
+
 export function assertMainnetChain(chainId: bigint): void {
   if (chainId !== ZERO_G_MAINNET_CHAIN_ID) {
     throw new Error(`ProofLock V2 must deploy on 0G Aristotle mainnet chain 16661; received ${chainId}`);

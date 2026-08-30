@@ -93,3 +93,18 @@
 > Preserve all critical constraints: Tasks 5 and 6 are already one atomic slice; the operation journal stays phased; current observations remain pinned and independent; APIs stay additive and version-compatible; public routes stay secret-free; hostile-data safety precedes route migration; and complete inventory remains a truthful signed deferral unless explicitly expanded. The submission deadline is September 1, 2026 at 15:00 UTC, or 4:00 PM WAT. Do not claim world-class or submission-ready until Task 22 passes with funded mainnet evidence and a deployed-URL audit.
 
 **Action:** Reloaded the complete handoff, applicable instructions, and Tasks 13 through 22; verified the clean Task 12 checkpoint; completed Tasks 13 through 18 with strict RED/GREEN TDD, exact planned scopes, full verification, responsive/browser and packaged-runtime evidence, and independent review while preserving the truth, compatibility, hostile-data, release-security, and secret-boundary constraints.
+
+### Prompt 17
+> continue
+
+**Action:** Started Task 19 with strict RED/GREEN browser-matrix tests, deterministic fail-closed fixtures, cross-browser behavioral and accessibility coverage, approved visual baselines, operator secret-safety checks, performance probes, and standalone packaged-runtime validation.
+
+### Prompt 18
+> where are we
+
+**Action:** Reported the exact Task 19 review-fix checkpoint, including the green local matrix, the native macOS 26 WebKit crash caveat, and the remaining independent re-review; saved a resumable context snapshot.
+
+### Prompt 19
+> continue
+
+**Action:** Resolved every substantiated Task 19 review finding through RED/GREEN tests; proved production-valid lease fixtures, exact settled traffic accounting, complete visible-text/target/zoom/reflow semantics, stable unavailable behavior, three-browser coverage with a documented same-revision WebKit host fallback, 36 visual baselines, production build, performance and standalone gates; obtained independent approval and completed the Task 19 checkpoint.

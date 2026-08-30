@@ -113,3 +113,8 @@
 > continue
 
 **Action:** Continued through Tasks 20 and 21; established RED performance, locator, and cleanup contracts; moved public proof derivation behind negotiated server locators; reduced client/font work; enforced repeatable Chromium budgets; removed only proven-dead design/tooling residue; preserved the scanner graph and 410 tombstones; and completed production-build, performance, visual, standalone, full-suite, and independent-review gates.
+
+### Prompt 21
+> i would like to continue with claude on this. give me a proper claude /handoff. use the skill. i know we're switching midbuild so we have to make sure it is claude-compatible
+
+**Action:** Closed the fully verified and independently approved Task 21 implementation commit, then ran the installed Claude-compatible `/handoff` protocol to save an exhaustive clean-boundary snapshot and paste-ready Claude resume prompt before Task 22.

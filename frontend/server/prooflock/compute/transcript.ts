@@ -19,7 +19,15 @@ export type FetchedSignature = Readonly<{
 export type ContentBinding = Readonly<{
   expectedSigner: HexAddress;
   signedText: string;
+  // sha256 of OUR raw request bytes (retained for transparency; see requestBytesExact).
   requestSha256: `0x${string}`;
+  // The enclave-attested request hash (signed field 1). This is the authoritative request
+  // commitment: for proxying providers it is the enclave's normalized view of the request, which
+  // differs from sha256(our raw bytes). The response is always bound to exact bytes.
+  attestedRequestSha256: `0x${string}`;
+  // true when the enclave request hash equals sha256(our raw bytes) — i.e. a direct (non-proxied)
+  // provider that binds the exact request bytes. false for OpenRouter-proxying providers.
+  requestBytesExact: boolean;
   responseSha256: `0x${string}`;
   signature: string;
   signedTextSha256: `0x${string}`;
@@ -60,13 +68,21 @@ export function verifyContentBinding(
   const hashes = parseSignedText(signature.text);
   const requestSha256 = sha256(requestBytes) as `0x${string}`;
   const responseSha256 = sha256(responseBytes) as `0x${string}`;
-  if (hashes.request !== requestSha256.slice(2)) bindingFailure("COMPUTE_REQUEST_BINDING_FAILED");
+  // RESPONSE is always bound to the exact bytes we received — this is the load-bearing "verdict"
+  // attestation and must match. REQUEST binding is intentionally NOT exact-byte enforced: most 0G
+  // mainnet TeeML providers proxy to OpenRouter and re-serialize the request before the enclave
+  // hashes it, so the enclave's request hash is its normalized view, not sha256(our raw bytes). We
+  // therefore treat the enclave-signed request hash as the authoritative commitment, keep our raw
+  // bytes for transparency, and record whether they matched (requestBytesExact) — the whole signed
+  // string is bound by the verified EIP-191 signature, so the attested hash cannot be tampered.
   if (hashes.response !== responseSha256.slice(2))
     bindingFailure("COMPUTE_RESPONSE_BINDING_FAILED");
   return {
     expectedSigner,
     signedText: signature.text,
     requestSha256,
+    attestedRequestSha256: `0x${hashes.request}` as `0x${string}`,
+    requestBytesExact: hashes.request === requestSha256.slice(2),
     responseSha256,
     signature: signature.signature.toLowerCase(),
     signedTextSha256: sha256(toUtf8Bytes(signature.text)) as `0x${string}`,

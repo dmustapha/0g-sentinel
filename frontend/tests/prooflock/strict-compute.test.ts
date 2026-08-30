@@ -250,14 +250,46 @@ describe("strict 0G Compute", () => {
 
   it.each([
     ["malformed signed text", "not-two-sha256-hashes", "COMPUTE_SIGNED_TEXT_INVALID"],
-    [
-      "request hash mismatch",
-      `${"0".repeat(64)}:${"1".repeat(64)}`,
-      "COMPUTE_REQUEST_BINDING_FAILED",
-    ],
   ] as const)("rejects %s", async (_label, signatureText, code) => {
     const { dependencies } = harness({ signatureText });
     await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({ code });
+  });
+
+  it("accepts a proxied request-hash mismatch, binding requestDigest to the enclave-attested hash", async () => {
+    // Proxying providers (provider_identity=openrouter) sign their own normalized request hash,
+    // which differs from sha256(our raw POST body). The response stays exactly bound; the request
+    // commitment becomes the enclave-attested hash and requestBytesExact is false.
+    let exactRequest = new Uint8Array();
+    const served = inferenceResponse();
+    const h = harness({ inference: served });
+    const attested = "a".repeat(64); // enclave's normalized request hash (not sha256 of our bytes)
+    const transport = {
+      request: vi.fn(async (request: ComputeHttpRequest) => {
+        if (request.method === "POST") {
+          exactRequest = new Uint8Array(request.body ?? []);
+          return served;
+        }
+        return inferenceResponse(
+          { text: `${attested}:${hash(served.body)}`, signature: SIGNATURE },
+          { headers: [["content-type", "application/json"]] },
+        );
+      }),
+    };
+    const dependencies = { ...h.dependencies, transport };
+    const result = await runStrictCompute(input(), dependencies);
+    expect(result.contentBinding.requestBytesExact).toBe(false);
+    expect(result.contentBinding.attestedRequestSha256).toBe(`0x${attested}`);
+    expect(result.contentBinding.requestSha256).toBe(`0x${hash(exactRequest)}`);
+    expect(result.proof.requestDigest).toBe(`0x${attested}`);
+    expect(result.proof.requestSha256).toBe(`0x${hash(exactRequest)}`);
+    expect(result.proof.requestDigest).not.toBe(result.proof.requestSha256);
+  });
+
+  it("records requestBytesExact true when a direct provider binds our exact request bytes", async () => {
+    const { dependencies } = harness();
+    const result = await runStrictCompute(input(), dependencies);
+    expect(result.contentBinding.requestBytesExact).toBe(true);
+    expect(result.proof.requestDigest).toBe(result.proof.requestSha256);
   });
 
   it("rejects response hash mismatch even when the signature is valid", async () => {
@@ -283,6 +315,43 @@ describe("strict 0G Compute", () => {
     await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
       code: "COMPUTE_RESPONSE_BINDING_FAILED",
     });
+  });
+
+  it("fetches the signature at the SAME URL the 0G SDK requests (raw model, no percent-encoding)", async () => {
+    // The SDK's processResponse fetches `${url}/v1/proxy/signature/${chatId}?model=${model}` with a
+    // RAW model. The worker egress guard exact-matches our pre-fetched URL against the SDK's, so we
+    // must build the identical string. encodeURIComponent would turn "zai-org/GLM-5-FP8" into
+    // "zai-org%2FGLM-5-FP8" and the guard would block every real slash-bearing model.
+    const slashModel = "zai-org/GLM-5-FP8";
+    const served = inferenceResponse();
+    let postedRequest = new Uint8Array();
+    let signatureGetUrl = "";
+    const transport = {
+      request: vi.fn(async (r: ComputeHttpRequest): Promise<ComputeHttpResponse> => {
+        if (r.method === "POST") { postedRequest = new Uint8Array(r.body ?? []); return served; }
+        signatureGetUrl = r.url;
+        return inferenceResponse(
+          { text: signedText(postedRequest, served.body), signature: SIGNATURE, signing_address: SIGNER },
+          { headers: [["content-type", "application/json"]] },
+        );
+      }),
+    };
+    const h = harness({ inference: served, metadataModel: slashModel, serviceValue: {
+      provider: PROVIDER, url: "https://compute.example", model: slashModel,
+      additionalInfo: JSON.stringify({ ProviderType: "centralized", TargetSeparated: true, TEEVerifier: "dstack", TargetTeeAddress: "" }),
+      verifiability: "TeeML", teeSignerAddress: SIGNER, teeSignerAcknowledged: true,
+    } });
+    const dependencies = { ...h.dependencies, transport };
+    await runStrictCompute(input({ model: slashModel }), dependencies);
+    expect(signatureGetUrl).toContain(`?model=${slashModel}`);
+    expect(signatureGetUrl).not.toContain("%2F");
+    expect(signatureGetUrl).toBe(`https://compute.example/v1/proxy/signature/header-chat-id?model=${slashModel}`);
+  });
+
+  it("rejects a chat id that would break out of the signature URL path", async () => {
+    const served = inferenceResponse({}, { headers: [["zg-res-key", "abc/../../evil"], ["content-type", "application/json"]] });
+    const dependencies = harness({ inference: served }).dependencies;
+    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({ code: "COMPUTE_RESPONSE_INVALID" });
   });
 
   it("rejects a cryptographic signer mismatch", async () => {

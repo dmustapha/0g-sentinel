@@ -36,8 +36,29 @@ describe("0G real signed-text binding", () => {
     expect(bind(`${rh}:${sh}`).signatureVerified).toBe(true);
   });
 
-  it("rejects when the first hash does not bind the request bytes", () => {
-    expect(() => bind(`${"00".repeat(32)}:${sh}:centralized:openrouter:${"cd".repeat(32)}`)).toThrow();
+  it("marks requestBytesExact TRUE when the enclave request hash matches our bytes (direct provider)", () => {
+    const binding = bind(`${rh}:${sh}:centralized:direct:${"cd".repeat(32)}`);
+    expect(binding.requestBytesExact).toBe(true);
+    expect(binding.attestedRequestSha256).toBe(sha256(req));
+    expect(binding.requestSha256).toBe(sha256(req));
+  });
+
+  it("records the enclave-attested request hash without requiring exact request bytes (proxied provider)", () => {
+    // A proxying provider (provider_identity=openrouter) re-serializes the request before the
+    // enclave hashes it, so the enclave's request hash never equals sha256(our raw POST body).
+    // The response stays exactly bound; the request commitment becomes the enclave-attested hash
+    // and our raw bytes are retained for transparency (requestBytesExact=false).
+    const attested = "aa".repeat(32);
+    const binding = bind(`${attested}:${sh}:centralized:openrouter:${"cd".repeat(32)}`);
+    expect(binding.signatureVerified).toBe(true);
+    expect(binding.requestBytesExact).toBe(false);
+    expect(binding.attestedRequestSha256).toBe(`0x${attested}`);
+    expect(binding.requestSha256).toBe(sha256(req));
+    expect(binding.responseSha256).toBe(sha256(resp));
+  });
+
+  it("still rejects when the RESPONSE hash does not bind the response bytes", () => {
+    expect(() => bind(`${rh}:${"00".repeat(32)}:centralized:openrouter:${"cd".repeat(32)}`)).toThrow();
   });
 
   it("rejects text that does not start with two sha256 hashes", () => {

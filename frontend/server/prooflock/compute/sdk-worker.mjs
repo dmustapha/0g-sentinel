@@ -30,7 +30,7 @@ async function processResponse(broker, message) {
   const original = globalThis.fetch;
   globalThis.fetch = async (resource, init) => {
     const request = new Request(resource, init);
-    if (request.method !== "GET" || request.url !== message.signatureUrl) throw new TypeError("SDK worker egress blocked");
+    if (request.method !== "GET" || request.url !== message.signatureUrl) throw new TypeError(`SDK worker egress blocked: ${request.method} ${request.url} != GET ${message.signatureUrl}`);
     if (request.headers.has("authorization") || request.headers.has("proxy-authorization")) throw new TypeError("SDK worker credential forwarding blocked");
     return new Response(Buffer.from(message.signatureBodyBase64, "base64"), { status: 200, headers: { "content-type": "application/json" } });
   };

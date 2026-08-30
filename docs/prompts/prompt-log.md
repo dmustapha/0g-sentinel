@@ -112,4 +112,4 @@
 ### Prompt 20
 > continue
 
-**Action:** Continued into Task 20; established RED performance and locator contracts, moved public proof derivation behind negotiated server locators, reduced client and font work, enforced repeatable Chromium budgets, and completed the production-build, three-run performance, compatibility, full-suite, and independent-review gates.
+**Action:** Continued through Tasks 20 and 21; established RED performance, locator, and cleanup contracts; moved public proof derivation behind negotiated server locators; reduced client/font work; enforced repeatable Chromium budgets; removed only proven-dead design/tooling residue; preserved the scanner graph and 410 tombstones; and completed production-build, performance, visual, standalone, full-suite, and independent-review gates.

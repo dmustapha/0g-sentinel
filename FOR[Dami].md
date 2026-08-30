@@ -122,6 +122,14 @@ Performance is measured against the packaged standalone server with a cold cache
 
 The first baseline caught real layout shifts on inventory and detail loading states. Reserving the ready-state shell and delaying the legacy disclosure until the inventory settles removed those shifts. Sharing one derived row view between desktop and mobile avoided duplicate work, while removing two unused font files saved 9,728 encoded bytes. The final worst route is the 100-row inventory at a 2.256-second LCP median; operator interaction is 48 milliseconds with zero control displacement.
 
+## Why removing old UI code required import proof
+
+An old-looking file is not necessarily dead. Six cyan-era components were deleted only after source searches and the production bundle proved that no active route imported them. The legacy scanner and read libraries were different: the public UI no longer reaches them, but the preserved scanner queue still does. Those files remain, and their old Registry addresses now come from server-only variables instead of browser-exposed configuration.
+
+Tailwind followed the same rule. The app used no Tailwind utilities, so its directives, config, alias residue, and 62 transitive packages could go while PostCSS and Autoprefixer stayed. Two preflight details were still observable: `<small>` had to remain exactly 80%, and tables needed normalized collapse/color/indent behavior. Those rules now belong to the canonical reset rather than arriving invisibly from an otherwise unused framework.
+
+All nine retired V1 endpoints remain explicit HTTP 410 tombstones. Removing visual contamination does not erase protocol history or make an old mutation route appear missing by accident.
+
 ## Why the Proof Ledger has two planes
 
 The deeper audit found that one completed ribbon would quietly mix facts that were proven at different times. Compute and deterministic checks describe the sealed historical run. Storage retrieval describes what the verifier observed when it fetched the artifact. The lease, ERC-8004 wallet, Gate, and guarded consumer describe current mutable chain state. They are related, but they are not one shared “live” result.

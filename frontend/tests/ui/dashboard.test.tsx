@@ -11,7 +11,7 @@ import { AdmissionLeaseCard } from "../../components/AdmissionLeaseCard";
 import { DemoFixtureBadge } from "../../components/DemoFixtureBadge";
 import { EvidenceProofCard } from "../../components/EvidenceProofCard";
 import { SealLifecycle } from "../../components/SealLifecycle";
-import { canonicalAgentHref } from "../../lib/agents";
+import { canonicalAgentHref } from "../../lib/prooflock-routes";
 import { mapHistoricalPlane } from "../../lib/proof-detail-state";
 import type { ProofLockRecord, VerifiedProof } from "../../lib/prooflock-types";
 

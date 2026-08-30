@@ -1,8 +1,8 @@
 // File: frontend/lib/contracts.ts
 import { ethers } from "ethers";
 
-const ATTESTATION_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS ?? "";
-const AGENT_REGISTRY_ADDRESS = process.env.NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS ?? "";
+const ATTESTATION_REGISTRY_ADDRESS = process.env.ATTESTATION_REGISTRY_ADDRESS ?? "";
+const AGENT_REGISTRY_ADDRESS = process.env.AGENT_REGISTRY_ADDRESS ?? "";
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai";
 
 const ATTESTATION_ABI = [

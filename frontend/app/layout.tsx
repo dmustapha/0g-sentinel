@@ -55,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${chakra.variable} ${plexSans.variable} ${plexMono.variable}`}>
       <body>
-        <Link href="#main-content" className="sr-only focus:not-sr-only">Skip to main content</Link>
+        <Link href="#main-content" className="sr-only">Skip to main content</Link>
         <div className="texture" aria-hidden="true" />
 
         <header className="topbar">

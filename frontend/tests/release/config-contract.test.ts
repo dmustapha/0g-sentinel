@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import React from "react";
@@ -41,6 +41,14 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "strict-origin-when-cross-origin",
   "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), clipboard-write=(self)",
 };
+const OBSOLETE_UI = ["AnimatedScoreBar", "ChainDiscovery", "FineTuneButton", "GridOverlays",
+  "QueueBanner", "RadarHero"] as const;
+const LEGACY_PUBLIC_ENV = ["NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS",
+  "NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS", "NEXT_PUBLIC_AGENT_GATE_ADDRESS"] as const;
+const LEGACY_TOMBSTONES = ["app/api/agents/route.ts", "app/api/fine-tuning/route.ts",
+  "app/api/scan/behavioral/route.ts", "app/api/scan/code/route.ts", "app/api/scan/inft/route.ts",
+  "app/api/scan/queue/route.ts", "app/api/scan/stream/route.ts", "app/api/verify-evidence/route.ts",
+  "app/api/v1/attestation/[address]/route.ts"] as const;
 
 describe("release configuration and legacy boundary", () => {
   it("publishes a truthful generated root social image", () => {
@@ -226,6 +234,46 @@ describe("release configuration and legacy boundary", () => {
     expect(() => readFileSync(resolve(process.cwd(), "components/ShareCard.tsx"), "utf8")).toThrow();
   });
 
+  it("removes only the proven-dead design-era UI and unresolved tokens", () => {
+    const source = browserSource();
+    for (const component of OBSOLETE_UI) {
+      expect(existsSync(resolve(process.cwd(), `components/${component}.tsx`)), component).toBe(false);
+      expect(source, component).not.toMatch(new RegExp(`(?:import|require)[^\\n]*${component}`));
+    }
+    for (const token of ["--cy", "--tx-", "--fs-xs", "--r-2", "--good-12"])
+      expect(source, token).not.toContain(token);
+  });
+
+  it("removes the unused Tailwind and scanner-alias configuration", () => {
+    const packageJson = readFileSync(resolve(process.cwd(), "package.json"), "utf8");
+    const globals = readFileSync(resolve(process.cwd(), "app/globals.css"), "utf8");
+    const foundations = readFileSync(resolve(process.cwd(), "app/styles/foundations.css"), "utf8");
+    const postcss = readFileSync(resolve(process.cwd(), "postcss.config.js"), "utf8");
+    const tsconfig = readFileSync(resolve(process.cwd(), "tsconfig.json"), "utf8");
+    const nextConfig = readFileSync(resolve(process.cwd(), "next.config.mjs"), "utf8");
+    expect(existsSync(resolve(process.cwd(), "tailwind.config.ts"))).toBe(false);
+    for (const source of [packageJson, globals, postcss]) expect(source).not.toMatch(/tailwind/i);
+    expect(foundations).toMatch(/small\s*\{\s*font-size:\s*80%/);
+    expect(foundations).toMatch(/table\s*\{[^}]*border-collapse:\s*collapse[^}]*border-color:\s*inherit[^}]*text-indent:\s*0/s);
+    expect(browserSource()).not.toMatch(/className=[^\n]*(?:sm:|md:|lg:|xl:|hover:|focus:|active:|disabled:|dark:)/);
+    expect(tsconfig).not.toContain('"@scanner/*"');
+    expect(nextConfig).not.toContain('@scanner');
+  });
+
+  it.each([".env.example", "../.env.example"])("removes legacy V1 public addresses from %s", (path) => {
+    const text = readFileSync(resolve(process.cwd(), path), "utf8");
+    for (const name of LEGACY_PUBLIC_ENV) expect(text).not.toMatch(new RegExp(`^${name}=`, "m"));
+  });
+
+  it("keeps the preserved legacy scanner graph server-only", () => {
+    const contracts = readFileSync(resolve(process.cwd(), "lib/contracts.ts"), "utf8");
+    expect(contracts).toContain("process.env.ATTESTATION_REGISTRY_ADDRESS");
+    expect(contracts).toContain("process.env.AGENT_REGISTRY_ADDRESS");
+    for (const name of LEGACY_PUBLIC_ENV) expect(contracts).not.toContain(name);
+    for (const route of LEGACY_TOMBSTONES)
+      expect(readFileSync(resolve(process.cwd(), route), "utf8")).toContain("goneResponse");
+  });
+
   it.each(["../scripts/prooflock/run.ts", "../scripts/prooflock/check-drift.ts"])(
     "loads the built-in production operator in %s",
     (path) => {
@@ -260,4 +308,18 @@ function loadSecurityHeaders(nodeEnv: "production" | "development", appUrl: stri
       NEXT_PUBLIC_APP_URL: appUrl, NEXT_PUBLIC_RPC_URL: "" },
   });
   return JSON.parse(output) as Record<string, string>;
+}
+
+function browserSource(): string {
+  const roots = ["app", "components"];
+  return roots.flatMap((root) => sourceFiles(resolve(process.cwd(), root)))
+    .map((path) => readFileSync(path, "utf8")).join("\n");
+}
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.(?:ts|tsx|css)$/.test(entry.name) ? [path] : [];
+  });
 }

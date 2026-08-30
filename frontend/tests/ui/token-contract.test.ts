@@ -29,8 +29,7 @@ describe("canonical Proof Ledger token contract", () => {
     const globals = await css("app/globals.css");
     expect(globals).toContain(`@layer ${LAYERS};`);
     for (const file of STYLE_FILES) expect(globals).toContain(`@import "./styles/${file}";`);
-    for (const directive of ["@layer reset.tailwind { @tailwind base; }", "@layer components.tailwind { @tailwind components; }",
-      "@layer utilities.tailwind { @tailwind utilities; }"]) expect(globals).toContain(directive);
+    expect(globals).not.toMatch(/tailwind/i);
     expect(globals).not.toMatch(/(?:^|})\s*[^@\s][^{]*\{/m);
     for (const file of STYLE_FILES) {
       const source = await css(`app/styles/${file}`);
@@ -142,8 +141,6 @@ describe("canonical Proof Ledger token contract", () => {
     expect(() => assertGovernedTsx(browserSource)).not.toThrow();
     const active = await activeUiFiles();
     expect(active).toContain("components/ScanInput.tsx");
-    for (const dormant of ["components/QueueBanner.tsx", "components/FineTuneButton.tsx", "components/ChainDiscovery.tsx"])
-      expect(active).not.toContain(dormant);
     expect(source).toMatch(/\.break\s*\{[^}]*overflow-wrap:\s*anywhere/s);
   });
 

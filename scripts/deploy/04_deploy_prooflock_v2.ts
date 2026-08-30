@@ -1,7 +1,7 @@
 import { ethers, network } from "hardhat";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { assertProductionProfile, buildDeploymentArtifact, assertMainnetChain,
+import { assertDeployerDistinctFromRoles, assertProductionProfile, buildDeploymentArtifact, assertMainnetChain,
   deploymentConfigFingerprint, readDeploymentConfig } from "./prooflock-v2-config";
 import { assertDeploymentBalance, deployProofLockV2, estimateDeploymentBudget } from "./prooflock-v2-deployer";
 import { DeploymentJournalStore } from "./prooflock-v2-journal";
@@ -18,6 +18,7 @@ async function main(): Promise<void> {
   await requireLiveCode(config.identityRegistry, "Canonical ERC-8004 Identity Registry");
   const [deployer] = await ethers.getSigners();
   if (!deployer) throw new Error("DEPLOYER_PRIVATE_KEY is not configured for zerogMainnet");
+  assertDeployerDistinctFromRoles(await deployer.getAddress(), config.roles);
   const balance = await ethers.provider.getBalance(await deployer.getAddress());
   const budget = await estimateDeploymentBudget(ethers.provider);
   assertDeploymentBalance(balance, budget);

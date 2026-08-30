@@ -67,7 +67,7 @@ describe("read-only write recovery", () => {
       const restarted = createSqliteOperationJournal({ directory, limits });
       const chain = status === 1 ? adapter() : adapter({ waitForReceipt: vi.fn().mockResolvedValue({ transactionHash: H("8"),
         status: 0, blockNumber: 10n, blockHash: H("9"), confirmations: 3, logs: [] }) });
-      const result = await createWriteRecoveryService({ journal: restarted, chain, confirmations: 3, timeoutMs: 1_000 })
+      const result = await createWriteRecoveryService({ journal: restarted, chain, confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 })
         .recover(admitted.recoveryId, H("8"));
       expect(result.status).toBe(status === 1 ? "SEALED" : "REVERTED");
       expect(restarted.get(admitted.recoveryId)?.phase).toBe("TERMINAL");
@@ -84,14 +84,15 @@ describe("read-only write recovery", () => {
         policyVersion: 1, runtimeCodeHash: source.runtimeCodeHash, reservedCostUnits: 4 }).operation;
       store.reserveCost(admitted.recoveryId, "COMPUTE_BEHAVIORAL", 1);
       store.reserveCost(admitted.recoveryId, "STORAGE", 1); store.reserveCost(admitted.recoveryId, "REGISTRY", 1);
-      await createWriteRecoveryService({ journal: store, chain: adapter(), confirmations: 3, timeoutMs: 1_000 })
+      await createWriteRecoveryService({ journal: store, chain: adapter(), confirmations: 3, timeoutMs: 1_000,
+        livenessGraceMs: 60_000, now: () => Date.now() + 120_000 })
         .recover(admitted.recoveryId);
       expect(store.get(admitted.recoveryId)).toMatchObject({ phase: "TERMINAL", reservedCostUnits: 4, reconciledCostUnits: 2 });
     } finally { await rm(directory, { recursive: true, force: true }); }
   });
   it("recovers a known finalized transaction only when every commitment is bound", async () => {
     const store = { get: vi.fn().mockReturnValue(operation()), recordFinalized: vi.fn(), complete: vi.fn() };
-    const result = await createWriteRecoveryService({ journal: store, chain: adapter(), confirmations: 3, timeoutMs: 1_000 })
+    const result = await createWriteRecoveryService({ journal: store, chain: adapter(), confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 })
       .recover(operation().recoveryId, H("8"));
     expect(result).toMatchObject({ status: "SEALED", transactionHash: H("8"), identityKey: H("1"), version: "1" });
     expect(store.complete).toHaveBeenCalled();
@@ -102,7 +103,7 @@ describe("read-only write recovery", () => {
       terminalOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN" as const,
         recoveryId: operation().recoveryId, transactionHash: H("8") } };
     const store = { get: vi.fn().mockReturnValue(uncertain), recordFinalized: vi.fn(), complete: vi.fn() };
-    const result = await createWriteRecoveryService({ journal: store, chain: adapter(), confirmations: 3, timeoutMs: 1_000 })
+    const result = await createWriteRecoveryService({ journal: store, chain: adapter(), confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 })
       .recover(operation().recoveryId, H("8"));
     expect(result.status).toBe("SEALED");
   });
@@ -112,7 +113,7 @@ describe("read-only write recovery", () => {
       terminalOutcome: { status: "SUBMISSION_OUTCOME_UNKNOWN" as const,
         recoveryId: operation().recoveryId, transactionHash: H("8") } };
     const result = await createWriteRecoveryService({ journal: { get: () => uncertain }, chain: adapter(),
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId);
+      confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId);
     expect(result.status).toBe("SEALED");
   });
 
@@ -120,7 +121,7 @@ describe("read-only write recovery", () => {
     const chain = adapter({ waitForReceipt: vi.fn().mockResolvedValue({ transactionHash: H("8"), status: 0,
       blockNumber: 10n, blockHash: H("9"), confirmations: 3, logs: [] }) });
     const result = await createWriteRecoveryService({ journal: { get: () => operation() }, chain,
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId, H("8"));
+      confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId, H("8"));
     expect(result.status).toBe("REVERTED");
   });
 
@@ -132,7 +133,7 @@ describe("read-only write recovery", () => {
       from: SUBJECT, data: "0x" }) }],
   ])("keeps attribution unknown for %s", async (_name, overrides) => {
     const result = await createWriteRecoveryService({ journal: { get: () => operation() }, chain: adapter(overrides),
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId, H("8"));
+      confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId, H("8"));
     expect(result.status).toBe("SUBMISSION_OUTCOME_UNKNOWN");
     expect(JSON.stringify(result)).not.toContain("private rpc token");
   });
@@ -140,19 +141,34 @@ describe("read-only write recovery", () => {
   it("does not infer ownership from identity and version without a trustworthy transaction hash", async () => {
     const chain = adapter();
     const result = await createWriteRecoveryService({ journal: { get: () => ({ ...operation(), transactionHash: undefined }) },
-      chain, confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId);
+      chain, confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId);
     expect(result.status).toBe("SUBMISSION_OUTCOME_UNKNOWN");
     expect(chain.getProofLock).not.toHaveBeenCalled();
   });
 
   it.each(["REQUESTED", "COMPUTE_VERIFIED", "STORAGE_VERIFIED", "CHAIN_INPUT_COMMITTED"] as const)(
-    "resolves pre-send phase %s definitively as NOT_BROADCAST without RPC",
+    "resolves a stale pre-send phase %s definitively as NOT_BROADCAST without RPC",
     async (phase) => {
       const chain = adapter(); const complete = vi.fn();
-      const result = await createWriteRecoveryService({ journal: { get: () => ({ ...operation(), phase,
-        transactionHash: undefined, terminalOutcome: undefined }), complete }, chain,
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId);
+      const stale = { ...operation(), phase, transactionHash: undefined, terminalOutcome: undefined };
+      const result = await createWriteRecoveryService({ journal: { get: () => stale, complete }, chain,
+        confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000,
+        now: () => Date.parse(stale.updatedAt) + 60_001 }).recover(operation().recoveryId);
       expect(result.status).toBe("NOT_BROADCAST"); expect(complete).toHaveBeenCalled();
+      expect(chain.getTransaction).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["REQUESTED", "COMPUTE_VERIFIED", "STORAGE_VERIFIED", "CHAIN_INPUT_COMMITTED"] as const)(
+    "refuses to declare NOT_BROADCAST for a still-live pre-send phase %s (prevents phantom-spend race)",
+    async (phase) => {
+      const chain = adapter(); const complete = vi.fn();
+      const fresh = { ...operation(), phase, transactionHash: undefined, terminalOutcome: undefined,
+        updatedAt: new Date().toISOString() };
+      await expect(createWriteRecoveryService({ journal: { get: () => fresh, complete }, chain,
+        confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId))
+        .rejects.toMatchObject({ code: "RECOVERY_OPERATION_LIVE" });
+      expect(complete).not.toHaveBeenCalled();
       expect(chain.getTransaction).not.toHaveBeenCalled();
     },
   );
@@ -161,7 +177,7 @@ describe("read-only write recovery", () => {
     const chain = adapter({ findProofLockTransactionHashes: vi.fn().mockResolvedValue([H("8")]) } as never);
     const result = await createWriteRecoveryService({ journal: { get: () => ({ ...operation(),
       phase: "SUBMISSION_ATTEMPTED", transactionHash: undefined }) }, chain,
-    confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId);
+    confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId);
     expect(result.status).toBe("SEALED");
   });
 
@@ -170,7 +186,7 @@ describe("read-only write recovery", () => {
       const chain = adapter({ findProofLockTransactionHashes: vi.fn().mockResolvedValue(candidates) } as never);
       const result = await createWriteRecoveryService({ journal: { get: () => ({ ...operation(),
         phase: "SUBMISSION_ATTEMPTED", transactionHash: undefined }) }, chain,
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId);
+      confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId);
       expect(result.status).toBe("SUBMISSION_OUTCOME_UNKNOWN");
     }
   });
@@ -181,7 +197,7 @@ describe("read-only write recovery", () => {
       await new Promise((resolve) => setTimeout(resolve, 50)); return 16661n;
     }) } as never);
     await expect(createWriteRecoveryService({ journal: { get: () => operation() }, chain,
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId, H("8"), signal))
+      confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId, H("8"), signal))
       .rejects.toMatchObject({ name: "TimeoutError" });
     expect(chain.getChainId).toHaveBeenCalledWith(signal);
   });
@@ -189,16 +205,16 @@ describe("read-only write recovery", () => {
   it("never invokes paid or write capabilities during recovery", async () => {
     const chain = adapter();
     await createWriteRecoveryService({ journal: { get: () => operation() }, chain,
-      confirmations: 3, timeoutMs: 1_000 }).recover(operation().recoveryId, H("8"));
+      confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 }).recover(operation().recoveryId, H("8"));
     expect(chain.sendTransaction).not.toHaveBeenCalled();
   });
 
   it("rejects malformed recovery identifiers before dependencies are used", async () => {
     const get = vi.fn();
-    await expect(createWriteRecoveryService({ journal: { get }, chain: adapter(), confirmations: 3, timeoutMs: 1_000 })
+    await expect(createWriteRecoveryService({ journal: { get }, chain: adapter(), confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 })
       .recover("../bad", H("8"))).rejects.toMatchObject({ code: "INVALID_RECOVERY_INPUT" });
     expect(get).not.toHaveBeenCalled();
-    await expect(createWriteRecoveryService({ journal: { get }, chain: adapter(), confirmations: 3, timeoutMs: 1_000 })
+    await expect(createWriteRecoveryService({ journal: { get }, chain: adapter(), confirmations: 3, timeoutMs: 1_000, livenessGraceMs: 60_000 })
       .recover(operation().recoveryId, H("0"))).rejects.toMatchObject({ code: "INVALID_RECOVERY_INPUT" });
   });
 });

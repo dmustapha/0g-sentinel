@@ -19,7 +19,7 @@ describe("bounded ProofLock discovery", () => {
     const second = log("4", "5", 114, 2);
     const deps = dependencies({ logs: [first, second, newest], latestBlock: 120 });
     const response = await createDiscoveryHandler(deps, options({ window: 10, cap: 1 }))(
-      new Request("https://sentinel.test/api/discover"),
+      new Request("https://sentinel.test/api/discover?locator=registry-v1"),
     );
 
     expect(response.status).toBe(200);
@@ -39,7 +39,9 @@ describe("bounded ProofLock discovery", () => {
       returned: 1,
       complete: false,
       identities: [{ status: "VERIFIED", identityKey: newest.topics[1],
-        transactionHash: newest.transactionHash, blockNumber: 115 }],
+        transactionHash: newest.transactionHash, blockNumber: 115, registryAddress: REGISTRY,
+        locator: { identityKey: newest.topics[1], registryAddress: REGISTRY,
+          transactionHash: newest.transactionHash, blockNumber: 115, proofId: expect.any(String) } }],
     });
   });
 
@@ -134,7 +136,8 @@ describe("bounded ProofLock discovery", () => {
     expect(body.identities[0]).toMatchObject({ status: "VERIFIED", identityKey: good.topics[1],
       proofLock: { identityKey: good.topics[1] }, detail: { status: "VERIFIED" } });
     expect(body.identities[1]).toEqual({ status: "ENRICHMENT_UNAVAILABLE", identityKey: failed.topics[1],
-      transactionHash: failed.transactionHash, blockNumber: failed.blockNumber, code: "DEPENDENCY_UNAVAILABLE" });
+      transactionHash: failed.transactionHash, blockNumber: failed.blockNumber,
+      code: "DEPENDENCY_UNAVAILABLE" });
   });
 
   it("returns truthful unavailable rows when every enrichment fails", async () => {

@@ -17,24 +17,24 @@ export function AgentsTable({ items, referenceTimeSeconds }: {
   items: readonly ProofLockInventoryItem[]; referenceTimeSeconds?: number;
 }) {
   const snapshotSeconds = referenceTimeSeconds ?? Math.floor(Date.now() / 1000);
+  const entries = items.map((item) => ({ item, content: values(item, snapshotSeconds) }));
   return <div className="inventory-shell"><table className="inventory-table"><caption>{CAPTION}</caption>
     <thead><tr>{["Identity", "Coverage", "Seal / Registry source", "Lease", "Gate", "Checked", "Action"]
       .map((label) => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-    <tbody>{items.map((item) => <InventoryRow item={item} key={item.identityKey} referenceTimeSeconds={snapshotSeconds} />)}</tbody></table>
-    <div className="inventory-cards" aria-label={CAPTION}>{items.map((item) =>
-      <InventoryCard item={item} key={item.identityKey} referenceTimeSeconds={snapshotSeconds} />)}</div></div>;
+    <tbody>{entries.map(({ item, content }) => <InventoryRow item={item} content={content}
+      key={item.identityKey} />)}</tbody></table>
+    <div className="inventory-cards" aria-label={CAPTION}>{entries.map(({ item, content }) =>
+      <InventoryCard item={item} content={content} key={item.identityKey} />)}</div></div>;
 }
 
-function InventoryRow({ item, referenceTimeSeconds }: { item: ProofLockInventoryItem; referenceTimeSeconds: number }) {
-  const content = values(item, referenceTimeSeconds);
+function InventoryRow({ item, content }: { item: ProofLockInventoryItem; content: InventoryValues }) {
   return <tr className="inventory-row"><td>{content.identity}</td><td>{content.coverage}</td><td><SealSource content={content} transactionHash={item.transactionHash} /></td>
     <td><StatusCell status={content.leaseStatus} detail={content.lease} /></td>
     <td><StatusCell status={content.gateStatus} detail={content.gate} /></td>
     <td>{content.last}</td><td>{content.action ?? "Unavailable"}</td></tr>;
 }
 
-function InventoryCard({ item, referenceTimeSeconds }: { item: ProofLockInventoryItem; referenceTimeSeconds: number }) {
-  const content = values(item, referenceTimeSeconds);
+function InventoryCard({ item, content }: { item: ProofLockInventoryItem; content: InventoryValues }) {
   return <article className="inventory-card"><div className="card-row"><dl className="inventory-card-identity"><div><dt className="sr-only">Identity</dt><dd>{content.identity}</dd></div></dl>
     <StatusBadge status={content.leaseStatus} /></div><dl className="inventory-card-data">
       <DataRow label="Coverage" value={content.coverage} />

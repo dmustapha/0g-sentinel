@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { isCanonicalAgentId, parseNonZeroBytes32 } from "@/lib/prooflock-validation";
-import type { RegistryProofLockRecord } from "./chain";
+import { computeIdentityKey, type RegistryProofLockRecord } from "./chain";
 import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
 import { ProofLockStageError, type RunnerStage, type RunnerTerminalResult } from "./runner";
@@ -205,10 +205,15 @@ export function methodNotAllowedResponse(stage: ApiStage): Response {
 async function resolveIdentity(request: Request, deps: ProofLockReadDependencies): Promise<Response> {
   const requestId = createRequestId();
   try {
-    const agentId = new URL(request.url).searchParams.get("agentId") ?? "";
+    const params = new URL(request.url).searchParams;
+    const agentId = params.get("agentId") ?? "";
+    const locatorVersion = params.get("locator");
     if (!isCanonicalAgentId(agentId)) invalid();
+    if (locatorVersion !== null && locatorVersion !== "identity-v1") invalid();
     const identity = await deps.resolveIdentity(agentId, deadline(request.signal));
-    return json({ identity }, 200, READ_CACHE);
+    const body = locatorVersion === "identity-v1"
+      ? { identity, identityKey: computeIdentityKey(identity.identity) } : { identity };
+    return json(body, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "RESOLVING_IDENTITY", requestId); }
 }
 
@@ -216,19 +221,24 @@ async function readProofLock(key: string, request: Request, deps: ProofLockReadD
   const requestId = createRequestId();
   try {
     const identityKey = bytes32(key);
-    const agentId = new URL(request.url).searchParams.get("agentId");
+    const params = new URL(request.url).searchParams;
+    const agentId = params.get("agentId");
+    const locatorVersion = params.get("locator");
     if (agentId !== null && !isCanonicalAgentId(agentId)) invalid();
+    if (locatorVersion !== null && locatorVersion !== "registry-v1") invalid();
     const signal = deadline(request.signal);
     const proofLock = await deps.readProofLock(identityKey, signal);
     assertRecord(identityKey, proofLock);
-    if (agentId !== null) return await currentDetailResponse(agentId, identityKey, proofLock, deps, signal);
+    if (agentId !== null) return await currentDetailResponse(agentId, identityKey, proofLock,
+      deps, signal, locatorVersion === "registry-v1");
     const detail = await deps.readProofLockDetail(proofLock, signal);
     return json({ identityKey, proofLock, detail }, 200, READ_CACHE);
   } catch (error) { return mapApiError(error, "READING_PROOF", requestId); }
 }
 
 async function currentDetailResponse(agentId: string, identityKey: Bytes32,
-  proofLock: RegistryProofLockRecord, deps: ProofLockReadDependencies, signal: AbortSignal) {
+  proofLock: RegistryProofLockRecord, deps: ProofLockReadDependencies, signal: AbortSignal,
+  includeLocator: boolean) {
   const sibling = new AbortController();
   const detail = boundedLegacyDetail(proofLock, deps,
     AbortSignal.any([signal, sibling.signal]));
@@ -243,8 +253,15 @@ async function currentDetailResponse(agentId: string, identityKey: Bytes32,
   const [sealedDetail, currentAccess] = result;
   const sealedEvidence = Object.freeze({ schema: "sentinel.prooflock/sealed-evidence-v1" as const,
     version: 1 as const, proofLock, detail: sealedDetail });
-  return json({ identityKey, proofLock, detail: sealedDetail, responseVersion: 2,
-    sealedEvidence, currentAccess }, 200, READ_CACHE);
+  const body = { identityKey, proofLock, detail: sealedDetail, responseVersion: 2,
+    sealedEvidence, currentAccess };
+  if (!includeLocator) return json(body, 200, READ_CACHE);
+  if (!deps.registryAddress) throw new Error("RegistryV2 is not configured");
+  const locator = Object.freeze({ identityKey,
+    proofId: deps.computeProofId(deps.registryAddress, proofLock),
+    registryAddress: deps.registryAddress.toLowerCase() });
+  return json({ ...body, proofId: locator.proofId, registryAddress: locator.registryAddress,
+    locator }, 200, READ_CACHE);
 }
 
 function boundedLegacyDetail(record: RegistryProofLockRecord,

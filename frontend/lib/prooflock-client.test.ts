@@ -88,7 +88,7 @@ describe("versioned ProofLock detail client contract", () => {
 
     const result = await readProofLockDetail(body.identityKey, undefined, "7");
     expect(fetchMock).toHaveBeenCalledWith(
-      `/api/v1/prooflocks/${body.identityKey}?agentId=7`, {
+      `/api/v1/prooflocks/${body.identityKey}?agentId=7&locator=registry-v1`, {
         signal: undefined, headers: { accept: "application/json" },
       });
     expect(result).toMatchObject({ responseVersion: 2,
@@ -289,8 +289,12 @@ type DiscoveryRow = Record<string, any>;
 type DiscoveryBody = ReturnType<typeof validResponse>;
 
 function validResponse() {
-  return { identities: [{ status: "ENRICHMENT_UNAVAILABLE", identityKey: bytes32("1"),
-    transactionHash: bytes32("2"), blockNumber: 115, code: "DEPENDENCY_UNAVAILABLE" }] as DiscoveryRow[],
+  const identityKey = bytes32("1"); const proofId = bytes32("e");
+  const transactionHash = bytes32("2"); const blockNumber = 115;
+  return { identities: [{ status: "ENRICHMENT_UNAVAILABLE", identityKey,
+    proofId, registryAddress: address("a"), transactionHash, blockNumber, locator: { identityKey, proofId,
+      registryAddress: address("a"), transactionHash, blockNumber },
+    code: "DEPENDENCY_UNAVAILABLE" }] as DiscoveryRow[],
     latestBlock: 120, fromBlock: 107, toBlock: 116, confirmations: 5,
     observedAt: "2026-08-29T12:00:00.000Z", cap: 100, returned: 1, complete: false as const };
 }
@@ -299,8 +303,10 @@ function verifiedResponse(): DiscoveryBody {
   const body = validResponse();
   const identityKey = bytes32("1");
   const subject = address("2");
-  body.identities = [{ status: "VERIFIED", identityKey, proofId: bytes32("e"), transactionHash: bytes32("2"),
-    blockNumber: 115, proofLock: { identityKey, subject, envelopeDigest: bytes32("3"), storageRoot: bytes32("4"),
+  const proofId = bytes32("e"); const transactionHash = bytes32("2"); const blockNumber = 115;
+  body.identities = [{ status: "VERIFIED", identityKey, proofId, registryAddress: address("a"), transactionHash,
+    blockNumber, locator: { identityKey, proofId, registryAddress: address("a"), transactionHash, blockNumber },
+    proofLock: { identityKey, subject, envelopeDigest: bytes32("3"), storageRoot: bytes32("4"),
       computeRoot: bytes32("5"), artifactHash: bytes32("6"), runtimeCodeHash: bytes32("7"), version: "1",
       issuedAt: "100", validUntil: "2000000000", policyVersion: 1, behavioralScore: 10, codeRisk: 0, coverage: 127,
       state: 1, stateReason: 0 }, detail: { status: "VERIFIED", identity: { identityKey, namespace: "eip155",
@@ -364,6 +370,8 @@ function currentDetailResponse() {
         "consumer", "BLOCKED", consumerValue, "UNKNOWN_REASON"),
     } };
   return { ...legacy, responseVersion: 2,
+    proofId: bytes32("e"), registryAddress: address("a"),
+    locator: { identityKey: legacy.identityKey, proofId: bytes32("e"), registryAddress: address("a") },
     sealedEvidence: { schema: "sentinel.prooflock/sealed-evidence-v1", version: 1,
       proofLock: structuredClone(legacy.proofLock), detail: structuredClone(legacy.detail) },
     currentAccess };

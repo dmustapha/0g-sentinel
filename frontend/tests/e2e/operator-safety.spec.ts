@@ -87,7 +87,8 @@ test("@mocked authenticated writes reject redirect query-leak traps", async ({ p
 async function installOperatorFixtures(page: Page): Promise<void> {
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
-    if (url.pathname === "/api/v1/identities/resolve") return json(route, { identity: identity() });
+    if (url.pathname === "/api/v1/identities/resolve") return json(route,
+      { identity: identity(), identityKey: h("e") });
     if (url.pathname.startsWith("/api/v1/prooflocks/")) return json(route, { error: {
       code: "NOT_FOUND", message: "No ProofLock exists.", stage: "READING_PROOF",
       retryable: false, requestId: "e2e-prooflock" } }, 404);

@@ -110,6 +110,18 @@ A visual language is the recognizable look and feel; a design system is the gove
 
 The remedy is consolidation, not a generic redesign. Canonical CSS tokens should define primitive values, semantic roles, and the small set of product components. Seven typed primitives—Button, Field, StatusBadge, EvidenceSheet, DataRow, StateMessage, and ProofPlane—can then enforce touch size, focus, invalid state, loading, wrapping, status semantics, and historical/current separation everywhere. A short `DESIGN_SYSTEM.md` and visual/accessibility regression tests make that consistency durable while preserving the product's signature.
 
+## Why the browser no longer derives Registry proof locators
+
+The proof ID is a Registry fact, not presentation logic. Public pages previously loaded hashing code and rebuilt that ID from chain fields in the browser. The server now returns a typed locator containing the identity key, proof ID, and Registry address; the client accepts it only when every nested value matches the surrounding response and requested identity. Legacy callers keep their exact response shape unless they explicitly negotiate the locator version.
+
+This reduces public JavaScript without weakening compatibility. It also leaves one authoritative boundary for future Registry versions: the server derives the locator, while the browser validates and displays it.
+
+## What the performance budget protects
+
+Performance is measured against the packaged standalone server with a cold cache, mobile viewport, slow-4G network, and 4× CPU slowdown. Each route uses a three-sample median. The gates require LCP at or below 2.5 seconds, INP at or below 200 milliseconds, CLS at or below 0.1, stable active controls, a responsive 100-row inventory, and no silent asset growth above 10%.
+
+The first baseline caught real layout shifts on inventory and detail loading states. Reserving the ready-state shell and delaying the legacy disclosure until the inventory settles removed those shifts. Sharing one derived row view between desktop and mobile avoided duplicate work, while removing two unused font files saved 9,728 encoded bytes. The final worst route is the 100-row inventory at a 2.256-second LCP median; operator interaction is 48 milliseconds with zero control displacement.
+
 ## Why the Proof Ledger has two planes
 
 The deeper audit found that one completed ribbon would quietly mix facts that were proven at different times. Compute and deterministic checks describe the sealed historical run. Storage retrieval describes what the verifier observed when it fetched the artifact. The lease, ERC-8004 wallet, Gate, and guarded consumer describe current mutable chain state. They are related, but they are not one shared “live” result.

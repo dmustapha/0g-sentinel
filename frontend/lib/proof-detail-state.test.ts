@@ -244,6 +244,8 @@ function detailResponse(): ProofLockCurrentDetailResponse {
     consumer: { status: "VERIFIED" as const, accepted: true, address: ADDRESS("2"),
       subject: ADDRESS("1"), version: "2" } };
   return { identityKey: HASH("2"), proofLock: record(), detail: legacyDetail, responseVersion: 2,
+    proofId: HASH("3"), registryAddress: ADDRESS("7"),
+    locator: { identityKey: HASH("2"), proofId: HASH("3"), registryAddress: ADDRESS("7") },
     sealedEvidence: { schema: "sentinel.prooflock/sealed-evidence-v1", version: 1,
       proofLock: record(), detail: legacyDetail }, currentAccess: currentAccess() };
 }

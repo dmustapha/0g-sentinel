@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const navigation = vi.hoisted(() => ({ query: "" }));
 const client = vi.hoisted(() => ({
-  resolveIdentity: vi.fn(), readProofLockDetail: vi.fn(), computeProofId: vi.fn(), verifyProof: vi.fn(),
+  resolveIdentityLocator: vi.fn(), readProofLockDetail: vi.fn(), verifyProof: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -35,9 +35,8 @@ const identityKey = keccak256(AbiCoder.defaultAbiCoder().encode(["uint256", "add
 beforeEach(() => {
   navigation.query = `sourceTxHash=${sourceOne}`;
   process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS = `0x${"77".repeat(20)}`;
-  client.resolveIdentity.mockReset().mockResolvedValue(identity);
+  client.resolveIdentityLocator.mockReset().mockResolvedValue({ identity, identityKey });
   client.readProofLockDetail.mockReset().mockResolvedValue(detail());
-  client.computeProofId.mockReset().mockReturnValue(proofId);
   client.verifyProof.mockReset().mockResolvedValue(proof(sourceOne));
 });
 afterEach(() => cleanup());
@@ -81,8 +80,9 @@ describe("agent detail locator races", () => {
   it("hides prior agent data while a different agent locator is loading", async () => {
     const view = render(<AgentDetailPage params={{ address: "7" }} />);
     expect(await screen.findByRole("heading", { name: "Agent #7" })).toBeTruthy();
-    const pending = deferred<CanonicalIdentity>();
-    client.resolveIdentity.mockImplementation((agentId) => agentId === "8" ? pending.promise : identity);
+    const pending = deferred<{ identity: CanonicalIdentity; identityKey: `0x${string}` }>();
+    client.resolveIdentityLocator.mockImplementation((agentId) => agentId === "8"
+      ? pending.promise : { identity, identityKey });
     navigation.query = "";
     view.rerender(<AgentDetailPage params={{ address: "8" }} />);
     expect(screen.queryByRole("heading", { name: "Agent #7" })).toBeNull();
@@ -119,7 +119,9 @@ function detail(): ProofLockDetailResponse {
     computeRoot: h("8"), artifactHash: h("9"), runtimeCodeHash: h("a"), version: "2",
     issuedAt: "1", validUntil: "9999999999", policyVersion: 1, behavioralScore: 10,
     codeRisk: 0, coverage: 127, state: 1, stateReason: 0 } as const;
-  return { identityKey, proofLock: record, detail: { status: "VERIFIED", identity: { identityKey,
+  return { identityKey, proofId, registryAddress: address,
+    locator: { identityKey, proofId, registryAddress: address },
+    proofLock: record, detail: { status: "VERIFIED", identity: { identityKey,
     namespace: "eip155", chainId: 16661, registryAddress: address, agentId: "7", owner: address,
     agentWallet: address, registrationUri: "ipfs://agent", registrationDigest: h("4"),
     sourceBlockNumber: "8", sourceBlockHash: h("5") }, resolution: { owner: address,

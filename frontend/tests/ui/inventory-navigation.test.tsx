@@ -190,6 +190,15 @@ describe("ProofLock inventory navigation", () => {
     expect(source).toContain("canonicalProofHref");
     expect(source).not.toMatch(/router\.push\(`\/proof\/\$\{/);
   });
+
+  it("keeps public detail proof locators server-derived", async () => {
+    const source = await readFile(resolve(process.cwd(), "app/agents/[address]/page.tsx"), "utf8");
+    expect(source).not.toMatch(/from ["']ethers["']/);
+    expect(source).not.toContain("computeProofId");
+    expect(source).not.toContain("NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS");
+    expect(source).toContain("resolveIdentityLocator");
+    expect(source).toContain("detail.locator");
+  });
 });
 
 const h = (byte: string) => `0x${byte.repeat(64)}` as `0x${string}`;

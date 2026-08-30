@@ -10,10 +10,11 @@ import { configuredDisplayText } from "./safe-display";
 import type {
   ApiErrorShape, CanonicalIdentity, HealthSnapshot, OperatorRunInput, ProofLockDiscoveryResponse,
   OperatorRunProgress, OperatorTerminalResult, ProofLockCurrentDetailResponse, ProofLockDetailResponse, ProofLockRecord,
-  ProofLockWriteOutcome, RunnerStage, VerifiedProof,
+  ProofLockWriteOutcome, ResolvedIdentityLocator, RunnerStage, VerifiedProof,
 } from "./prooflock-types";
 
 const hex20 = z.string().regex(/^0x[0-9a-f]{40}$/i);
+const nonZeroHex20 = hex20.refine((value) => !/^0x0{40}$/i.test(value));
 const hex32 = z.string().regex(/^0x[0-9a-f]{64}$/i);
 const nonZeroHex32 = hex32.refine((value) => !/^0x0{64}$/i.test(value));
 const canonicalAgentId = z.string().max(78).refine(isCanonicalAgentId);
@@ -119,10 +120,16 @@ const currentAccessSchema = z.object({ schema: z.literal("sentinel.prooflock/cur
 }).strict().superRefine(validateCurrentAccessMetadata);
 const sealedEvidenceSchema = z.object({ schema: z.literal("sentinel.prooflock/sealed-evidence-v1"),
   version: z.literal(1), proofLock: lockSchema, detail: detailSchema }).strict();
+const registryLocatorSchema = z.object({ identityKey: nonZeroHex32, proofId: nonZeroHex32,
+  registryAddress: nonZeroHex20 }).strict();
+const registrySourceLocatorSchema = registryLocatorSchema.extend({ transactionHash: nonZeroHex32,
+  blockNumber: z.number().int().nonnegative() }).strict();
 const legacyDetailResponseSchema = z.object({ identityKey: nonZeroHex32,
   proofLock: lockSchema, detail: detailSchema }).strict();
 const currentDetailResponseSchema = legacyDetailResponseSchema.extend({ responseVersion: z.literal(2),
-  sealedEvidence: sealedEvidenceSchema, currentAccess: currentAccessSchema }).strict();
+  proofId: nonZeroHex32, registryAddress: nonZeroHex20, locator: registryLocatorSchema,
+  sealedEvidence: sealedEvidenceSchema,
+  currentAccess: currentAccessSchema }).strict();
 const apiCodeSchema = z.enum(["INVALID_INPUT", "UNAUTHORIZED", "NOT_FOUND", "GONE", "METHOD_NOT_ALLOWED",
   "AGENT_NOT_FOUND", "AGENT_WALLET_UNSET", "IDENTITY_UNAVAILABLE", "DEPENDENCY_UNAVAILABLE", "COMPUTE_UNVERIFIED",
   "MISMATCH", "HINT_REQUIRED", "REQUEST_ABORTED", "INTERNAL_ERROR", "SUBMISSION_OUTCOME_UNKNOWN",
@@ -190,6 +197,16 @@ export async function resolveIdentity(agentId: string, signal?: AbortSignal): Pr
   return identitySchema.parse(z.object({ identity: identitySchema }).parse(body).identity) as CanonicalIdentity;
 }
 
+export async function resolveIdentityLocator(agentId: string,
+  signal?: AbortSignal): Promise<ResolvedIdentityLocator> {
+  const body = await requestJson(`/api/v1/identities/resolve?agentId=${encodeURIComponent(agentId)}&locator=identity-v1`, { signal });
+  const parsed = z.object({ identity: identitySchema, identityKey: nonZeroHex32 }).strict().parse(body);
+  if (parsed.identity.identity.agentId !== agentId) {
+    throw new TypeError("Resolved identity locator binding is inconsistent");
+  }
+  return parsed as ResolvedIdentityLocator;
+}
+
 export async function readProofLock(identityKey: string, signal?: AbortSignal): Promise<ProofLockRecord> {
   const body = await requestJson(`/api/v1/prooflocks/${encodeURIComponent(identityKey)}`, { signal });
   return lockSchema.parse(z.object({ identityKey: hex32, proofLock: lockSchema }).parse(body).proofLock) as ProofLockRecord;
@@ -197,7 +214,8 @@ export async function readProofLock(identityKey: string, signal?: AbortSignal): 
 
 export async function readProofLockDetail(identityKey: string, signal?: AbortSignal,
   agentId?: string): Promise<ProofLockDetailResponse> {
-  const query = agentId === undefined ? "" : `?agentId=${encodeURIComponent(agentId)}`;
+  const query = agentId === undefined ? ""
+    : `?agentId=${encodeURIComponent(agentId)}&locator=registry-v1`;
   const body = await requestJson(`/api/v1/prooflocks/${encodeURIComponent(identityKey)}${query}`, { signal });
   if (agentId === undefined) return legacyDetailResponseSchema.parse(body) as ProofLockDetailResponse;
   const parsed = currentDetailResponseSchema.parse(body);
@@ -208,15 +226,17 @@ export async function readProofLockDetail(identityKey: string, signal?: AbortSig
 }
 
 export async function discoverProofLocks(signal?: AbortSignal): Promise<ProofLockDiscoveryResponse> {
-  const body = await requestJson("/api/discover", { signal });
-  const source = { identityKey: nonZeroHex32, transactionHash: nonZeroHex32,
+  const body = await requestJson("/api/discover?locator=registry-v1", { signal });
+  const source = { identityKey: nonZeroHex32, proofId: nonZeroHex32,
+    registryAddress: nonZeroHex20, transactionHash: nonZeroHex32,
     blockNumber: z.number().int().nonnegative() };
   const discoveryLock = lockSchema.extend({ identityKey: nonZeroHex32, envelopeDigest: nonZeroHex32,
     storageRoot: nonZeroHex32, computeRoot: nonZeroHex32, artifactHash: nonZeroHex32 });
-  const verified = z.object({ status: z.literal("VERIFIED"), ...source, proofId: nonZeroHex32,
+  const verified = z.object({ status: z.literal("VERIFIED"), ...source,
+    locator: registrySourceLocatorSchema,
     proofLock: discoveryLock, detail: detailSchema });
   const unavailable = z.object({ status: z.literal("ENRICHMENT_UNAVAILABLE"), ...source,
-    code: z.literal("DEPENDENCY_UNAVAILABLE") }).strict();
+    locator: registrySourceLocatorSchema, code: z.literal("DEPENDENCY_UNAVAILABLE") }).strict();
   const schema = z.object({ identities: z.array(z.discriminatedUnion("status", [verified, unavailable])).max(100),
     latestBlock: z.number().int().nonnegative(), fromBlock: z.number().int().nonnegative(),
     toBlock: z.number().int().nonnegative(), confirmations: z.number().int().positive(),
@@ -227,7 +247,9 @@ export async function discoverProofLocks(signal?: AbortSignal): Promise<ProofLoc
 }
 
 function validDiscoveryMetadata(value: Readonly<{ identities: readonly Readonly<{ identityKey: string;
-  blockNumber: number; status: string; proofLock?: Readonly<{ identityKey: string }> }>[]; latestBlock: number;
+  proofId: string; registryAddress: string; transactionHash: string; blockNumber: number; status: string;
+  locator: Readonly<{ identityKey: string; proofId: string; registryAddress: string;
+    transactionHash: string; blockNumber: number }>; proofLock?: Readonly<{ identityKey: string }> }>[]; latestBlock: number;
   fromBlock: number; toBlock: number; confirmations: number; cap: number; returned: number }>): boolean {
   const identities = value.identities.map((row) => row.identityKey.toLowerCase());
   return value.latestBlock >= value.confirmations - 1
@@ -235,6 +257,11 @@ function validDiscoveryMetadata(value: Readonly<{ identities: readonly Readonly<
     && value.fromBlock <= value.toBlock && value.returned === value.identities.length
     && value.returned <= value.cap && new Set(identities).size === identities.length
     && value.identities.every((row) => row.blockNumber >= value.fromBlock && row.blockNumber <= value.toBlock
+      && row.locator.identityKey.toLowerCase() === row.identityKey.toLowerCase()
+      && row.locator.transactionHash.toLowerCase() === row.transactionHash.toLowerCase()
+      && row.locator.blockNumber === row.blockNumber
+      && row.locator.proofId.toLowerCase() === row.proofId.toLowerCase()
+      && row.locator.registryAddress.toLowerCase() === row.registryAddress.toLowerCase()
       && (row.status !== "VERIFIED" || row.proofLock?.identityKey.toLowerCase() === row.identityKey.toLowerCase()));
 }
 
@@ -381,29 +408,26 @@ function validCurrentDetailBinding(value: z.infer<typeof currentDetailResponseSc
   const current = value.currentAccess;
   const identityValue = current.observations.identity.value;
   const leaseValue = current.observations.lease.value;
-  const expectedKey = expectedCurrentIdentityKey(requestedAgentId);
-  return expectedKey !== null && key === expectedKey
-    && key === requestedIdentityKey.toLowerCase()
+  const sealedIdentity = value.detail.status === "VERIFIED" ? value.detail.identity : null;
+  return key === requestedIdentityKey.toLowerCase()
     && value.proofLock.identityKey.toLowerCase() === key
+    && value.locator.identityKey.toLowerCase() === key
+    && value.locator.proofId.toLowerCase() === value.proofId.toLowerCase()
+    && value.locator.registryAddress.toLowerCase() === value.registryAddress.toLowerCase()
     && current.identityKey.toLowerCase() === key && current.agentId === requestedAgentId
-    && (!identityValue || validCurrentIdentityBinding(identityValue.identity, requestedAgentId, key))
+    && (!sealedIdentity || (sealedIdentity.identityKey.toLowerCase() === key
+      && sealedIdentity.agentId === requestedAgentId))
+    && (!identityValue || validCurrentIdentityBinding(identityValue.identity, requestedAgentId))
     && (!leaseValue || leaseValue.identityKey.toLowerCase() === key)
-    && canonicalize(value.sealedEvidence.proofLock) === canonicalize(value.proofLock)
-    && canonicalize(value.sealedEvidence.detail) === canonicalize(value.detail);
+    && JSON.stringify(value.sealedEvidence.proofLock) === JSON.stringify(value.proofLock)
+    && JSON.stringify(value.sealedEvidence.detail) === JSON.stringify(value.detail);
 }
 
 function validCurrentIdentityBinding(identity: Readonly<{ namespace: "eip155"; chainId: 16661;
-  registryAddress: string; agentId: string }>, requestedAgentId: string, identityKey: string): boolean {
+  registryAddress: string; agentId: string }>, requestedAgentId: string): boolean {
   if (!isCanonicalAgentId(identity.agentId) || identity.agentId !== requestedAgentId
     || identity.registryAddress.toLowerCase() !== ERC8004_REGISTRY) return false;
-  return expectedCurrentIdentityKey(identity.agentId) === identityKey;
-}
-
-function expectedCurrentIdentityKey(agentId: string): string | null {
-  if (!isCanonicalAgentId(agentId)) return null;
-  const encoded = AbiCoder.defaultAbiCoder().encode(
-    ["uint256", "address", "uint256"], [16661, ERC8004_REGISTRY, BigInt(agentId)]);
-  return keccak256(encoded).toLowerCase();
+  return true;
 }
 
 export async function verifyProof(proofId: string, identityKey: string, signal?: AbortSignal, sourceTxHash?: string): Promise<VerifiedProof> {

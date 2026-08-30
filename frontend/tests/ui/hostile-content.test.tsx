@@ -237,13 +237,13 @@ describe("hostile evidence rendering", () => {
   it("preserves a maximum uint256 Agent ID and rejects an overflowing one", async () => {
     const maximum = ((1n << 256n) - 1n).toString();
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = async () => new Response(JSON.stringify({ identity: {
+    globalThis.fetch = async () => new Response(JSON.stringify({ identityKey: h("f"), identity: {
       ...identity(), identity: { ...identity().identity, agentId: maximum },
     } }), { status: 200, headers: { "content-type": "application/json" } });
     try {
       await expect(resolveIdentity(maximum)).resolves.toMatchObject({ identity: { agentId: maximum } });
       const overflow = (1n << 256n).toString();
-      globalThis.fetch = async () => new Response(JSON.stringify({ identity: {
+      globalThis.fetch = async () => new Response(JSON.stringify({ identityKey: h("f"), identity: {
         ...identity(), identity: { ...identity().identity, agentId: overflow },
       } }), { status: 200, headers: { "content-type": "application/json" } });
       await expect(resolveIdentity(overflow)).rejects.toThrow();

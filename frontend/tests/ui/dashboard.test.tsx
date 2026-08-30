@@ -16,7 +16,7 @@ import { mapHistoricalPlane } from "../../lib/proof-detail-state";
 import type { ProofLockRecord, VerifiedProof } from "../../lib/prooflock-types";
 
 const detailClient = vi.hoisted(() => ({
-  resolveIdentity: vi.fn(), readProofLockDetail: vi.fn(), computeProofId: vi.fn(), verifyProof: vi.fn(),
+  resolveIdentityLocator: vi.fn(), readProofLockDetail: vi.fn(), verifyProof: vi.fn(),
 }));
 vi.mock("next/navigation", () => ({ useSearchParams: () => new URLSearchParams() }));
 vi.mock("../../lib/prooflock-client", async (importOriginal) => ({
@@ -145,9 +145,10 @@ describe("ProofLock dashboard and detail", () => {
       observation: { ...detail.currentAccess.observations.lease.observation,
         status: "BLOCKED", reasonCode: "EXPIRED" },
     };
-    detailClient.resolveIdentity.mockReset().mockResolvedValue(detailIdentity());
+    detailClient.resolveIdentityLocator.mockReset().mockResolvedValue({
+      identity: detailIdentity(), identityKey: record.identityKey,
+    });
     detailClient.readProofLockDetail.mockReset().mockResolvedValue(detail);
-    detailClient.computeProofId.mockReset().mockReturnValue(hex32("a"));
     detailClient.verifyProof.mockReset().mockImplementation((proofId, identityKey) =>
       Promise.resolve(historicalProof(proofId, identityKey, detail.proofLock)));
     render(<AgentDetailPage params={{ address: "7" }} />);
@@ -171,8 +172,9 @@ describe("ProofLock dashboard and detail", () => {
 
   it("keeps only the newest same-locator refresh across manual, resume, focus, and cleanup", async () => {
     process.env.NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS = `0x${"88".repeat(20)}`;
-    detailClient.resolveIdentity.mockReset().mockResolvedValue(detailIdentity());
-    detailClient.computeProofId.mockReset().mockReturnValue(hex32("a"));
+    detailClient.resolveIdentityLocator.mockReset().mockResolvedValue({
+      identity: detailIdentity(), identityKey: record.identityKey,
+    });
     detailClient.verifyProof.mockReset().mockRejectedValue(new Error("historical unavailable"));
     const older = deferredDetail(); const newer = deferredDetail(); const signals: AbortSignal[] = [];
     detailClient.readProofLockDetail.mockReset()
@@ -286,7 +288,10 @@ function currentDetail(block: string) {
     capability: `${subsystem}-capability`, reason: "OBSERVED", observation: observation(subsystem),
     value: subsystem === "lease" ? record : null,
   });
-  return { identityKey: record.identityKey, proofLock: record, detail: { status: "UNAVAILABLE",
+  return { identityKey: record.identityKey,
+    proofId: hex32("a"), registryAddress: `0x${"88".repeat(20)}`,
+    locator: { identityKey: record.identityKey, proofId: hex32("a"), registryAddress: `0x${"88".repeat(20)}` },
+    proofLock: record, detail: { status: "UNAVAILABLE",
     code: "EVIDENCE_UNAVAILABLE", identity: null, resolution: null,
     gate: { status: "UNKNOWN", allowed: false, reason: null },
     consumer: { status: "UNKNOWN", accepted: false } }, responseVersion: 2,

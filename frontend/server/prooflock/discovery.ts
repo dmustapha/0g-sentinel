@@ -30,6 +30,8 @@ export function createDiscoveryHandler(dependencies: DiscoveryDependencies, opti
   return async (request: Request): Promise<Response> => {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(TIMEOUT_MS)]);
     try {
+      const locatorVersion = new URL(request.url).searchParams.get("locator");
+      if (locatorVersion !== null && locatorVersion !== "registry-v1") throw new Error("Locator version is invalid");
       await dependencies.assertChain(signal);
       const latestBlock = await dependencies.getLatestBlock(signal);
       const toBlock = finalizedBlock(latestBlock, config.confirmations);
@@ -40,7 +42,8 @@ export function createDiscoveryHandler(dependencies: DiscoveryDependencies, opti
       const candidates = uniqueProofLocks(logs, config.registryAddress, fromBlock, toBlock).slice(0, config.cap);
       await assertSameBoundary(dependencies, boundary, signal);
       const identities = await boundedMap(candidates, config.concurrency,
-        (candidate) => enrich(candidate, toBlock, dependencies, signal), signal);
+        (candidate) => enrich(candidate, toBlock, dependencies, signal,
+          locatorVersion === "registry-v1"), signal);
       await assertSameBoundary(dependencies, boundary, signal);
       const observedAt = validObservationTime(dependencies.now());
       return response({ identities, latestBlock, fromBlock, toBlock, confirmations: config.confirmations,
@@ -50,7 +53,8 @@ export function createDiscoveryHandler(dependencies: DiscoveryDependencies, opti
 }
 
 type Candidate = Readonly<{ identityKey: `0x${string}`; proofId: `0x${string}`;
-  transactionHash: `0x${string}`; blockNumber: number; eventRecord: RegistryProofLockRecord }>;
+  registryAddress: `0x${string}`; transactionHash: `0x${string}`; blockNumber: number;
+  eventRecord: RegistryProofLockRecord }>;
 
 function uniqueProofLocks(logs: readonly DiscoveryLog[], registry: string, fromBlock: number, toBlock: number): readonly Candidate[] {
   const ordered = logs.map((log) => validLog(log, registry, fromBlock, toBlock)).sort((left, right) =>
@@ -69,6 +73,7 @@ function validLog(log: DiscoveryLog, registry: string, fromBlock: number, toBloc
     || !Number.isSafeInteger(log.index) || log.index < 0) throw new Error("Registry discovery log is invalid or removed");
   const eventRecord = decodeProofLocked(log);
   return { identityKey: eventRecord.identityKey, proofId: computeProofLockId(registry, eventRecord),
+    registryAddress: registry.toLowerCase() as `0x${string}`,
     transactionHash, blockNumber: log.blockNumber, index: log.index, eventRecord };
 }
 
@@ -114,7 +119,7 @@ function validateEventRecord(record: RegistryProofLockRecord): RegistryProofLock
 }
 
 async function enrich(candidate: Candidate, toBlock: number,
-  dependencies: DiscoveryDependencies, signal: AbortSignal) {
+  dependencies: DiscoveryDependencies, signal: AbortSignal, includeLocator: boolean) {
   try {
     signal.throwIfAborted();
     const proofLock = await dependencies.readProofLock(candidate.identityKey, toBlock, signal);
@@ -122,14 +127,24 @@ async function enrich(candidate: Candidate, toBlock: number,
     assertEventBinding(candidate.eventRecord, proofLock);
     const detail = await dependencies.readProofLockDetail(proofLock, toBlock, signal);
     signal.throwIfAborted();
-    const { eventRecord: _eventRecord, ...source } = candidate;
-    return Object.freeze({ status: "VERIFIED" as const, ...source, proofLock, detail });
+    const { eventRecord: _eventRecord, registryAddress: _registryAddress, ...source } = candidate;
+    return Object.freeze({ status: "VERIFIED" as const, ...source,
+      ...(includeLocator ? { registryAddress: candidate.registryAddress,
+        locator: registrySourceLocator(candidate) } : {}), proofLock, detail });
   } catch (error) {
     if (signal.aborted) throw error;
     return Object.freeze({ status: "ENRICHMENT_UNAVAILABLE" as const,
       identityKey: candidate.identityKey, transactionHash: candidate.transactionHash, blockNumber: candidate.blockNumber,
+      ...(includeLocator ? { proofId: candidate.proofId, registryAddress: candidate.registryAddress,
+        locator: registrySourceLocator(candidate) } : {}),
       code: "DEPENDENCY_UNAVAILABLE" as const });
   }
+}
+
+function registrySourceLocator(candidate: Candidate) {
+  return Object.freeze({ identityKey: candidate.identityKey, proofId: candidate.proofId,
+    registryAddress: candidate.registryAddress, transactionHash: candidate.transactionHash,
+    blockNumber: candidate.blockNumber });
 }
 
 function assertEventBinding(event: RegistryProofLockRecord, pinned: RegistryProofLockRecord): void {

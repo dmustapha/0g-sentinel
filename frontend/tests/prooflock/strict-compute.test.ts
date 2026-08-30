@@ -484,13 +484,16 @@ describe("strict 0G Compute", () => {
     });
   });
 
-  it("rejects a response model mismatch", async () => {
+  it("binds to the served runtime model when it differs from the registered catalog model", async () => {
+    // Real 0G providers serve a registered model (e.g. "0GM-1.0-35B-A3B") under a normalized
+    // runtime id (e.g. "z-ai/glm-5"). The served model is what actually ran and is covered by the
+    // provider signature, so the proof binds to it while recording the registered model separately.
     const { dependencies } = harness({
-      inference: inferenceResponse(body({ model: "other-model" })),
+      inference: inferenceResponse(body({ model: "z-ai/glm-5-served" })),
     });
-    await expect(runStrictCompute(input(), dependencies)).rejects.toMatchObject({
-      code: "COMPUTE_MODEL_MISMATCH",
-    });
+    const result = await runStrictCompute(input(), dependencies);
+    expect(result.proof.model).toBe("z-ai/glm-5-served");
+    expect(result.proof.serviceSnapshot?.model).toBe(MODEL);
   });
 
   it.each([[false], [null]] as const)("rejects processResponse %s", async (verification) => {

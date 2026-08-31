@@ -190,6 +190,13 @@ async function run(
     }
     const stageError = error instanceof ProofLockStageError ? error
       : new ProofLockStageError("RUNNING_COMPUTE", "ProofLock paid ceremony stopped", error);
+    // Server-side diagnostic (never streamed to the client): surface the real cause of a stopped
+    // ceremony so serverless write failures are debuggable. Safe: printed to server logs only.
+    try {
+      const cause = (stageError.cause ?? error) as { message?: string; stack?: string; code?: string } | undefined;
+      console.error("[prooflock-ceremony-error]", stageError.stage, stageError.code ?? "",
+        cause?.code ?? "", cause?.message ?? String(cause), cause?.stack?.split("\n").slice(0, 4).join(" | "));
+    } catch { /* logging must never mask the original error */ }
     throw new ProofLockStageError(stageError.stage, stageError.message, stageError.cause, outcome, stageError.code);
   }
 }

@@ -46,9 +46,10 @@ const OBSOLETE_UI = ["AnimatedScoreBar", "ChainDiscovery", "FineTuneButton", "Gr
   "QueueBanner", "RadarHero"] as const;
 const LEGACY_PUBLIC_ENV = ["NEXT_PUBLIC_ATTESTATION_REGISTRY_ADDRESS",
   "NEXT_PUBLIC_AGENT_REGISTRY_ADDRESS", "NEXT_PUBLIC_AGENT_GATE_ADDRESS"] as const;
+// scan/stream is intentionally NOT a tombstone: it is the public scan+seal front door.
 const LEGACY_TOMBSTONES = ["app/api/agents/route.ts", "app/api/fine-tuning/route.ts",
   "app/api/scan/behavioral/route.ts", "app/api/scan/code/route.ts", "app/api/scan/inft/route.ts",
-  "app/api/scan/queue/route.ts", "app/api/scan/stream/route.ts", "app/api/verify-evidence/route.ts",
+  "app/api/scan/queue/route.ts", "app/api/verify-evidence/route.ts",
   "app/api/v1/attestation/[address]/route.ts"] as const;
 
 describe("release configuration and legacy boundary", () => {
@@ -273,6 +274,10 @@ describe("release configuration and legacy boundary", () => {
     for (const name of LEGACY_PUBLIC_ENV) expect(contracts).not.toContain(name);
     for (const route of LEGACY_TOMBSTONES)
       expect(readFileSync(resolve(process.cwd(), route), "utf8")).toContain("goneResponse");
+    // scan/stream is the deliberate public scan+seal front door, not a tombstone.
+    const scanStream = readFileSync(resolve(process.cwd(), "app/api/scan/stream/route.ts"), "utf8");
+    expect(scanStream).toContain("createPublicScanStreamHandler");
+    expect(scanStream).not.toContain("goneResponse");
   });
 
   it.each(["../scripts/prooflock/run.ts", "../scripts/prooflock/check-drift.ts"])(

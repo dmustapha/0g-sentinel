@@ -140,3 +140,25 @@ Local release candidate complete on `feature/sentinel-prooflock`. Mainnet deploy
   upstream SDK releases and a separately tested Next major migration, not an unreviewed forced upgrade.
 - Both Gate-driving risk fields are canonical evidence: public verification requires the stored behavioral and code
   risks to equal the onchain record, and every mutation proves the Compute payer holds no Registry authority.
+
+## Mainnet Release Evidence (2026-08-31)
+
+Everything previously marked "not yet provable locally" is now proven on 0G Aristotle mainnet
+(chainId 16661). Full transaction/root/block evidence is in `submission/proof.md`.
+
+- V2 deployment receipts: SentinelRegistryV2 `0x1d802114cfAFFd179f49E2F6fa8e11207c118944` (block 43090189),
+  AgentGateV2 `0x32Ae81B1150AA7E91d8341E59b3810950e7A1171`, ProofLockConsumerDemo `0x71823afFA086f6a4Be64B67142480Fa889Cd0773`.
+- ERC-8004 agent `3527152` registered on the canonical registry, agentWallet == subject `0xDaA09b710cDB279AF411e4a9C4C79D00bfDB282f`.
+- Paid mainnet Compute: real TeeML (Intel TDX/dstack) inference on provider `0xd9966e13…C471C`, enclave signer
+  `0x4c1b546f…17ee8`, response bound to exact bytes, offline re-verify passed.
+- Storage upload/retrieval: evidence uploaded to 0G Storage (roots `0xade600cc…` v1, `0x1891d590…` v2) and
+  independently re-downloaded with merkle proof by the public verifier.
+- Full seal → consumer → drift → recover → reseal → verify lifecycle sealed on-chain (identity key
+  `0xf89c3979…56d78`): SEAL v1 ALLOWED → consumer accepted → drift marked → DENIED → fresh-process recover →
+  RESEAL v2 ALLOWED → consumer accepted → public verifier reproduced proofId `0xa4c3bf5c…28e7c2`.
+- Live dashboard deployed (not localhost): https://sentinel-prooflock.vercel.app, health `200 HEALTHY`
+  (rpc/identity/registry/gate/compute/storage), CSP + HSTS + nosniff + X-Frame DENY, no secrets in the client bundle.
+- Release-run test counts: frontend 1416/1416 passing; root Hardhat contract/deployment suite and both
+  TypeScript checks clean. Six live-only bugs were found and fixed by running the real ceremony (BigInt
+  canonicalization, transient Compute retry, EOA code-risk invariant, null-content prompt, storage from-block
+  scan bound, and multi-subtree Flow-commitment root folding).

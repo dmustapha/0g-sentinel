@@ -807,9 +807,12 @@ describe("legacy spend safety", () => {
 });
 
 describe("public scan stream (no-token front door)", () => {
+  const registryV2 = hex("d2", 20);
+  const computeProofId = vi.fn().mockReturnValue(proofId);
   const reads = (record?: unknown) => () => ({
     readProofLock: record ? vi.fn().mockResolvedValue(record) : vi.fn().mockRejectedValue(new Error("no proof")),
-    computeProofId: vi.fn().mockReturnValue(proofId),
+    computeProofId,
+    registryAddress: registryV2,
   }) as unknown as ProofLockReadDependencies;
   const failingRun = vi.fn(async () => { throw new ProofLockStageError("VALIDATING_IDENTITY", "x"); });
   const build = (opts: Record<string, unknown> = {}) => createPublicScanStreamHandler({
@@ -852,6 +855,9 @@ describe("public scan stream (no-token front door)", () => {
     expect(captured?.mode).toBe("RESEAL");
     expect(captured?.expectedPriorVersion).toBe(4n);
     expect(captured?.previousProofId).toBe(proofId);
+    // previousProofId MUST be computed against the ProofLock RegistryV2 address (reads.registryAddress),
+    // not the ERC-8004 identity registry, or the reseal fails "previous proof ID mismatch".
+    expect(computeProofId).toHaveBeenCalledWith(registryV2, { version: 4n });
   });
 
   it("rate-limits bursts with 429", async () => {

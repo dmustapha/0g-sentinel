@@ -183,7 +183,9 @@ export function createPublicScanStreamHandler(config: Readonly<{
     try {
       const reads = config.loadReads();
       const record = await reads.readProofLock(identityKey, deadline(request.signal));
-      const previousProofId = reads.computeProofId(config.registryAddress, record);
+      // computeProofId requires the ProofLock RegistryV2 address (reads.registryAddress), NOT the
+      // ERC-8004 identity registry used to build the identity key.
+      const previousProofId = reads.computeProofId(reads.registryAddress ?? config.registryAddress, record);
       opInput = { identity, mode: "RESEAL", expectedPriorVersion: record.version.toString(), previousProofId };
     } catch { /* no current lease: fall through to SEAL */ }
 

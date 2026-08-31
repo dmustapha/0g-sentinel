@@ -3,6 +3,9 @@ import { createProductionReadDependencies } from "@/server/prooflock/read-api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Detail enrichment re-downloads 0G Storage evidence + re-verifies Compute + recovers the Flow
+// commitment; allow it to finish rather than being cut by the default function budget.
+export const maxDuration = 60;
 const handlers = createLazyProofLockReadHandlers(createProductionReadDependencies);
 
 export async function GET(request: Request, context: { params: { identityKey: string } }): Promise<Response> {

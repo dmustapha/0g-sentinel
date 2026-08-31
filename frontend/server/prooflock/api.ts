@@ -14,7 +14,10 @@ import type { CurrentAccessV1 } from "@/lib/prooflock-types";
 
 const MAX_BODY_BYTES = 16_384;
 const READ_CACHE = "no-store";
-const DETAIL_ENRICHMENT_TIMEOUT_MS = 2_000;
+// Full detail enrichment re-downloads the 0G Storage evidence (~4s), re-verifies the Compute proof
+// offline, and reconstructs the Flow storage commitment. Real 0G reads exceed a 2s budget, so bound
+// it generously; the caller still degrades to an "unavailable" detail if it genuinely overruns.
+const DETAIL_ENRICHMENT_TIMEOUT_MS = 20_000;
 
 export type ApiStage = RunnerStage | "AUTHENTICATING" | "RESOLVING_IDENTITY" | "READING_PROOF" | "VERIFYING_PROOF" | "HEALTH_CHECK" | "RECOVERING_WRITE";
 export type ApiErrorCode =

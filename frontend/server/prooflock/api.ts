@@ -140,6 +140,61 @@ export function createProofLockStreamHandler(config: Readonly<{
   };
 }
 
+// Public "scan any agent" front door. It runs the SAME audited seal ceremony as the operator
+// stream, but requires NO client token: the server injects the operator token, so anyone can trigger
+// a real, on-chain scan+seal. The HARD spend ceiling is the pre-funded role-key + compute-ledger
+// balance (serverless-safe: when funds run out, the ceremony fails closed). A best-effort in-memory
+// rate limit throttles bursts per instance. It never returns or accepts a secret.
+export function createPublicScanStreamHandler(config: Readonly<{
+  operatorToken: string | undefined;
+  loadRunner(): Promise<StreamRunner>;
+  loadReads(): ProofLockReadDependencies;
+  registryAddress: string;
+  rate?: Readonly<{ max: number; windowMs: number }>;
+}>) {
+  const inner = createProofLockStreamHandler({ operatorToken: config.operatorToken, loadRunner: config.loadRunner });
+  const hits: number[] = [];
+  const max = config.rate?.max ?? 6;
+  const windowMs = config.rate?.windowMs ?? 60_000;
+  return async (request: Request): Promise<Response> => {
+    const requestId = createRequestId();
+    const now = Date.now();
+    while (hits.length > 0 && hits[0] < now - windowMs) hits.shift();
+    if (hits.length >= max) {
+      return apiErrorResponse(null, { code: "RATE_LIMIT", message: "Public scan is busy; try again shortly",
+        stage: "AUTHENTICATING", retryable: true, status: 429, requestId });
+    }
+    let agentId: string;
+    try {
+      const body = await parseSmallObject(request, deadline(request.signal));
+      if (Object.keys(body).some((key) => key !== "agentId") || typeof body.agentId !== "string"
+        || !isCanonicalAgentId(body.agentId)) {
+        return apiErrorResponse(null, { code: "INVALID_INPUT", message: "A canonical ERC-8004 agentId is required",
+          stage: "VALIDATING_IDENTITY", retryable: false, status: 400, requestId });
+      }
+      agentId = body.agentId;
+    } catch (error) { return mapApiError(error, "VALIDATING_IDENTITY", requestId); }
+
+    const identity: AgentIdentity = { namespace: "eip155", chainId: 16661,
+      registryAddress: config.registryAddress as HexAddress, agentId };
+    const identityKey = computeIdentityKey(identity);
+    // Auto-detect: RESEAL an agent that already has a sealed proof, otherwise SEAL a fresh one.
+    let opInput: Record<string, unknown> = { identity, mode: "SEAL" };
+    try {
+      const reads = config.loadReads();
+      const record = await reads.readProofLock(identityKey, deadline(request.signal));
+      const previousProofId = reads.computeProofId(config.registryAddress, record);
+      opInput = { identity, mode: "RESEAL", expectedPriorVersion: record.version.toString(), previousProofId };
+    } catch { /* no current lease: fall through to SEAL */ }
+
+    hits.push(now);
+    const proxied = new Request(request.url, { method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${config.operatorToken ?? ""}` },
+      body: JSON.stringify(opInput) });
+    return inner(proxied);
+  };
+}
+
 export function createRecoveryHandler(config: Readonly<{
   operatorToken: string | undefined; loadRecovery(signal?: AbortSignal): Promise<RecoveryRunner>;
 }>) {

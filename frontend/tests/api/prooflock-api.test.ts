@@ -15,6 +15,7 @@ import {
   createRecoveryHandler,
   createProofLockReadHandlers,
   createProofLockStreamHandler,
+  createPublicScanStreamHandler,
   methodNotAllowedResponse,
   type ProofLockReadDependencies,
 } from "../../server/prooflock/api";
@@ -784,15 +785,80 @@ describe("legacy spend safety", () => {
     expect(source).toContain("ProofLocked");
   });
 
-  it.each(["behavioral", "code", "stream", "queue", "inft"])("disables legacy scan route %s", async (name) => {
+  it.each(["behavioral", "code", "queue", "inft"])("disables legacy scan route %s", async (name) => {
     const source = await readFile(resolve(process.cwd(), `app/api/scan/${name}/route.ts`), "utf8");
     expect(source).toContain("goneResponse");
     expect(source).not.toMatch(/runFullScan|runCodeScanOnly|enqueueAddresses|getQueueStatus/);
+  });
+
+  it("exposes scan/stream as the deliberate public scan front door without embedding a key", async () => {
+    const source = await readFile(resolve(process.cwd(), "app/api/scan/stream/route.ts"), "utf8");
+    expect(source).toContain("createPublicScanStreamHandler");
+    expect(source).not.toContain("goneResponse");
+    // the server injects the operator token from env; no signing key is hardcoded in the route
+    expect(source).not.toMatch(/0x[0-9a-fA-F]{64}|PRIVATE_KEY\s*=/);
   });
 
   it("disables the legacy fine-tuning mutation", async () => {
     const source = await readFile(resolve(process.cwd(), "app/api/fine-tuning/route.ts"), "utf8");
     expect(source).toContain("goneResponse");
     expect(source).not.toMatch(/uploadEvidence|privateKey|ZERO_G_PRIVATE_KEY/);
+  });
+});
+
+describe("public scan stream (no-token front door)", () => {
+  const reads = (record?: unknown) => () => ({
+    readProofLock: record ? vi.fn().mockResolvedValue(record) : vi.fn().mockRejectedValue(new Error("no proof")),
+    computeProofId: vi.fn().mockReturnValue(proofId),
+  }) as unknown as ProofLockReadDependencies;
+  const failingRun = vi.fn(async () => { throw new ProofLockStageError("VALIDATING_IDENTITY", "x"); });
+  const build = (opts: Record<string, unknown> = {}) => createPublicScanStreamHandler({
+    operatorToken,
+    loadRunner: (opts.loadRunner as never) ?? (async () => ({ run: failingRun })),
+    loadReads: (opts.loadReads as never) ?? reads(),
+    registryAddress: ERC8004_IDENTITY_REGISTRY,
+    rate: (opts.rate as never) ?? { max: 3, windowMs: 60_000 },
+  });
+  const post = (h: (r: Request) => Promise<Response>, body: unknown, headers: Record<string, string> = {}) =>
+    h(new Request("https://sentinel.test/api/scan/stream", { method: "POST",
+      headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) }));
+
+  it("rejects a non-canonical agentId with 400 without running", async () => {
+    const loadRunner = vi.fn();
+    const response = await post(build({ loadRunner }), { agentId: "not-a-number" });
+    expect(response.status).toBe(400);
+    expect(loadRunner).not.toHaveBeenCalled();
+  });
+
+  it("requires NO client token (server injects it) and runs a SEAL for a fresh agent", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const run = vi.fn(async (input: Record<string, unknown>) => {
+      captured = input; throw new ProofLockStageError("VALIDATING_IDENTITY", "x");
+    });
+    const response = await post(build({ loadRunner: async () => ({ run }) }), { agentId: "7" });
+    expect(response.status).not.toBe(401);
+    expect(run).toHaveBeenCalled();
+    expect(captured?.mode).toBe("SEAL");
+    expect((captured?.identity as { agentId: string }).agentId).toBe("7");
+  });
+
+  it("auto-detects RESEAL when a current lease already exists", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const run = vi.fn(async (input: Record<string, unknown>) => {
+      captured = input; throw new ProofLockStageError("VALIDATING_IDENTITY", "x");
+    });
+    const response = await post(build({ loadRunner: async () => ({ run }), loadReads: reads({ version: 4n }) }), { agentId: "7" });
+    expect(response.status).not.toBe(401);
+    expect(captured?.mode).toBe("RESEAL");
+    expect(captured?.expectedPriorVersion).toBe(4n);
+    expect(captured?.previousProofId).toBe(proofId);
+  });
+
+  it("rate-limits bursts with 429", async () => {
+    const handler = build({ rate: { max: 2, windowMs: 60_000 } });
+    await post(handler, { agentId: "7" });
+    await post(handler, { agentId: "7" });
+    const third = await post(handler, { agentId: "7" });
+    expect(third.status).toBe(429);
   });
 });

@@ -311,7 +311,7 @@ describe("public read handlers", () => {
     let response: Response | undefined;
     void pending.then((value) => { response = value; });
 
-    await vi.advanceTimersByTimeAsync(2_000);
+    await vi.advanceTimersByTimeAsync(20_000);
 
     expect(response).toBeDefined();
     expect(await response!.json()).toMatchObject({

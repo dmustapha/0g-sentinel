@@ -54,6 +54,33 @@
   .inventory-card .ui-data-row__value button:focus-visible { outline-color: var(--focus-on-dark); }
   .inventory-order, .inventory-partial { margin-bottom: var(--space-2); }
   .inventory-cards { display: none; font-size: var(--type-body); }
+  .inventory-section { margin-top: var(--space-8); }
+  .inventory-section .section-heading { margin-bottom: var(--space-3); }
+  .leaderboard { margin-bottom: var(--space-3); }
+  .leaderboard-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1-5); margin-bottom: var(--space-2); }
+  .leaderboard-sort { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+  .leaderboard-count { color: var(--text-muted-on-dark); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .leaderboard-table caption { padding: var(--space-2) 13px; color: var(--text-muted-on-dark); background: var(--surface-ceremony); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); text-align: left; }
+  .leaderboard-table th:nth-child(1) { width: 7%; }
+  .leaderboard-table th:nth-child(2) { width: 18%; }
+  .leaderboard-table th:nth-child(3) { width: 20%; }
+  .leaderboard-table th:nth-child(4) { width: 15%; }
+  .leaderboard-table th:nth-child(5) { width: 14%; }
+  .leaderboard-table th:nth-child(6) { width: 18%; }
+  .leaderboard-table th:nth-child(7) { width: 8%; }
+  .leaderboard-agent { display: grid; gap: 3px; min-width: 0; }
+  .leaderboard-gate { display: grid; gap: 5px; justify-items: start; }
+  .leaderboard-risk { display: grid; gap: 2px; }
+  .leaderboard-table a { color: var(--action-on-dark); text-decoration: underline; text-underline-offset: 3px; }
+  .leaderboard-table a:focus-visible, .leaderboard-sort-button:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
+  .leaderboard-cards { display: none; margin: 0; padding: 0; list-style: none; }
+  .leaderboard-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
+  .leaderboard-card-data { display: grid; margin-top: var(--space-2); }
+  .leaderboard-field { display: grid; grid-template-columns: minmax(120px, .4fr) 1fr; gap: 18px; padding: 10px 0; border-top: 1px solid var(--border-subtle-on-dark); }
+  .leaderboard-field dt { color: var(--text-muted-on-dark); }
+  .leaderboard-field dd { margin: 0; color: var(--text-on-dark); }
+  .leaderboard-card .leaderboard-agent a, .leaderboard-card .leaderboard-agent { color: var(--action-on-dark); }
+  .leaderboard-card .leaderboard-agent a:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
   .loading-ledger { display: flex; align-items: center; gap: var(--space-1); }
   .legacy-banner, .trust-disclosure { display: grid; gap: 4px; }
   .detail-header { margin: 30px 0; display: flex; justify-content: space-between; gap: var(--space-3); align-items: flex-end; }
@@ -65,6 +92,11 @@
   .commitments { margin-top: 26px; }
   .lifecycle-rail { margin-top: 22px; display: grid; gap: 10px; }
   .life-node { display: grid; gap: 4px; }
+  .timeline-rail { margin: 22px 0 0; padding: 0 0 0 22px; list-style: none; display: grid; gap: 16px; }
+  .timeline-node { position: relative; display: grid; gap: 8px; padding: 12px 14px; border-left: 3px solid var(--status-unknown-on-paper); }
+  .timeline-node__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .timeline-node__head dl, .timeline-node .proof-list { margin-top: 4px; }
+  .timeline-node__note { margin-top: 2px; }
   .lifecycle-controls { margin-top: 18px; grid-template-columns: 1fr; }
   .drift-diff { display: grid; gap: 7px; }
   .verify-sheet { display: grid; gap: 10px; max-width: var(--measure-verify); }
@@ -89,6 +121,8 @@
     .inventory-table { display: none; }
     .inventory-cards { display: grid; }
     .inventory-legend { display: none; }
+    .leaderboard-table { display: none; }
+    .leaderboard-cards { display: grid; }
     .inventory-card .card-row > div { min-width: 0; }
     .inventory-card-data .ui-data-row, .inventory-status-row, .inventory-action-row { grid-template-columns: minmax(110px, .4fr) 1fr; }
     .decision-grid, .health-grid { grid-template-columns: 1fr 1fr; }
@@ -106,6 +140,7 @@
     .card-row, .detail-header { align-items: flex-start; flex-direction: column; }
     .micro-grid, .coverage-grid, .decision-grid, .health-grid { grid-template-columns: 1fr; }
     .inventory-card-data .ui-data-row, .inventory-status-row, .inventory-action-row { grid-template-columns: 1fr; gap: 4px; }
+    .leaderboard-field { grid-template-columns: 1fr; gap: 4px; }
     .proof-list > div { grid-template-columns: 1fr; gap: 4px; }
     .proof-ceremony { padding: 18px 14px; }
     .rail-line { left: 31px; }

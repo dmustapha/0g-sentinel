@@ -2,7 +2,7 @@
 
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AgentsTable } from "../../components/AgentsTable";
 import type { ProofLockInventoryItem } from "../../lib/prooflock-types";
@@ -87,7 +87,7 @@ describe("ProofLock inventory navigation", () => {
     client.discoverProofLocks.mockResolvedValue(discovery([verifiedItem(), enrichmentItem()]));
     render(<ProofLocksPage />);
     expect(await screen.findByText("Partial results")).toBeTruthy();
-    expect(screen.getByText(/Deterministic order: operational urgency/)).toBeTruthy();
+    expect(screen.getByText(/Deterministic order: combined risk/)).toBeTruthy();
     expect(screen.getByText(/complete inventory unavailable/)).toBeTruthy();
   });
 
@@ -101,13 +101,12 @@ describe("ProofLock inventory navigation", () => {
     expect(screen.queryByText("Partial results")).toBeNull();
   });
 
-  it("offers recovery when the bounded finalized range is empty", async () => {
-    client.discoverProofLocks.mockResolvedValueOnce(discovery([])).mockResolvedValueOnce(discovery([verifiedItem()]));
+  it("offers a scan path when no sealed agents are in range", async () => {
+    client.discoverProofLocks.mockResolvedValue(discovery([]));
     render(<ProofLocksPage />);
-    expect(await screen.findByText("No recent finalized events")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry read" }));
-    await waitFor(() => expect(client.discoverProofLocks).toHaveBeenCalledTimes(2));
-    expect(await screen.findAllByText("Open proof record")).toHaveLength(2);
+    expect(await screen.findByText(/No sealed agents yet — run a scan/)).toBeTruthy();
+    const scanLink = screen.getByRole("link", { name: "Run a scan" });
+    expect(scanLink.getAttribute("href")).toBe("/scan");
   });
 
   it("uses the server-owned observation time for both ordering and lease presentation", async () => {

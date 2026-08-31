@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { AdmissionLeaseCard } from "@/components/AdmissionLeaseCard";
+import { AttestationTimeline, type TimelineHead } from "@/components/AttestationTimeline";
 import { DemoFixtureBadge } from "@/components/DemoFixtureBadge";
 import { EvidenceProofCard } from "@/components/EvidenceProofCard";
 import { GateDecisionCard } from "@/components/GateDecisionCard";
@@ -16,13 +17,14 @@ import { DataRow } from "@/components/ui/DataRow";
 import { ProofPlane } from "@/components/ui/ProofPlane";
 import { readProofLockDetail, resolveIdentityLocator, verifyProof } from "@/lib/prooflock-client";
 import { currentRefreshDelay, initialProofDetailState, mapCurrentPlane, mapHistoricalPlane,
-  proofDetailReducer, safeSealedObservedAt, type ProofDetailState } from "@/lib/proof-detail-state";
+  proofDetailReducer, safeSealedObservedAt, type CurrentDecisionView, type HistoricalPlaneView,
+  type ProofDetailState } from "@/lib/proof-detail-state";
 import { canonicalAgentHref, canonicalProofHref, parseSourceTxHashParam,
   verifyLinkedHistoricalProof } from "@/lib/prooflock-routes";
 import { safeDisplayText } from "@/lib/safe-display";
 import { observationStatusAt } from "@/lib/prooflock-observations";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
-import type { CanonicalIdentity, ProofLockDetailResponse } from "@/lib/prooflock-types";
+import type { CanonicalIdentity, ProofLockDetailResponse, ProofLockRecord } from "@/lib/prooflock-types";
 
 type ActiveLocator = Readonly<{ agentId: string; identityKey: string; generation: number }>;
 const LEDGER_GRID_STYLE = Object.freeze({
@@ -195,6 +197,9 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
         onClick={() => void refreshCurrent()}>Refresh current state</Button>
       <SealLifecycle currentVerified={Boolean(currentRecord)} currentVersion={(currentRecord ?? record).version}
         previousProofId={previous} identityKey={record.identityKey} />
+      <AttestationTimeline head={timelineHead(currentRecord ?? record, historical, current?.decision,
+        verifiedSourceTxHash, Boolean(currentRecord))} previousProofId={previous} identityKey={record.identityKey}
+        explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />
       {!currentRecord && <AdmissionLeaseCard basis="registry" record={record} />}</section>
     <p><Link className="text-link" href={`/operator?agentId=${identity.identity.agentId}`}>Open operator workbench</Link> for authorized drift, reseal, and recovery actions.</p>
     <TrustRoleDisclosure admin={process.env.NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS} guardian={process.env.NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS}
@@ -215,4 +220,27 @@ function IdentityHeader({ fixture, identity }: Readonly<{
 
 function LoadingView() { return <section className="workspace-section detail-page"><div className="wrap loading-ledger"><h1>ProofLock detail</h1><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate with pinned current access…</span></div></section>; }
 function ErrorView({ message }: { message: string }) { return <section className="workspace-section detail-page"><div className="wrap empty-ledger"><h1>ProofLock unavailable</h1><p><bdi>{message}</bdi></p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>; }
+function timelineHead(record: ProofLockRecord, historical: HistoricalPlaneView | null,
+  decision: CurrentDecisionView | undefined, sourceTxHash: string | undefined,
+  verified: boolean): TimelineHead {
+  const drifted = record.state === 3;
+  const sealedSource = historical?.status === "MATCH" ? historical.proof.source.transactionHash : sourceTxHash;
+  return {
+    version: record.version,
+    storageRoot: record.storageRoot,
+    sourceTxHash: sealedSource,
+    gate: gateStateFor(decision, drifted),
+    drifted,
+    verified,
+  };
+}
+
+function gateStateFor(decision: CurrentDecisionView | undefined, drifted: boolean): TimelineHead["gate"] {
+  if (!decision) return { status: drifted ? "BLOCKED" : "UNAVAILABLE",
+    label: drifted ? "Blocked: drift detected" : "Gate read unavailable" };
+  if (decision.status === "VERIFIED") return { status: "VERIFIED", label: "Allowed" };
+  return { status: decision.status,
+    label: safeDisplayText(decision.reason, { maxGraphemes: 80 }) };
+}
+
 function errorMessage(cause: unknown): string { return safeDisplayText(cause instanceof Error ? cause.message : "ProofLock detail is unavailable", { maxGraphemes: 256 }); }

@@ -9,7 +9,10 @@ import { assertZeroGMainnetRpc } from "@/server/prooflock/rpc";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const WINDOW = 2_000;
+// 0G RPC serves wide getLogs ranges for this low-volume event, so we scan a generous recent window
+// (well beyond a single lease's lifecycle) rather than the last ~40 minutes. Still "recent finalized
+// activity", not a complete index, but wide enough to surface active leases on the leaderboard.
+const WINDOW = 100_000;
 const CAP = 100;
 const CONCURRENCY = 4;
 const READ_ONLY_SIGNER = "0x0000000000000000000000000000000000000001";

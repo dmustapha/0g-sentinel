@@ -5,10 +5,12 @@ import Link from "next/link";
 
 export function NavLinks() {
   const pathname = usePathname();
+  const scanActive = withinRoute(pathname, "/scan");
   const agentsActive = withinRoute(pathname, "/agents");
   const proofActive = withinRoute(pathname, "/proof");
   const operatorActive = withinRoute(pathname, "/operator");
-  const current = agentsActive ? "ProofLocks"
+  const current = scanActive ? "Scan"
+    : agentsActive ? "ProofLocks"
     : proofActive ? "Verify"
     : operatorActive ? "Operator"
     : pathname === "/" ? "Overview" : null;
@@ -17,6 +19,10 @@ export function NavLinks() {
       <Link href="/" className={pathname === "/" ? "active" : ""}
         aria-current={pathname === "/" ? "page" : undefined}>
         Overview
+      </Link>
+      <Link href="/scan" className={scanActive ? "active" : ""}
+        aria-current={scanActive ? "page" : undefined}>
+        Scan
       </Link>
       <Link href="/agents" className={agentsActive ? "active" : ""}
         aria-current={agentsActive ? "page" : undefined}>

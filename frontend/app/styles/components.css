@@ -1,4 +1,11 @@
 @layer components.prooflock {
+  .scan-console { margin-top: var(--space-6); display: grid; gap: var(--space-5); }
+  .scan-disclosure { margin-top: var(--space-3); color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .scan-status-region:empty { display: none; }
+  .scan-outcome:focus-visible { outline: 2px solid var(--violet); outline-offset: 6px; }
+  .scan-outcome:focus:not(:focus-visible) { outline: none; }
+  .scan-sealed { display: grid; gap: var(--space-4); }
+  .scan-links { display: flex; flex-wrap: wrap; gap: var(--space-4); }
   .topbar { position: sticky; top: 0; z-index: var(--layer-header); border-bottom: 1px solid var(--line); background: var(--surface-topbar); }
   .wordmark { min-height: var(--control-min); display: inline-flex; align-items: center; gap: 10px; font: 700 var(--type-body) var(--font-display); white-space: nowrap; }
   .wordmark .mk { position: relative; width: 22px; height: 22px; background: var(--violet); clip-path: polygon(0 0, 100% 0, 100% 65%, 65% 100%, 0 100%); }

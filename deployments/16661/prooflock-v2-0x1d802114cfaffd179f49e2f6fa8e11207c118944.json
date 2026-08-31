@@ -1,0 +1,83 @@
+{
+  "schemaVersion": "prooflock-deployment-v2",
+  "network": "0g-aristotle-mainnet",
+  "chainId": 16661,
+  "deployedAt": "2026-08-30T23:43:53.182Z",
+  "deployer": "0xc211C942946011859ca634F22400d80570ED12A5",
+  "custodyConstraint": "admin, scanner, and guardian must remain distinct custodians",
+  "roles": {
+    "admin": "0x2988609Bc97FA5D03999a93750D7944A35617Ebc",
+    "scanner": "0x361A8776a1C32f2CB5A84b6dEDF43D97205167AA",
+    "guardian": "0x3492C09313B610A200264AB8f78BC263A06b0D4d"
+  },
+  "policy": {
+    "maxBehavioralScore": 50,
+    "maxCodeRisk": 1,
+    "requiredCoverage": 127,
+    "minimumPolicyVersion": 1,
+    "maximumAgeSeconds": 604800
+  },
+  "dependencies": {
+    "erc8004IdentityRegistry": "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432"
+  },
+  "contracts": {
+    "registry": {
+      "address": "0x1d802114cfAFFd179f49E2F6fa8e11207c118944",
+      "transactionHash": "0x96ce3312bb7419ecc96ab9f14186205a2bedb3d5d9226227872f1a75abe3c39b",
+      "blockNumber": 43090189,
+      "runtimeCodeHash": "0xa497803c69f137380a7eb2be1f946ef93e3f6a497c5c766e418731378dba16ef",
+      "confirmations": 3,
+      "constructorArgs": [
+        "0x2988609Bc97FA5D03999a93750D7944A35617Ebc",
+        "0x361A8776a1C32f2CB5A84b6dEDF43D97205167AA",
+        "0x3492C09313B610A200264AB8f78BC263A06b0D4d"
+      ]
+    },
+    "gate": {
+      "address": "0x32Ae81B1150AA7E91d8341E59b3810950e7A1171",
+      "transactionHash": "0x8b1520c01360db1cd080eac05f477e6e66d1ca5ffecce94c0bcab12668219568",
+      "blockNumber": 43090201,
+      "runtimeCodeHash": "0x80aea96f16c7821eef328d795239e03b2247bb9466441272df96d6417fbba355",
+      "confirmations": 3,
+      "constructorArgs": [
+        "0x1d802114cfAFFd179f49E2F6fa8e11207c118944",
+        "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+        50,
+        1,
+        127,
+        1,
+        604800
+      ]
+    },
+    "consumer": {
+      "address": "0x71823afFA086f6a4Be64B67142480Fa889Cd0773",
+      "transactionHash": "0xf311d48836bf881cab9a0658729b74301bc81f79d03d476030a981a46bb4d982",
+      "blockNumber": 43090213,
+      "runtimeCodeHash": "0xb9ddf831d7ade428b4d58490efa77a1535c20c336dd5a494e9a9b6349753bf9e",
+      "confirmations": 3,
+      "constructorArgs": [
+        "0x32Ae81B1150AA7E91d8341E59b3810950e7A1171"
+      ]
+    }
+  },
+  "envHandoff": {
+    "server": {
+      "PROOFLOCK_REGISTRY_V2_ADDRESS": "0x1d802114cfAFFd179f49E2F6fa8e11207c118944",
+      "PROOFLOCK_REGISTRY_V2_FROM_BLOCK": "43090189",
+      "PROOFLOCK_AGENT_GATE_V2_ADDRESS": "0x32Ae81B1150AA7E91d8341E59b3810950e7A1171",
+      "PROOFLOCK_CONSUMER_ADDRESS": "0x71823afFA086f6a4Be64B67142480Fa889Cd0773"
+    },
+    "browser": {
+      "NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS": "0x1d802114cfAFFd179f49E2F6fa8e11207c118944",
+      "NEXT_PUBLIC_AGENT_GATE_V2_ADDRESS": "0x32Ae81B1150AA7E91d8341E59b3810950e7A1171",
+      "NEXT_PUBLIC_PROOFLOCK_CONSUMER_ADDRESS": "0x71823afFA086f6a4Be64B67142480Fa889Cd0773",
+      "NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS": "0x361A8776a1C32f2CB5A84b6dEDF43D97205167AA",
+      "NEXT_PUBLIC_PROOFLOCK_VALIDATOR_VERSION": "sentinel-prooflock-v2",
+      "NEXT_PUBLIC_PROOFLOCK_POLICY_VERSION": "1",
+      "NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS": "0x2988609Bc97FA5D03999a93750D7944A35617Ebc",
+      "NEXT_PUBLIC_PROOFLOCK_SCANNER_ADDRESS": "0x361A8776a1C32f2CB5A84b6dEDF43D97205167AA",
+      "NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS": "0x3492C09313B610A200264AB8f78BC263A06b0D4d",
+      "NEXT_PUBLIC_PROOFLOCK_CUSTODY_CONSTRAINT": "admin-scanner-guardian-must-remain-distinct"
+    }
+  }
+}

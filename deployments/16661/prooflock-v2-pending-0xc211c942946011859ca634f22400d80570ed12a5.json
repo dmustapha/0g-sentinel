@@ -1,0 +1,49 @@
+{
+  "configFingerprint": "0x5fc9230d160d11222370b6cfd43069033801b931bb3434fceaad6f65c7dad825",
+  "confirmations": 3,
+  "deployer": "0xc211C942946011859ca634F22400d80570ED12A5",
+  "estimatedGraphGas": "6000000",
+  "requiredBalance": "30000000105000000",
+  "schemaVersion": "prooflock-deployment-journal-v1",
+  "status": "COMPLETE",
+  "deployments": {
+    "registry": {
+      "address": "0x1d802114cfAFFd179f49E2F6fa8e11207c118944",
+      "transactionHash": "0x96ce3312bb7419ecc96ab9f14186205a2bedb3d5d9226227872f1a75abe3c39b",
+      "blockNumber": 43090189,
+      "runtimeCodeHash": "0xa497803c69f137380a7eb2be1f946ef93e3f6a497c5c766e418731378dba16ef",
+      "confirmations": 3,
+      "constructorArgs": [
+        "0x2988609Bc97FA5D03999a93750D7944A35617Ebc",
+        "0x361A8776a1C32f2CB5A84b6dEDF43D97205167AA",
+        "0x3492C09313B610A200264AB8f78BC263A06b0D4d"
+      ]
+    },
+    "gate": {
+      "address": "0x32Ae81B1150AA7E91d8341E59b3810950e7A1171",
+      "transactionHash": "0x8b1520c01360db1cd080eac05f477e6e66d1ca5ffecce94c0bcab12668219568",
+      "blockNumber": 43090201,
+      "runtimeCodeHash": "0x80aea96f16c7821eef328d795239e03b2247bb9466441272df96d6417fbba355",
+      "confirmations": 3,
+      "constructorArgs": [
+        "0x1d802114cfAFFd179f49E2F6fa8e11207c118944",
+        "0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+        50,
+        1,
+        127,
+        1,
+        604800
+      ]
+    },
+    "consumer": {
+      "address": "0x71823afFA086f6a4Be64B67142480Fa889Cd0773",
+      "transactionHash": "0xf311d48836bf881cab9a0658729b74301bc81f79d03d476030a981a46bb4d982",
+      "blockNumber": 43090213,
+      "runtimeCodeHash": "0xb9ddf831d7ade428b4d58490efa77a1535c20c336dd5a494e9a9b6349753bf9e",
+      "confirmations": 3,
+      "constructorArgs": [
+        "0x32Ae81B1150AA7E91d8341E59b3810950e7A1171"
+      ]
+    }
+  }
+}

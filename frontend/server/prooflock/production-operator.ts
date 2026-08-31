@@ -210,7 +210,7 @@ function driftDependencies(
     confirmations: config.confirmations, timeoutMs: config.timeoutMs,
     readSealedSnapshot: async (identityKey) => {
       const record = await chainAdapter.getProofLock(identityKey);
-      const verified = await reads.verifyStoredEvidence(record, new AbortController().signal);
+      const verified = await boundedStorageRead((signal) => reads.verifyStoredEvidence(record, signal));
       const envelope = parseEnvelope(verified.envelope, identityKey);
       snapshots.set(identityKey, envelope);
       return Object.freeze({ identityKey, version: record.version, fingerprint: envelopeFingerprint(envelope) });
@@ -233,8 +233,18 @@ async function recoverEnvelope(
   reads: ReturnType<typeof createProductionReadDependencies>,
 ): Promise<EvidenceEnvelopeV1> {
   const record = await chain.getProofLock(identityKey);
-  const verified = await reads.verifyStoredEvidence(record, new AbortController().signal);
+  const verified = await boundedStorageRead((signal) => reads.verifyStoredEvidence(record, signal));
   return parseEnvelope(verified.envelope, identityKey);
+}
+
+// 0G Storage downloads can hang on this host (transient socket/ephemeral-port pressure). Bound each
+// evidence read so a hang becomes a clean, retryable error at the process level instead of stalling
+// the whole drift/recovery ceremony forever.
+async function boundedStorageRead<T>(fn: (signal: AbortSignal) => Promise<T>, timeoutMs = 120_000): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("0G Storage evidence read timed out")), timeoutMs);
+  try { return await fn(controller.signal); }
+  finally { clearTimeout(timer); }
 }
 
 async function classifyResolved(
@@ -259,7 +269,7 @@ async function deterministicResult(
       inputDigest: digest({ address: subject.address, runtimeCodeHash: subject.runtimeCodeHash,
         block: sourceBlock(subject) }), outputDigest: digest(report), findings })],
     report, evidenceSubject,
-    codeRisk: report.status === "FAIL" ? 2 : report.status === "WARN" ? 1 : 0,
+    codeRisk: deterministicCodeRisk(subject.kind, report.status),
     omissions: subject.kind === "EOA" ? ["Contract code analysis is not applicable to an EOA."] : [],
   });
 }
@@ -281,8 +291,8 @@ async function computeResult(
   deterministic: DeterministicStageResult,
   costs?: PaidCostController,
 ) {
-  const context = canonicalize({ identity: identity.identity, subject: deterministic.evidenceSubject,
-    deterministicChecks: deterministic.checks });
+  const context = canonicalize(normalizeBigints({ identity: identity.identity, subject: deterministic.evidenceSubject,
+    deterministicChecks: deterministic.checks }));
   if (typeof context !== "string") throw new Error("Compute context could not be canonicalized");
   const behavioral = await paidCompute("COMPUTE_BEHAVIORAL", costs,
     () => runStrictCompute(computeInput(config, "behavioral-risk", context), dependencies));
@@ -301,10 +311,27 @@ async function computeResult(
     verdict: Object.freeze({ riskScore: score, codeRisk, label }) });
 }
 
+// 0G providers occasionally return a non-deterministic response (null/prose content, or a transient
+// 5xx) that fails strict parsing. Each attempt is a fresh receipt (unique chatId), so a bounded
+// retry is safe and does not risk a double on-chain write (this runs before any broadcast).
+const RETRYABLE_COMPUTE_CODES = new Set(["COMPUTE_RESPONSE_INVALID", "COMPUTE_PROVIDER_HTTP_ERROR"]);
+export async function retryTransientCompute<T>(run: () => Promise<T>, attempts = 3): Promise<T> {
+  let last: unknown;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try { return await run(); }
+    catch (error) {
+      last = error;
+      const code = (error as { code?: string } | null)?.code;
+      if (!code || !RETRYABLE_COMPUTE_CODES.has(code)) throw error;
+    }
+  }
+  throw last;
+}
+
 async function paidCompute<T>(stage: "COMPUTE_BEHAVIORAL" | "COMPUTE_CONTRACT",
   costs: PaidCostController | undefined, run: () => Promise<T>): Promise<T> {
   costs?.reserve(stage);
-  try { return await run(); }
+  try { return await retryTransientCompute(run); }
   finally { costs?.reconcile(stage, "CONSUMED"); }
 }
 
@@ -313,9 +340,12 @@ function computeInput(
   purpose: "behavioral-risk" | "contract-risk",
   context: string,
 ) {
+  // The user message is a canonical JSON evidence blob. A terse instruction makes some 0G/OpenRouter
+  // models emit null `content` (reasoning-only), which fails strict parsing; an explicit auditor
+  // persona + exact output shape + "output nothing else" reliably yields the parseable JSON.
   const systemPrompt = purpose === "behavioral-risk"
-    ? "Return strict JSON with integer riskScore 0-100 for policy-scoped onchain behavioral admission."
-    : "Return strict JSON with integer riskScore 0-100 for the supplied deterministic contract evidence.";
+    ? 'You are an on-chain behavioral risk auditor. Analyze the subject evidence JSON in the user message and assess admission risk. Respond with ONLY a strict minified JSON object of exactly this shape: {"riskScore": N} where N is an integer from 0 (safe) to 100 (malicious). Output nothing else, no prose, no code fences.'
+    : 'You are a smart-contract code risk auditor. Analyze the deterministic contract evidence JSON in the user message. Respond with ONLY a strict minified JSON object of exactly this shape: {"riskScore": N} where N is an integer from 0 (safe) to 100 (dangerous). Output nothing else, no prose, no code fences.';
   return Object.freeze({ chainId: 16661 as const, purpose, provider: config.computeProvider,
     model: config.computeModel, systemPrompt, userMessage: context,
     spendAuthorized: config.spendAuthorized, timeoutMs: config.timeoutMs });
@@ -451,8 +481,32 @@ function checkId(report: SubjectCheckReport): string {
   return "delegated-eoa-analysis";
 }
 
+// Deep-normalize BigInt -> decimal string so json-canonicalize can serialize live subject data
+// (block numbers, nonces, balances arrive as BigInt from the ethers adapter). The result is only
+// ever hashed, never parsed back, so decimal strings are a stable, lossless canonical form.
+export function normalizeBigints(value: unknown): unknown {
+  if (typeof value === "bigint") return value.toString();
+  if (Array.isArray(value)) return value.map(normalizeBigints);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, normalizeBigints(inner)]));
+  }
+  return value;
+}
+
+export function stableEvidenceDigest(value: unknown): Bytes32 {
+  return digest(value);
+}
+
+// A pure EOA has no code, so its deterministic code risk is always 0 — the EOA history WARN is a
+// behavioral finding (fed to the risk model), not code risk. The runner enforces the same invariant
+// (EOA subjects must seal with codeRisk === 0). Contracts and delegated EOAs carry real code risk.
+export function deterministicCodeRisk(kind: ClassifiedSubject["kind"], status: string): number {
+  if (kind === "EOA") return 0;
+  return status === "FAIL" ? 2 : status === "WARN" ? 1 : 0;
+}
+
 function digest(value: unknown): Bytes32 {
-  const serialized = canonicalize(value);
+  const serialized = canonicalize(normalizeBigints(value));
   if (typeof serialized !== "string") throw new Error("Deterministic evidence could not be canonicalized");
   return keccak256(toUtf8Bytes(serialized)) as Bytes32;
 }

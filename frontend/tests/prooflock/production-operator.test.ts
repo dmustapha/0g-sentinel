@@ -10,9 +10,64 @@ import {
   assertProductionSealableSubject,
   parseContractCodeRisk,
   readProductionOperatorConfig,
+  stableEvidenceDigest,
+  retryTransientCompute,
+  deterministicCodeRisk,
 } from "../../server/prooflock/production-operator";
 import { bindOperatorRunner } from "../../server/prooflock/operator";
 import type { RunnerInput } from "../../server/prooflock/runner";
+
+describe("stableEvidenceDigest (BigInt-safe canonical digest)", () => {
+  it("digests values containing BigInt without throwing", () => {
+    // Live subject checks carry BigInt block numbers/nonces; json-canonicalize cannot serialize
+    // BigInt, which aborted the real deterministic stage. The digest must normalize them.
+    const d = stableEvidenceDigest({ address: "0xabc", block: { sourceBlock: { number: 43090189n } }, nonce: 7n });
+    expect(d).toMatch(/^0x[0-9a-f]{64}$/);
+  });
+  it("is deterministic and treats BigInt n and its decimal string identically", () => {
+    expect(stableEvidenceDigest({ n: 43090189n })).toBe(stableEvidenceDigest({ n: "43090189" }));
+    expect(stableEvidenceDigest({ a: [1n, 2n], b: { c: 3n } })).toBe(stableEvidenceDigest({ a: [1n, 2n], b: { c: 3n } }));
+  });
+});
+
+describe("retryTransientCompute", () => {
+  const invalid = Object.assign(new Error("bad"), { code: "COMPUTE_RESPONSE_INVALID" });
+  it("returns the first success without retry", async () => {
+    const run = vi.fn(async () => "ok");
+    expect(await retryTransientCompute(run, 3)).toBe("ok");
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it("retries a non-deterministic COMPUTE_RESPONSE_INVALID then succeeds", async () => {
+    let n = 0;
+    const run = vi.fn(async () => { if (n++ < 2) throw invalid; return "ok"; });
+    expect(await retryTransientCompute(run, 3)).toBe("ok");
+    expect(run).toHaveBeenCalledTimes(3);
+  });
+  it("rethrows a non-retryable error immediately", async () => {
+    const run = vi.fn(async () => { throw Object.assign(new Error("x"), { code: "COMPUTE_SIGNATURE_INVALID" }); });
+    await expect(retryTransientCompute(run, 3)).rejects.toMatchObject({ code: "COMPUTE_SIGNATURE_INVALID" });
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+  it("throws the last error after exhausting attempts", async () => {
+    const run = vi.fn(async () => { throw invalid; });
+    await expect(retryTransientCompute(run, 3)).rejects.toMatchObject({ code: "COMPUTE_RESPONSE_INVALID" });
+    expect(run).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("deterministicCodeRisk", () => {
+  it("is 0 for a pure EOA even when the behavioral check WARNs (EOAs carry no code risk)", () => {
+    // The EOA history WARN is a behavioral finding; the runner invariant requires EOA codeRisk === 0.
+    expect(deterministicCodeRisk("EOA", "WARN")).toBe(0);
+    expect(deterministicCodeRisk("EOA", "PASS")).toBe(0);
+  });
+  it("maps contract/delegated code-analysis status to code risk", () => {
+    expect(deterministicCodeRisk("CONTRACT", "FAIL")).toBe(2);
+    expect(deterministicCodeRisk("CONTRACT", "WARN")).toBe(1);
+    expect(deterministicCodeRisk("CONTRACT", "PASS")).toBe(0);
+    expect(deterministicCodeRisk("EIP7702_DELEGATED_EOA", "FAIL")).toBe(2);
+  });
+});
 
 const SCANNER_KEY = `0x${"11".repeat(32)}`;
 const GUARDIAN_KEY = `0x${"22".repeat(32)}`;

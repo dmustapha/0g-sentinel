@@ -78,3 +78,7 @@ PULSE.md
 frontend/proposals/
 .prooflock-build/
 frontend/.prooflock-build/
+
+# Never commit env backups (they hold funded keys)
+.env.bak*
+.env.backup*

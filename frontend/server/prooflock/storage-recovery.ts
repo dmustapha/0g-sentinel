@@ -1,4 +1,4 @@
-import type { Filter, Log, TransactionReceipt, TransactionResponse } from "ethers";
+import { concat, keccak256, type Filter, type Log, type TransactionReceipt, type TransactionResponse } from "ethers";
 
 import { verifyStorageArtifactBinding } from "./offline-verifier";
 import type { RegistryProofLockRecord } from "./chain";
@@ -100,7 +100,31 @@ function containsRoot(submission: unknown, expected: string): boolean {
   if (!submission || typeof submission !== "object") return false;
   const value = submission as { data?: unknown; nodes?: readonly { root?: unknown }[] };
   if (value.data) return containsRoot(value.data, expected);
-  return Boolean(value.nodes?.some((node) => String(node.root).toLowerCase() === expected.toLowerCase()));
+  const nodes = value.nodes;
+  if (!nodes?.length) return false;
+  const want = expected.toLowerCase();
+  // Single-subtree file: the file root IS the one submission node root.
+  if (nodes.some((node) => normalizeRoot(node.root)?.toLowerCase() === want)) return true;
+  // Multi-subtree file: the SDK file root is the keccak fold of the subtree node roots,
+  // right-to-left (root = keccak256(node[i] ++ acc)). The on-chain Submit event only records the
+  // subtree nodes, so we must reconstruct the file root to match the sealed storageRoot.
+  return foldSubmissionRoot(nodes) === want;
+}
+
+function foldSubmissionRoot(nodes: readonly { root?: unknown }[]): string | null {
+  let acc = normalizeRoot(nodes[nodes.length - 1]?.root);
+  if (!acc) return null;
+  for (let i = nodes.length - 2; i >= 0; i -= 1) {
+    const node = normalizeRoot(nodes[i]?.root);
+    if (!node) return null;
+    acc = keccak256(concat([node, acc]));
+  }
+  return acc.toLowerCase();
+}
+
+function normalizeRoot(root: unknown): string | null {
+  const hex = typeof root === "bigint" ? `0x${root.toString(16).padStart(64, "0")}` : String(root);
+  return /^0x[0-9a-fA-F]{64}$/.test(hex) ? hex : null;
 }
 
 function makeRecoveredCommitment(

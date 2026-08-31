@@ -1,5 +1,5 @@
 import { FixedPriceFlow__factory } from "@0gfoundation/0g-storage-ts-sdk";
-import { keccak256, toUtf8Bytes } from "ethers";
+import { concat, keccak256, toUtf8Bytes } from "ethers";
 import { describe, expect, it, vi } from "vitest";
 
 import { canonicalizeStorageCommitment } from "../../server/prooflock/canonical";
@@ -53,6 +53,28 @@ describe("Storage commitment recovery", () => {
   it("reconstructs the artifact-bound finalized Flow submission without claiming a network proof", async () => {
     await expect(recoverStorageCommitment(provider(), FLOW, 0, 3, record(), new AbortController().signal))
       .resolves.toEqual(commitment());
+  });
+
+  it("reconstructs a multi-subtree file whose root is the keccak fold of the submission nodes", async () => {
+    // Real 0G files split into several power-of-two subtrees; the Submit event records the subtree
+    // node roots, and the SDK file root is their right-to-left keccak fold. Recovery must match it.
+    const A = `0x${"aa".repeat(32)}`;
+    const B = `0x${"bb".repeat(32)}`;
+    const folded = keccak256(concat([A, B])) as Bytes32; // fold of [A,B] right-to-left
+    const multiCommit: StorageCommitment = { ...commitment(), storageRoot: folded, retrievedDigest: DIGEST };
+    const multiRecord: RegistryProofLockRecord = { ...record(), storageRoot: folded,
+      artifactHash: keccak256(toUtf8Bytes(canonicalizeStorageCommitment(multiCommit))) as Bytes32 };
+    const data = { length: 44, tags: "0x", nodes: [{ root: A, height: 1 }, { root: B, height: 0 }] };
+    const encoded = iface.encodeEventLog(iface.getEvent("Submit"), [SENDER, DIGEST, 44, 0, 44, data]);
+    const log = { address: FLOW, topics: encoded.topics, data: encoded.data, transactionHash: TX,
+      blockNumber: 100, index: 0, transactionIndex: 0, blockHash: DIGEST, removed: false } as never;
+    const prov: StorageRecoveryProvider = {
+      getCode: async () => "0x6000", getBlockNumber: async () => 105, getLogs: async () => [log],
+      getTransactionReceipt: async () => ({ status: 1, to: FLOW, hash: TX, blockNumber: 100, blockHash: DIGEST, logs: [log] } as never),
+      getTransaction: async () => ({ to: FLOW, from: SENDER, hash: TX, data: iface.encodeFunctionData("submit", [{ data, submitter: SENDER }]), value: 0n } as never),
+    };
+    await expect(recoverStorageCommitment(prov, FLOW, 0, 3, multiRecord, new AbortController().signal))
+      .resolves.toEqual(multiCommit);
   });
 
   it("rejects a Submit event when the transaction calldata did not submit the stored root", async () => {

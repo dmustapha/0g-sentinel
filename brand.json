@@ -1,0 +1,67 @@
+{
+  "name": "0G Sentinel",
+  "product": "ProofLock",
+  "tagline": "Admission should be provable.",
+  "description": "Provable, drift-aware admission for AI agents on 0G. Identity-bound, versioned admission leases backed by verified 0G Compute, root-matched 0G Storage evidence, and reason-coded AgentGateV2 decisions.",
+  "canonicalStyleSource": "frontend/app/styles/tokens.css",
+  "note": "Color and font values below are mirrored from the canonical token source for handoff. The running app reads them from tokens.css, never from this file.",
+  "logo": {
+    "component": "frontend/components/Logo.tsx",
+    "form": "inline-svg",
+    "concept": "A corner-cut seal enclosing a keyhole. The seal frame echoes the dossier clip-path motif used across the evidence cards; its top-right corner is clipped and its base narrows to a sentinel point. The keyhole at the center reads two ways at once: a watchful eye (the sentinel) and a lock (ProofLock). The frame inherits currentColor so the wordmark stays monochrome-friendly; the keyhole carries the single violet accent, so the mark holds up in one flat color and at 22px in the nav.",
+    "accentToken": "--action-on-dark",
+    "accentOverride": "--logo-accent",
+    "monochrome": true,
+    "minSizePx": 22
+  },
+  "color": {
+    "accent": {
+      "violetOnDark": "#ad72ff",
+      "violetOnPaper": "#7950ae"
+    },
+    "surface": {
+      "canvas": "#111214",
+      "raised": "#191a1e",
+      "control": "#222329",
+      "ceremony": "#0d0e10",
+      "paper": "#f1ebdf",
+      "paperMuted": "#e6ddcf"
+    },
+    "text": {
+      "onDark": "#f2efe8",
+      "mutedOnDark": "#a7a39b",
+      "onPaper": "#19181a",
+      "mutedOnPaper": "#5b565b"
+    },
+    "status": {
+      "successOnDark": "#39b982",
+      "cautionOnDark": "#d79a36",
+      "failureOnDark": "#f07878",
+      "successOnPaper": "#116b49",
+      "cautionOnPaper": "#91470a",
+      "failureOnPaper": "#aa303a"
+    },
+    "focus": {
+      "onDark": "#d0b2ff",
+      "onPaper": "#674093"
+    }
+  },
+  "type": {
+    "display": "Chakra Petch",
+    "body": "IBM Plex Sans",
+    "mono": "IBM Plex Mono",
+    "displayStack": "var(--font-chakra), \"Chakra Petch\", sans-serif",
+    "bodyStack": "var(--font-plex-sans), \"IBM Plex Sans\", sans-serif",
+    "monoStack": "var(--font-plex-mono), \"IBM Plex Mono\", monospace"
+  },
+  "geometry": {
+    "corner": "square (0 radius)",
+    "dossierCut": "16px",
+    "shadowControl": "3px 3px 0 #000000",
+    "shadowSheet": "5px 5px 0 #000000"
+  },
+  "voice": {
+    "principles": ["proof-first", "honest", "restrained"],
+    "notes": "Lead with what can be proven, not with adjectives. Name the evidence (0G Compute, 0G Storage root, reason-coded gate decision). Never overclaim: if a value is a demo fixture, say so. Sentences over slogans. No exclamation, no hype, no em-dashes. Technical readers over marketing readers."
+  }
+}

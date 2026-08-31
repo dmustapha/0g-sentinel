@@ -4,6 +4,7 @@ import { Chakra_Petch, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import Link from "next/link";
 import "./globals.css";
 import { NavLinks } from "@/components/NavLinks";
+import { Logo } from "@/components/Logo";
 
 const chakra = Chakra_Petch({
   subsets: ["latin"],
@@ -60,8 +61,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
         <header className="topbar">
           <div className="topbar-inner">
-            <Link href="/" className="wordmark">
-              <span className="mk" aria-hidden="true" />
+            <Link href="/" className="wordmark" aria-label="0G Sentinel home">
+              <Logo size={22} title={null} className="mk" />
               0G Sentinel
             </Link>
             <NavLinks />

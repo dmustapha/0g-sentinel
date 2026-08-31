@@ -44,7 +44,7 @@ afterEach(() => cleanup());
 describe("agent detail locator races", () => {
   it("hides prior detail atomically when the source hint becomes invalid", async () => {
     const view = render(<AgentDetailPage params={{ address: "7" }} />);
-    expect(await screen.findByText(sourceOne)).toBeTruthy();
+    expect(await screen.findAllByText(sourceOne)).not.toHaveLength(0);
 
     navigation.query = "sourceTxHash=javascript%3Aalert(1)%E2%80%AE";
     view.rerender(<AgentDetailPage params={{ address: "7" }} />);
@@ -71,9 +71,9 @@ describe("agent detail locator races", () => {
     expect(signals[0]?.aborted).toBe(true);
 
     await act(() => { second.resolve(proof(sourceTwo)); return second.promise; });
-    expect(await screen.findByText(sourceTwo)).toBeTruthy();
+    expect(await screen.findAllByText(sourceTwo)).not.toHaveLength(0);
     await act(() => { first.resolve(proof(sourceOne)); return first.promise; });
-    expect(screen.getByText(sourceTwo)).toBeTruthy();
+    expect(screen.getAllByText(sourceTwo)).not.toHaveLength(0);
     expect(screen.queryByText(sourceOne)).toBeNull();
   });
 

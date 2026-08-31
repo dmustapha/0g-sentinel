@@ -8,7 +8,7 @@ It does **not** certify that an agent is universally safe. Admission means only 
 
 1. Resolve an ERC-8004 Agent ID from the canonical Identity Registry.
 2. Bind the owner, current agent wallet, registration digest, source block, and runtime commitment.
-3. Run typed deterministic checks and two AI-assisted purposes through an acknowledged decentralized separated-model 0G Compute service.
+3. Run typed deterministic checks and two AI-assisted purposes through an acknowledged hardware-TEE-attested (Intel TDX/dstack) separated-signer 0G Compute service. The host is centralized and proxies to OpenRouter; it is not a decentralized operator.
 4. Accept Compute evidence only when the SDK's `processResponse` returns `true` and the signed transcript matches the expected provider signer. There is no receipt-eligible hosted-router fallback.
 5. Upload the exact canonical envelope bytes to 0G Storage, recompute the 0G root locally, confirm the finalized Flow transaction, retrieve the bytes, and match them again.
 6. Write a versioned ProofLock lease to RegistryV2 and read it back.
@@ -24,19 +24,23 @@ Proof history is append-preserved by version. Historical artifact validity is se
 - Drift checks are on-demand, not continuous monitoring.
 - `SAFE` is a policy result, not admission. Only a current lease plus an AgentGateV2 `ALLOWED` decision admits a consumer action.
 - Missing, mismatched, stale, wrong-chain, or unavailable evidence fails closed.
+- The public `/scan` seal runs against a balance-capped allowance: the server injects the operator token and the spend ceiling is the pre-funded low-value role-key balance. Deployer and subject keys are never on the host, and keys are rotated after the event.
+- 0G Compute providers are TEE-attested centralized hosts (Intel TDX / dstack) that proxy to OpenRouter. They are not decentralized. The response is bound to exact bytes; the request commitment is the enclave-attested (normalized) hash.
 
 ## Public application
 
-- `/` — resolve an ERC-8004 identity and run an authenticated evaluation
-- `/agents` — current ProofLock V2 lease inventory
-- `/agents/:agentId` — identity, lease, Gate, evidence, drift, and reseal detail
-- `/proof` — public historical proof verifier and independent subsystem health
-- `/api/v1/identities/resolve` — guarded canonical identity read
-- `/api/v1/prooflocks/:identityKey` — current lease, identity enrichment, and Gate decision
-- `/api/v1/proofs/:proofId/verify?identityKey=…` — retrieve and recompute stored evidence
-- `/api/health` — six independent timestamped probes
-- `/api/admin/prooflocks/stream` — authenticated evaluation stream
-- `/api/admin/prooflocks/:identityKey/drift` — authenticated on-demand drift action
+- `/`: resolve an ERC-8004 identity and run an authenticated evaluation
+- `/scan`: public scan-and-seal front door: enter any ERC-8004 agentId and run the real seal ceremony (identity, deterministic checks, behavioral and code risk via 0G Compute, 0G Storage, versioned RegistryV2 lease, AgentGateV2 decision) with no login. The sealed result is reconciled on-chain.
+- `/agents`: risk-ranking leaderboard of sealed agents (ranked by combined behavioral and code risk via `lib/ranking.ts`), plus the recent finalized ProofLock activity table. This is recent finalized activity, not a complete index.
+- `/agents/:agentId`: identity, lease, Gate, evidence, drift, reseal detail, and a per-agent attestation-history timeline (v1 seal, drift, reseal). The timeline links current and previous versions by `previousProofId` (one hop). Full version enumeration is a documented backend deferral.
+- `/proof`: public historical proof verifier and independent subsystem health
+- `/api/v1/identities/resolve`: guarded canonical identity read
+- `/api/v1/prooflocks/:identityKey`: current lease, identity enrichment, and Gate decision
+- `/api/v1/proofs/:proofId/verify?identityKey=…`: retrieve and recompute stored evidence
+- `/api/health`: six independent timestamped probes
+- `/api/scan/stream`: public balance-capped scan-and-seal stream. The server injects the operator token; the spend ceiling is the pre-funded low-value role-key balance. The deployer and subject keys are never on the host, and keys are rotated after the event.
+- `/api/admin/prooflocks/stream`: authenticated evaluation stream
+- `/api/admin/prooflocks/:identityKey/drift`: authenticated on-demand drift action
 
 Operator tokens are server secrets. The UI keeps an entered token only in component memory for the request and clears it afterward.
 
@@ -108,9 +112,18 @@ npm run build
 cd .. && npx hardhat test
 ```
 
-## Legacy V1 — excluded
+## Legacy V1 registries: excluded
 
-`AttestationRegistry`, `AgentRegistry`, the original `AgentGate`, address-based scanning, background queue, risk ranking, fine-tuning, fictional seeded addresses, and the old evidence endpoint are Legacy V1. Their historical deployments and source remain for provenance, but they are excluded from active ProofLock V2 admission and are not evidence for V2 claims. Legacy mutation/read endpoints return `410 GONE`.
+The old V1 contracts (`AttestationRegistry`, `AgentRegistry`, the original `AgentGate`), their fictional seeded addresses, address-based scanning, and the old evidence endpoint remain Legacy V1. Their historical deployments and source stay for provenance only. They are excluded from active ProofLock V2 admission, are not evidence for any V2 claim, and their mutation and read endpoints return `410 GONE`.
+
+Scanning, risk ranking, and attestation history are now revived as ProofLock-V2-backed views. They are new surfaces built on the V2 core (RegistryV2, AgentGateV2, the seal ceremony), not the old V1 registries or endpoints. Nothing here reads or trusts the excluded V1 data.
+
+Still out of scope, roadmap only:
+
+- Fine-tuning is not built. Its honest current form is a CLI-command return.
+- ERC-7857 iNFT detection is not built (P2).
+- A background batch queue is not built (P2).
+- A complete historical indexer or backfill is deferred; the timeline links versions one hop via `previousProofId`, not a full enumeration.
 
 Current V2 deployment addresses must come from environment configuration. This repository does not invent a production deployment or treat old attestation transactions as current ProofLock evidence.
 

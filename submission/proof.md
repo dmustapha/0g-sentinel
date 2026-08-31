@@ -54,6 +54,16 @@ Identity key `0xf89c397909cc23a344999b4d6a7738fca5324143c0b2bcafb8a716277ae56d78
 | Consumer accept (v2) | accepted | tx `0x57daad296435e392efabe911387c2e8a61497c960a937eab49a8f66c8369456d` (acceptedCount → 2) |
 | Public verifier | reproduced the historical proof | current proofId `0xa4c3bf5c178efaebc568f3d96b98e76c1e7bcd921dc230bccb0938c66028e7c2`; detail status VERIFIED, gate allowed, consumer accepted, storage `retrievalVerified: true` |
 
+## Revived product surface (live)
+
+The former V1 features are revived on top of the ProofLock V2 core. These are new views over V2 state, not the excluded V1 registries. All are live at https://sentinel-prooflock.vercel.app:
+
+- **`/scan`**: public scan-and-seal front door. Enter any ERC-8004 agentId and the real seal ceremony runs (identity, deterministic checks, behavioral and code risk via 0G Compute, 0G Storage, versioned RegistryV2 lease, AgentGateV2 decision), then reconciles the sealed result on-chain. No login. Backed by the public `/api/scan/stream` endpoint: the server injects the operator token and the spend ceiling is the pre-funded low-value role-key balance. Deployer and subject keys are never on the host; keys are rotated after the event.
+- **`/agents` leaderboard**: sealed agents ranked by combined behavioral and code risk (`lib/ranking.ts`), plus the recent finalized ProofLock activity table. Scope is recent finalized activity, not a complete index.
+- **Per-agent attestation timeline**: on `/agents/:agentId`, the v1-seal / drift / reseal history. It links current and previous versions by `previousProofId` (one hop). Full version enumeration is a documented backend deferral.
+
+Honest limitations for this surface: fine-tuning and ERC-7857 iNFT detection are not built (roadmap); no background batch queue; no complete historical indexer or backfill; 0G Compute providers are TEE-attested centralized hosts (Intel TDX / dstack) proxying to OpenRouter, not decentralized.
+
 ## 0G integration summary
 
 - **0G Compute**: mandatory hardware-TEE (TeeML / Intel TDX / dstack) inference through the 0G Compute broker with a separated enclave signer; the strict broker binds the exact response bytes and the enclave-attested request hash, then the SDK settlement (`processResponse`) verifies on-chain accounting. Runs in an isolated subprocess with an SSRF-guarded, credential-stripped transport.

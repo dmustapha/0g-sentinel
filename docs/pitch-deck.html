@@ -247,6 +247,11 @@
     <li><strong>Drift fails closed.</strong> If the registration digest, subject, or runtime code changes, the gate returns DRIFTED / SUBJECT_CHANGED / RUNTIME_CODE_DRIFT and the consumer reverts.</li>
     <li><strong>Reseal restores access.</strong> A fresh evaluation creates a new version; access returns only after the complete policy succeeds again.</li>
   </ul>
+  <ul class="plain">
+    <li><strong>Public scan front door (/scan).</strong> Enter any ERC-8004 agentId and run the real seal ceremony with no login. The stream is balance-capped: the server injects the operator token and the spend ceiling is the pre-funded low-value role-key balance.</li>
+    <li><strong>Risk-ranking leaderboard (/agents).</strong> Sealed agents ranked by combined behavioral and code risk, plus the recent finalized ProofLock activity. Scope is recent finalized activity, not a complete index.</li>
+    <li><strong>Attestation timeline (/agents/:agentId).</strong> The v1-seal, drift, reseal history, linked current-to-previous by previousProofId (one hop). Full version enumeration is a documented deferral.</li>
+  </ul>
 </section>
 
 <!-- 4. LIVE PROOF -->

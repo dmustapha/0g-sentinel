@@ -97,13 +97,22 @@ describe("ScanConsole state machine", () => {
     vi.unstubAllGlobals();
   });
 
-  it("blocks scanning an invalid agent id", async () => {
+  it("blocks scanning an input that is neither an agent id nor an address", async () => {
     const user = userEvent.setup();
     render(<ScanConsole />);
-    const input = screen.getByLabelText(/agent id/i);
+    const input = screen.getByLabelText(/agent id or wallet address/i);
     await user.clear(input);
     await user.type(input, "0x12");
     expect((screen.getByRole("button", { name: /scan agent/i }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText(/invalid agent id/i)).toBeTruthy();
+    expect(screen.getByText(/Agent ID \(decimal\) or a wallet address/i)).toBeTruthy();
+  });
+
+  it("accepts a well-formed wallet address as valid input", async () => {
+    const user = userEvent.setup();
+    render(<ScanConsole />);
+    const input = screen.getByLabelText(/agent id or wallet address/i);
+    await user.clear(input);
+    await user.type(input, "0xDaA09b710cDB279AF411e4a9C4C79D00bfDB282f");
+    expect((screen.getByRole("button", { name: /scan agent/i }) as HTMLButtonElement).disabled).toBe(false);
   });
 });

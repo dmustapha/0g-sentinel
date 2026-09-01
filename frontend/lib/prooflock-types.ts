@@ -217,6 +217,12 @@ export type ResolvedIdentityLocator = Readonly<{
   identityKey: Bytes32;
 }>;
 
+// Plain-English risk narrative (restored from v1), re-parsed from the enclave-signed compute output.
+export type ProofLockRiskAnalysis = Readonly<{
+  behavioralScore: number; codeRisk: number; label: string;
+  behavioralSummary: string | null; behavioralFactors: readonly string[];
+  codeSummary: string | null; codeFactors: readonly string[];
+}>;
 export type ProofLockDetail =
   | Readonly<{ status: "VERIFIED"; identity: Readonly<{
       identityKey: Bytes32; namespace: "eip155"; chainId: 16661; registryAddress: HexAddress; agentId: string;
@@ -227,7 +233,8 @@ export type ProofLockDetail =
       gate: Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number; subject: HexAddress; version: string }>
         | Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
       consumer: Readonly<{ status: "VERIFIED"; accepted: boolean; address: HexAddress; subject: HexAddress; version: string }>
-        | Readonly<{ status: "UNKNOWN"; accepted: false }> }>
+        | Readonly<{ status: "UNKNOWN"; accepted: false }>;
+      analysis?: ProofLockRiskAnalysis }>
   | Readonly<{ status: "UNAVAILABLE"; code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID";
       identity: null; resolution: null; gate: Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
       consumer: Readonly<{ status: "UNKNOWN"; accepted: false }> }>;

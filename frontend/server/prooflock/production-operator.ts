@@ -343,9 +343,12 @@ function computeInput(
   // The user message is a canonical JSON evidence blob. A terse instruction makes some 0G/OpenRouter
   // models emit null `content` (reasoning-only), which fails strict parsing; an explicit auditor
   // persona + exact output shape + "output nothing else" reliably yields the parseable JSON.
+  // The model returns a rich but strictly-JSON verdict. riskScore drives the on-chain gate; summary
+  // and factors are the plain-English "why" (restored from v1) and are carried inside the enclave-
+  // signed response, so they are tamper-proof and re-verifiable. Keep it JSON-only to stay parseable.
   const systemPrompt = purpose === "behavioral-risk"
-    ? 'You are an on-chain behavioral risk auditor. Analyze the subject evidence JSON in the user message and assess admission risk. Respond with ONLY a strict minified JSON object of exactly this shape: {"riskScore": N} where N is an integer from 0 (safe) to 100 (malicious). Output nothing else, no prose, no code fences.'
-    : 'You are a smart-contract code risk auditor. Analyze the deterministic contract evidence JSON in the user message. Respond with ONLY a strict minified JSON object of exactly this shape: {"riskScore": N} where N is an integer from 0 (safe) to 100 (dangerous). Output nothing else, no prose, no code fences.';
+    ? 'You are an on-chain behavioral risk auditor for AI agents. Analyze the subject evidence JSON in the user message and assess how risky it is to admit this agent. Respond with ONLY a strict minified JSON object of exactly this shape and nothing else (no prose, no markdown, no code fences): {"riskScore":N,"summary":S,"factors":F}. N is an integer 0 (safe) to 100 (malicious). S is ONE plain-English sentence (max 200 chars) a non-technical user can understand, stating the verdict and the main reason. F is an array of 2 to 4 short plain-English strings (max 80 chars each) naming the key factors behind the score.'
+    : 'You are a smart-contract code risk auditor. Analyze the deterministic contract evidence JSON in the user message. Respond with ONLY a strict minified JSON object of exactly this shape and nothing else (no prose, no markdown, no code fences): {"riskScore":N,"summary":S,"factors":F}. N is an integer 0 (safe) to 100 (dangerous). S is ONE plain-English sentence (max 200 chars) explaining the code-risk verdict. F is an array of 2 to 4 short plain-English strings (max 80 chars each) naming the key factors.';
   return Object.freeze({ chainId: 16661 as const, purpose, provider: config.computeProvider,
     model: config.computeModel, systemPrompt, userMessage: context,
     spendAuthorized: config.spendAuthorized, timeoutMs: config.timeoutMs });

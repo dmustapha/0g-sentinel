@@ -11,6 +11,7 @@ import { EvidenceProofCard } from "@/components/EvidenceProofCard";
 import { GateDecisionCard } from "@/components/GateDecisionCard";
 import { ProofCoverageGrid } from "@/components/ProofCoverageGrid";
 import { SealLifecycle } from "@/components/SealLifecycle";
+import { AgentDetailSkeleton } from "@/components/Skeletons";
 import { TrustRoleDisclosure } from "@/components/TrustRoleDisclosure";
 import { TechnicalDisclosure } from "@/components/ui/TechnicalDisclosure";
 import { ProofLocatorNotice } from "@/components/VerifyEvidenceButton";
@@ -227,7 +228,7 @@ function IdentityHeader({ identity }: Readonly<{ identity: CanonicalIdentity }>)
   </header>;
 }
 
-function LoadingView() { return <section className="workspace-section detail-page"><div className="wrap loading-ledger"><h1>ProofLock detail</h1><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate with pinned current access…</span></div></section>; }
+function LoadingView() { return <AgentDetailSkeleton />; }
 function ErrorView({ message }: { message: string }) { return <section className="workspace-section detail-page"><div className="wrap empty-ledger"><h1>ProofLock unavailable</h1><p><bdi>{message}</bdi></p><Link href="/agents" className="text-link">← ProofLocks</Link></div></section>; }
 function timelineHead(record: ProofLockRecord, historical: HistoricalPlaneView | null,
   decision: CurrentDecisionView | undefined, sourceTxHash: string | undefined,

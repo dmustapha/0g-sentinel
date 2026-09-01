@@ -1,6 +1,40 @@
 @layer motion {
   @keyframes pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
   @keyframes rail-in { from { opacity: 0; transform: translateY(7px); } }
+
+  /* Soft breathing loop on the running node so it reads as work-in-progress. Opacity only, no reflow. */
+  @keyframes node-breathe { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+  /* Distinct pending shimmer for the on-chain write moment: a bright highlight travels down the rail.
+     Transform only, so it stays within the governed keyframe contract. */
+  @keyframes chain-shimmer { from { transform: translateY(-100%); } to { transform: translateY(100%); } }
+  /* One-shot entrance for the sealed result card: settle from slightly small + transparent. */
+  @keyframes seal-settle {
+    from { opacity: 0; transform: scale(.98); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  /* Staggered mount entrance for hero blocks and skeleton reveals. */
+  @keyframes enter-up {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  /* Verify payoff: success block scales/fades in; the mark draws its stroke. */
+  @keyframes verdict-in {
+    from { opacity: 0; transform: scale(.985); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  /* The verify mark settles in with scale + fade (keyframes here may only touch opacity/transform). */
+  @keyframes mark-pop { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+  /* Restrained failure shake: small horizontal settle, no bounce. */
+  @keyframes verdict-shake {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-3px); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
+  }
+  /* Subtle skeleton shimmer sweep. GPU-friendly (transform), degrades to static under reduced motion. */
+  @keyframes skeleton-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
   .button { transition: transform var(--duration-standard) var(--ease-standard); }
   .identity-skeleton { animation: pulse var(--duration-maximum) var(--ease-standard) infinite alternate; }
   .rail-stage { animation: rail-in var(--duration-standard) var(--ease-standard) both; animation-delay: calc(var(--step) * var(--duration-stagger)); }
@@ -8,7 +42,39 @@
   .loading-ledger i:nth-child(2) { animation-delay: var(--duration-fast); }
   .loading-ledger i:nth-child(3) { animation-delay: var(--duration-standard); }
 
+  /* 1. Scan / seal ceremony. The running node grows a breathing ring via a pseudo-element so the
+     digit stays fully legible; only the ring's opacity loops. */
+  .rail-stage.running .rail-node::after {
+    content: ""; position: absolute; inset: -5px; border: 1px solid var(--violet);
+    animation: node-breathe var(--duration-maximum) var(--ease-standard) infinite alternate;
+  }
+  .proof-ceremony[data-writing="true"] .rail-advance { overflow: hidden; }
+  .proof-ceremony[data-writing="true"] .rail-advance::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(var(--rail-end-on-ceremony), var(--text-on-dark), var(--rail-end-on-ceremony));
+    animation: chain-shimmer var(--duration-maximum) linear infinite;
+  }
+  .scan-sealed { animation: seal-settle var(--duration-maximum) var(--ease-standard) both; }
+
+  /* 2. Landing hero staggered entrance (one-shot, no loop). Per-element delay is set inline. */
+  .hero-enter { animation: enter-up var(--duration-maximum) var(--ease-standard) both; }
+
+  /* 3. Verify reveal + count-up */
+  .verdict-reveal { animation: verdict-in var(--duration-maximum) var(--ease-standard) both; }
+  .verdict-reveal[data-outcome="fail"] { animation: verdict-shake var(--duration-maximum) var(--ease-standard) both; }
+  .verdict-icon { transform-origin: center; animation: mark-pop var(--duration-maximum) var(--ease-standard) 60ms both; }
+
+  /* 4. Skeleton loaders */
+  .skeleton { position: relative; overflow: hidden; background: var(--surface-control); }
+  .skeleton::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, var(--surface-subtle), transparent);
+    transform: translateX(-100%); animation: skeleton-sweep var(--duration-maximum) ease-in-out infinite;
+  }
+  .skeleton-block { animation: enter-up var(--duration-maximum) var(--ease-standard) both; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+    .skeleton::after { display: none; }
   }
 }

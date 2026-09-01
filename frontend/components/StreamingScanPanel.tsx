@@ -24,13 +24,19 @@ export function StreamingScanPanel({ stages, failed }: Readonly<{
 }>) {
   const current = failed ? failed.stage : stages.at(-1);
   const announcement = current ? `Current stage: ${LABELS[current]}${failed ? ` failed with ${failed.code}` : ""}.` : "";
-  return <section className="proof-ceremony" aria-label="ProofLock ceremony">
+  const writingChain = !failed && current === "WRITING_CHAIN";
+  const total = PROOFLOCK_STAGES.length;
+  const reachedCount = PROOFLOCK_STAGES.filter((stage) => stages.includes(stage)).length;
+  const progress = total > 1 ? Math.max(0, reachedCount - 1) / (total - 1) : 0;
+  return <section className="proof-ceremony" aria-label="ProofLock ceremony" data-writing={writingChain || undefined}>
     <div className="proof-ceremony-rail" aria-hidden="true"><div className="rail-line" />
+      <div className="rail-advance" style={{ transform: `scaleY(${progress})` }} />
     {PROOFLOCK_STAGES.map((stage, index) => {
       const reached = stages.includes(stage); const isFailed = failed?.stage === stage;
       const complete = reached && current !== stage || stage === "SEALED" && reached && !failed;
       const state = isFailed ? "failed" : complete ? "complete" : reached ? "running" : "pending";
-      return <div className={`rail-stage ${state}`} key={stage} style={{ "--step": index } as React.CSSProperties}>
+      const stageClass = state === "running" && stage === "WRITING_CHAIN" ? " stage-writing" : "";
+      return <div className={`rail-stage ${state}${stageClass}`} key={stage} style={{ "--step": index } as React.CSSProperties}>
         <span className="rail-node" aria-hidden="true">{isFailed ? "×" : complete ? "✓" : reached ? "•" : index + 1}</span>
         <div><span className="stage-code">{stage}</span><b>{LABELS[stage]}</b>{isFailed && <small>{failed.code}</small>}</div>
       </div>;

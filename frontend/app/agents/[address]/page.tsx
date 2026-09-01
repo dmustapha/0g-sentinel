@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { AdmissionLeaseCard } from "@/components/AdmissionLeaseCard";
+import { AgentSummaryCard, SummaryVerdict } from "@/components/AgentSummary";
 import { AttestationTimeline, type TimelineHead } from "@/components/AttestationTimeline";
 import { DemoFixtureBadge } from "@/components/DemoFixtureBadge";
 import { EvidenceProofCard } from "@/components/EvidenceProofCard";
@@ -11,6 +12,7 @@ import { GateDecisionCard } from "@/components/GateDecisionCard";
 import { ProofCoverageGrid } from "@/components/ProofCoverageGrid";
 import { SealLifecycle } from "@/components/SealLifecycle";
 import { TrustRoleDisclosure } from "@/components/TrustRoleDisclosure";
+import { TechnicalDisclosure } from "@/components/ui/TechnicalDisclosure";
 import { ProofLocatorNotice } from "@/components/VerifyEvidenceButton";
 import { Button } from "@/components/ui/Button";
 import { DataRow } from "@/components/ui/DataRow";
@@ -167,8 +169,15 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
     ? historical.proof.storage.envelope.previousProofId : undefined;
   const verifiedSourceTxHash = historical?.status === "MATCH"
     ? historical.proof.source.transactionHash : sourceTxHash;
+  const analysis = state.route.base.detail.status === "VERIFIED" ? state.route.base.detail.analysis : undefined;
   return <section className="workspace-section detail-page"><div className="wrap"><Link href="/agents" className="text-link">← ProofLocks</Link>
-    <IdentityHeader identity={identity} fixture={process.env.NEXT_PUBLIC_PROOFLOCK_DEMO_AGENT_ID === identity.identity.agentId} />
+    {isFixture ? <DemoFixtureBadge /> : null}
+    <SummaryVerdict agentId={identity.identity.agentId} current={current?.decision} record={record}
+      historical={historical} nowSeconds={pinnedNowSeconds} />
+    <AgentSummaryCard record={record} current={current?.decision} analysis={analysis} nowSeconds={pinnedNowSeconds} />
+    <IdentityHeader identity={identity} />
+    <TechnicalDisclosure summary="Technical evidence"
+      hint="Raw hashes, on-chain proofs, and the full lifecycle for developers.">
     <section aria-labelledby="current-decision"><div className="card-row"><div><span className="eyebrow">Current decision</span><h2 id="current-decision">Current decision</h2></div></div>
       {current ? <GateDecisionCard current={current.decision} /> : <p role="status">Pinned current decision unavailable. Access is not admitted.</p>}
       {state.current.refresh === "FAILED" && <p role="status">Refresh unavailable: <bdi>{state.current.error}</bdi>. The last pinned snapshot remains visible.</p>}
@@ -176,10 +185,10 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
     {proofId && <p><Link className="text-link" href={canonicalProofHref(proofId, record.identityKey, verifiedSourceTxHash)}>Verify this historical artifact</Link></p>}
     {linkedProof && <ProofLocatorNotice status={linkedProof.status} currentHref={canonicalAgentHref(identity.identity.agentId)} />}
     <div className="decision-grid" style={LEDGER_GRID_STYLE}>
-      {historical?.observations.length ? <div data-demo-fixture={isFixture || undefined}>{isFixture && <DemoFixtureBadge />}<ProofPlane scope="HISTORICAL" observations={historical.observations} /></div>
+      {historical?.observations.length ? <div data-demo-fixture={isFixture || undefined}><ProofPlane scope="HISTORICAL" observations={historical.observations} /></div>
         : historical ? <section data-plane="historical"><h2>Sealed evidence</h2><p><b>Historical artifact {historical.status}</b> · Observation time unavailable.</p></section>
         : <section data-plane="historical"><h2>Sealed evidence</h2><p>Historical verification is in progress.</p></section>}
-      {current ? <div data-demo-fixture={isFixture || undefined}>{isFixture && <DemoFixtureBadge />}<ProofPlane scope="CURRENT" observations={current.observations} nowMs={state.nowMs} /></div>
+      {current ? <div data-demo-fixture={isFixture || undefined}><ProofPlane scope="CURRENT" observations={current.observations} nowMs={state.nowMs} /></div>
         : <section data-plane="current"><h2>Current access</h2><p>Pinned current observations are unavailable.</p></section>}
     </div>
     <section aria-labelledby="supporting-current"><h2 id="supporting-current">Supporting current state</h2>
@@ -191,8 +200,8 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
         explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />
         : <p>The historical evidence dossier is unavailable unless the exact linked artifact matches.</p>}</section>
     <section aria-labelledby="identifiers-lifecycle"><h2 id="identifiers-lifecycle">Identifiers and lifecycle</h2>
-      <dl className="proof-list proof-identifiers"><DataRow label="Identity key" value={record.identityKey} copyable />
-        <DataRow label="Envelope digest" value={record.envelopeDigest} copyable /></dl>
+      <dl className="proof-list proof-identifiers"><DataRow label="Identity key (agent's permanent ID)" value={record.identityKey} copyable />
+        <DataRow label="Envelope digest (fingerprint of the sealed evidence)" value={record.envelopeDigest} copyable /></dl>
       <Button pending={state.current.refresh === "REFRESHING"} pendingLabel="Refreshing current state"
         onClick={() => void refreshCurrent()}>Refresh current state</Button>
       <SealLifecycle currentVerified={Boolean(currentRecord)} currentVersion={(currentRecord ?? record).version}
@@ -201,6 +210,7 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
         verifiedSourceTxHash, Boolean(currentRecord))} previousProofId={previous} identityKey={record.identityKey}
         explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />
       {!currentRecord && <AdmissionLeaseCard basis="registry" record={record} />}</section>
+    </TechnicalDisclosure>
     <p><Link className="text-link" href={`/operator?agentId=${identity.identity.agentId}`}>Open operator workbench</Link> for authorized drift, reseal, and recovery actions.</p>
     <TrustRoleDisclosure admin={process.env.NEXT_PUBLIC_PROOFLOCK_ADMIN_ADDRESS} guardian={process.env.NEXT_PUBLIC_PROOFLOCK_GUARDIAN_ADDRESS}
       validator={process.env.NEXT_PUBLIC_PROOFLOCK_SCANNER_ADDRESS} custodyConstraint={process.env.NEXT_PUBLIC_PROOFLOCK_CUSTODY_CONSTRAINT} />
@@ -208,14 +218,12 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
   </div></section>;
 }
 
-function IdentityHeader({ fixture, identity }: Readonly<{
-  fixture: boolean; identity: CanonicalIdentity;
-}>) {
-  return <header className="detail-header"><div><span className="eyebrow">Canonical ERC-8004 identity</span>
-    <h1 aria-label={`Agent #${identity.identity.agentId}`}>Agent #<bdi dir="ltr">{identity.identity.agentId}</bdi></h1>
+function IdentityHeader({ identity }: Readonly<{ identity: CanonicalIdentity }>) {
+  return <header className="detail-header detail-header--compact"><div><span className="eyebrow">Canonical ERC-8004 identity</span>
+    <h2 aria-label={`Agent #${identity.identity.agentId}`}>Agent #<bdi dir="ltr">{identity.identity.agentId}</bdi></h2>
     <dl className="proof-list proof-identifiers"><DataRow label="Agent ID" value={identity.identity.agentId} copyable />
       <DataRow label="Agent wallet" value={identity.agentWallet} copyable /></dl></div>
-    {fixture ? <DemoFixtureBadge /> : null}</header>;
+  </header>;
 }
 
 function LoadingView() { return <section className="workspace-section detail-page"><div className="wrap loading-ledger"><h1>ProofLock detail</h1><i /><i /><i /><span>Resolving identity, lease, evidence, and Gate with pinned current access…</span></div></section>; }

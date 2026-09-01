@@ -1,59 +1,163 @@
 # 0G Sentinel ProofLock
 
-ProofLock is a policy-scoped admission layer for ERC-8004 agents on 0G Mainnet (chain ID `16661`). It binds a canonical agent identity to a verified evidence envelope, a time-limited onchain lease, and a stable AgentGateV2 decision.
+When one smart contract wants to let an AI agent act on its behalf (spend funds, trade, call functions), how does it know the agent is safe right now, and how does it revoke that trust the instant the agent's identity changes? 0G Sentinel ProofLock is the answer: a provable, revocable admission pass for AI agents.
 
-It does **not** certify that an agent is universally safe. Admission means only that the current identity subject, evidence coverage, policy version, lease state, and Gate decision satisfy this deployment's disclosed policy at read time.
+Live on 0G Aristotle Mainnet (chain ID `16661`): https://sentinel-prooflock.vercel.app
 
-## Current V2 flow
+## The mental model
 
-1. Resolve an ERC-8004 Agent ID from the canonical Identity Registry.
-2. Bind the owner, current agent wallet, registration digest, source block, and runtime commitment.
-3. Run typed deterministic checks and two AI-assisted purposes through an acknowledged hardware-TEE-attested (Intel TDX/dstack) separated-signer 0G Compute service. The host is centralized and proxies to OpenRouter; it is not a decentralized operator.
-4. Accept Compute evidence only when the SDK's `processResponse` returns `true` and the signed transcript matches the expected provider signer. There is no receipt-eligible hosted-router fallback.
-5. Upload the exact canonical envelope bytes to 0G Storage, recompute the 0G root locally, confirm the finalized Flow transaction, retrieve the bytes, and match them again.
-6. Write a versioned ProofLock lease to RegistryV2 and read it back.
-7. AgentGateV2 returns an explicit allowed/blocked result with a stable reason code.
+ProofLock is not a cage. It does not disable an agent, restrict what an agent can do, or sit between an agent and the world. It is opt-in permission infrastructure, closer to a credit score or a bouncer's clipboard than a lock.
 
-Proof history is append-preserved by version. Historical artifact validity is separate from current lease and Gate state. On-demand drift can block a consumer action; resealing creates a new version and restores access only after the complete policy succeeds again.
+Here is the shape of it. ProofLock resolves an agent's ERC-8004 identity, runs a set of checks, and writes a short-lived, versioned verdict on-chain. Any consumer contract that cares can read that verdict at its own door with one call. If the verdict says allowed, the consumer lets the agent through. If the agent's identity later changes, the verdict flips to denied automatically, and the consumer's door closes on the next call. No one is stopped until a contract voluntarily chooses to check.
 
-## Honest proof boundaries
+"Restriction" only ever happens when a consumer contract decides to gate itself. ProofLock issues the verdict. The consumer enforces it.
 
-- Compute health is service discovery only: `inferenceExecuted: false` and `paidInference: false`. It proves that the configured acknowledged service is discoverable, not that a paid inference just ran.
-- Storage proof verification currently reports `networkProofVerified: false`. “Retrieved and root-matched” means the exact bytes were retrieved and recomputed at the recorded observation time; it is not an independently verified network Merkle proof.
-- A named operator-authorized validator issues leases. Guardian and validator authority are disclosed trust boundaries and may be centralized in this build.
-- Drift checks are on-demand, not continuous monitoring.
-- `SAFE` is a policy result, not admission. Only a current lease plus an AgentGateV2 `ALLOWED` decision admits a consumer action.
-- Missing, mismatched, stale, wrong-chain, or unavailable evidence fails closed.
-- The public `/scan` seal runs against a balance-capped allowance: the server injects the operator token and the spend ceiling is the pre-funded low-value role-key balance. Deployer and subject keys are never on the host, and keys are rotated after the event.
-- 0G Compute providers are TEE-attested centralized hosts (Intel TDX / dstack) that proxy to OpenRouter. They are not decentralized. The response is bound to exact bytes; the request commitment is the enclave-attested (normalized) hash.
+Being honest about reach: ProofLock is designed for any 0G contract to import with one line, but today only our own `ProofLockConsumerDemo` calls the gate. No third party integrates it yet. This is a hackathon build. The primitive works end to end on mainnet; the ecosystem adoption is future work.
 
-## Public application
+## How it works: the admission chain
 
-- `/`: resolve an ERC-8004 identity and run an authenticated evaluation
-- `/scan`: public scan-and-seal front door: enter any ERC-8004 agentId and run the real seal ceremony (identity, deterministic checks, behavioral and code risk via 0G Compute, 0G Storage, versioned RegistryV2 lease, AgentGateV2 decision) with no login. The sealed result is reconciled on-chain.
-- `/agents`: risk-ranking leaderboard of sealed agents (ranked by combined behavioral and code risk via `lib/ranking.ts`), plus the recent finalized ProofLock activity table. This is recent finalized activity, not a complete index.
-- `/agents/:agentId`: identity, lease, Gate, evidence, drift, reseal detail, and a per-agent attestation-history timeline (v1 seal, drift, reseal). The timeline links current and previous versions by `previousProofId` (one hop). Full version enumeration is a documented backend deferral.
-- `/proof`: public historical proof verifier and independent subsystem health
-- `/api/v1/identities/resolve`: guarded canonical identity read
-- `/api/v1/prooflocks/:identityKey`: current lease, identity enrichment, and Gate decision
-- `/api/v1/proofs/:proofId/verify?identityKey=…`: retrieve and recompute stored evidence
-- `/api/health`: six independent timestamped probes
-- `/api/scan/stream`: public balance-capped scan-and-seal stream. The server injects the operator token; the spend ceiling is the pre-funded low-value role-key balance. The deployer and subject keys are never on the host, and keys are rotated after the event.
-- `/api/admin/prooflocks/stream`: authenticated evaluation stream
-- `/api/admin/prooflocks/:identityKey/drift`: authenticated on-demand drift action
+A single scan (a "seal") runs this chain:
 
-Operator tokens are server secrets. The UI keeps an entered token only in component memory for the request and clears it afterward.
+1. Resolve the agent's ERC-8004 identity from the canonical Identity Registry, then bind its current wallet, registration digest, source block, and runtime commitment.
+2. Run deterministic checks plus behavioral and code risk analysis. The risk inference runs on 0G Compute inside a hardware TEE (Intel TDX / dstack) with a separated enclave signer. The host is centralized and proxies to OpenRouter, so this is TEE-attested, not decentralized compute.
+3. Upload the exact canonical evidence bytes to 0G Storage, recompute the root locally, and confirm the finalized Flow transaction.
+4. Write a time-limited, versioned lease to `SentinelRegistryV2`.
+5. `AgentGateV2` then returns a stable allow or deny result with a reason code, recomputed from live on-chain state on every read.
+
+The response bytes are exact-byte bound (`sha256(response)` equals the enclave-signed hash). The request commitment is the enclave-attested normalized hash, because the provider proxies to OpenRouter and re-serializes the request.
+
+The risk analysis returns plain-English reasoning and named factors, and that reasoning is tamper-proof because it lives inside the enclave-signed output. Be clear about depth: the gating logic is deep and heavily tested; the risk signal itself is real but currently modest (deterministic checks plus one TEE inference). Treat it as a tamper-proof verifiable attestation, not a deep forensic audit.
+
+### Drift and revocation
+
+This is the "revocable" half of the pass. If the agent's identity or registration changes, the gate flips to `DENIED` on its own, recomputed from live on-chain state on every read (no cron, no background monitor). A guardian can additionally mark the lease `DRIFTED` on-chain. Access returns only after a reseal, which creates a new version. We prove this full loop on mainnet: seal to consumer-accept to drift (accept reverts) to reseal to consumer-accept again. Transaction hashes are in `submission/proof.md`.
+
+## For users
+
+Four pages, no login. All live at https://sentinel-prooflock.vercel.app.
+
+- **`/scan`** : Scan any agent. Enter an ERC-8004 agent ID or a plain wallet address (address input resolves to the agent ID for you) and it runs a real on-chain seal ceremony against 0G mainnet: identity, deterministic checks, behavioral and code risk via 0G Compute, 0G Storage upload, a versioned `SentinelRegistryV2` lease, and an `AgentGateV2` decision. The sealed result is reconciled on-chain.
+- **`/agents`** : A risk leaderboard of scanned agents, ranked by combined behavioral and code risk, plus a recent finalized activity table. This is recent finalized activity, not a complete index.
+- **`/agents/:address`** : Per-agent detail: identity, lease, gate decision, evidence, drift and reseal state, the plain-English verdict, and an attestation-history timeline (v1 seal, drift, reseal). The timeline links a version to its predecessor by `previousProofId` (one hop).
+- **`/proof`** : A public verifier. Re-verify any historical proof yourself, plus independent subsystem health probes.
+
+## For developers and integrators
+
+### Gate a contract in one line
+
+`AgentGateV2` is the whole integration surface. Import the interface and call it at your door. It is a pure view function, so it costs no gas beyond your own call and cannot alter state.
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
+
+interface IAgentGateV2 {
+    // reverts AgentRejected(reason) if the agent is not currently admitted
+    function requireAgent(uint256 agentId) external view returns (address subject, uint64 version);
+}
+
+contract MyProtocol {
+    IAgentGateV2 public immutable gate;
+
+    constructor(address gateAddress) {
+        gate = IAgentGateV2(gateAddress); // AgentGateV2 on 0G mainnet
+    }
+
+    function doSomethingForAgent(uint256 agentId) external {
+        // one line: admits or reverts
+        (address subject, uint64 version) = gate.requireAgent(agentId);
+        require(msg.sender == subject, "caller is not the bound agent wallet");
+        // ... your logic runs only for a currently-admitted agent
+    }
+}
+```
+
+That is exactly what `ProofLockConsumerDemo` (deployed, see below) does. If you prefer a non-reverting branch, call `checkAgent` instead:
+
+```solidity
+interface IAgentGateV2Check {
+    function checkAgent(uint256 agentId)
+        external
+        view
+        returns (bool allowed, uint8 reason, address subject, uint64 version);
+}
+```
+
+`reason` is a stable code. `0` is `ALLOWED`. Non-zero values name the exact rejection, including `NO_PROOF` (1), `DRIFTED` (3), `EXPIRED` (4), `SUBJECT_CHANGED` (5), and `RUNTIME_CODE_DRIFT` (6). The full set is defined as constants in `contracts/AgentGateV2.sol`.
+
+### Read APIs
+
+For off-chain integrations and verifiers:
+
+- `GET /api/v1/prooflocks/:identityKey` : current lease, identity enrichment, and gate decision.
+- `GET /api/v1/proofs/:proofId/verify?identityKey=…` : retrieve stored evidence from 0G Storage and recompute it.
+- `GET /api/discover` : recent finalized ProofLock activity.
+- `GET /api/agents/resolve-address` : resolve a wallet address to its ERC-8004 agent ID.
+- `GET /api/health` : six independent timestamped subsystem probes.
+
+### Verify evidence yourself
+
+You do not have to trust our UI. The `/proof` page and the `/api/v1/proofs/:proofId/verify` endpoint both re-download the exact evidence bytes from 0G Storage, recompute the root, and re-verify the enclave signature offline. The offline verifier checks `signatureVerified`, `transcriptVerified`, and `serviceSnapshotVerified` independently of the seal that produced them.
+
+### ERC-8004 identity binding
+
+The seal binds `subject == getAgentWallet(agentId)` and re-resolves the registration card at a finalized block. Identity is the canonical mainnet ERC-8004 Identity Registry, not a copy.
+
+### Operator seal ceremony
+
+The production operator ships in the application bundle and never loads executable code from a runtime filesystem path. The API accepts only identity, mode, expected prior version, and prior proof ID; registry address, scanner, software version, policy version, and TTL are injected server-side. The Compute payer key is isolated from Registry authority; the scanner signs Storage and Registry writes; the guardian is distinct and only marks drift.
+
+```bash
+npm run prooflock:run   -- /absolute/path/to/operator-input.json
+npm run prooflock:drift -- 0x<identity-key> [--mark]
+```
+
+## Deployed contracts (0G Aristotle Mainnet, chain ID 16661)
+
+| Contract | Address |
+|----------|---------|
+| SentinelRegistryV2 | `0x1d802114cfAFFd179f49E2F6fa8e11207c118944` |
+| AgentGateV2 | `0x32Ae81B1150AA7E91d8341E59b3810950e7A1171` |
+| ProofLockConsumerDemo | `0x71823afFA086f6a4Be64B67142480Fa889Cd0773` |
+| Canonical ERC-8004 Identity Registry (dependency) | `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` |
+
+Full transaction hashes, storage roots, and the proven seal-drift-reseal lifecycle are in `submission/proof.md`.
+
+## Honest limitations
+
+We keep these visible on purpose.
+
+- **Compute is TEE-attested, not decentralized.** 0G Compute providers are centralized hosts running in a hardware TEE (Intel TDX / dstack) that proxy to OpenRouter. The response is bound to exact bytes; the request commitment is the enclave-attested normalized hash (`requestBytesExact: false` is expected for proxying providers).
+- **Storage reports `networkProofVerified: false`.** Retrieval and merkle inclusion are verified; no independent network availability proof is claimed.
+- **Compute health is service discovery only (`inferenceExecuted: false`).** The health probe confirms the configured TEE service is discoverable; it does not claim a paid inference ran on that probe. Real paid inference happens during a seal.
+- **Legacy V1 is excluded.** The original address-based scanner, `AttestationRegistry`, `AgentRegistry`, the old `AgentGate`, fine-tuning, and iNFT detection are Legacy V1. Their historical deployments remain for provenance only; they are not evidence for any V2 claim, and their old mutation and read endpoints return `410 GONE`.
+- **Drift is on-demand, not continuous.** The gate recomputes from live on-chain state on every read, but there is no background monitor that pushes alerts.
+- **Discovery is a recent-finalized window, not a complete index.** The proof reader surfaces recent finalized activity, not a full historical backfill. The timeline links versions one hop via `previousProofId`, not a full enumeration.
+- **Guardian and validator authority is a disclosed trust boundary** and may be centralized in this build.
+- **No third-party integrations yet.** Only `ProofLockConsumerDemo` calls the gate today. The one-line integration above is real and tested, but adoption is future work.
+- **The risk signal is modest.** Deterministic checks plus one TEE inference. Tamper-proof verifiable attestation, not a deep forensic audit.
+
+## Testing
+
+- Around 150 Hardhat contract tests. `AgentGateV2` covers every reason code and its boundaries; the registry, edge cases, and the end-to-end seal to drift to reseal loop are all tested.
+- 1454+ frontend tests.
+- The full lifecycle is proven on mainnet with real transactions (see `submission/proof.md`).
+
+```bash
+npm install
+cd frontend && npm install && cd ..
+npx hardhat test          # contract tests
+cd frontend && npm test   # frontend tests
+```
 
 ## Configuration
-
-Copy both active examples as appropriate:
 
 ```bash
 cp .env.example .env
 cp frontend/.env.example frontend/.env.local
 ```
 
-V2 public address names are exact and never fall back to Legacy V1 addresses:
+Public V2 address names are exact and never fall back to legacy addresses:
 
 ```text
 NEXT_PUBLIC_PROOFLOCK_REGISTRY_V2_ADDRESS
@@ -62,70 +166,17 @@ NEXT_PUBLIC_PROOFLOCK_CONSUMER_ADDRESS
 NEXT_PUBLIC_PROOFLOCK_VALIDATOR_ADDRESS
 ```
 
-See the example files for the complete server, health-canary, version, policy, and optional labeled-demo configuration.
+See the example files for the complete server, health-canary, version, and policy configuration.
 
-### Run the production operator
+### Deploy to 0G mainnet
 
-ProofLock ships its production operator in the application bundle; it never loads executable code from a
-runtime filesystem path. Configure the scanner and guardian keys, their matching RegistryV2 role addresses,
-the acknowledged Compute provider/model, and an absolute durable state directory. Set
-`PROOFLOCK_SPEND_AUTHORIZED=true` only after accepting paid 0G Compute and Storage operations.
-
-The API accepts only identity, mode, expected prior version, and prior proof ID. Registry address, scanner,
-software version, policy version, and seven-day TTL are injected by the server. The same boundary applies to:
-
-```bash
-npm run prooflock:run -- /absolute/path/to/operator-input.json
-npm run prooflock:drift -- 0x<identity-key> [--mark]
-```
-
-The Compute payer key is isolated from Registry authority. The scanner signs Storage and Registry writes; the
-guardian is distinct and only marks drift. Every mutation rechecks the separated admin/scanner/guardian role matrix.
-
-ProofLock analyzes proxy and EIP-7702 delegation targets, but this V2 Gate can enforce only the subject's direct
-runtime hash. Nested executable subjects therefore fail before paid Compute and cannot receive a lease until a later
-Gate version stores and checks the nested executable commitment on every admission.
-
-### Deploy ProofLock V2 to 0G mainnet
-
-Set the nine `PROOFLOCK_*` deployment values documented in both environment examples, keep the admin,
-scanner, and guardian under distinct custody, configure `DEPLOYER_PRIVATE_KEY`, then run:
+Set the `PROOFLOCK_*` deployment values documented in both environment examples, keep admin, scanner, and guardian under distinct custody, configure `DEPLOYER_PRIVATE_KEY`, then run:
 
 ```bash
 npm run deploy:mainnet
 ```
 
-Preflight rejects non-mainnet Chain, Storage indexer, and Flow settings, requires at least three
-confirmations, budgets the full three-contract graph before transaction one, and writes a resumable
-deployment journal plus a machine-readable artifact under `deployments/16661/`. The ERC-8004 registry
-is fixed to its canonical address rather than accepted from operator input. Canonical 0G endpoints and
-the Flow address come from the [official 0G Mainnet overview](https://docs.0g.ai/developer-hub/mainnet/mainnet-overview).
-
-## Run and verify
-
-```bash
-npm install
-cd frontend && npm install
-npm test
-npm run typecheck
-npm run build
-cd .. && npx hardhat test
-```
-
-## Legacy V1 registries: excluded
-
-The old V1 contracts (`AttestationRegistry`, `AgentRegistry`, the original `AgentGate`), their fictional seeded addresses, address-based scanning, and the old evidence endpoint remain Legacy V1. Their historical deployments and source stay for provenance only. They are excluded from active ProofLock V2 admission, are not evidence for any V2 claim, and their mutation and read endpoints return `410 GONE`.
-
-Scanning, risk ranking, and attestation history are now revived as ProofLock-V2-backed views. They are new surfaces built on the V2 core (RegistryV2, AgentGateV2, the seal ceremony), not the old V1 registries or endpoints. Nothing here reads or trusts the excluded V1 data.
-
-Still out of scope, roadmap only:
-
-- Fine-tuning is not built. Its honest current form is a CLI-command return.
-- ERC-7857 iNFT detection is not built (P2).
-- A background batch queue is not built (P2).
-- A complete historical indexer or backfill is deferred; the timeline links versions one hop via `previousProofId`, not a full enumeration.
-
-Current V2 deployment addresses must come from environment configuration. This repository does not invent a production deployment or treat old attestation transactions as current ProofLock evidence.
+Preflight rejects non-mainnet chain, storage, and Flow settings, requires at least three confirmations, budgets the full three-contract graph before the first transaction, and writes a resumable journal plus a machine-readable artifact under `deployments/16661/`. The ERC-8004 registry is fixed to its canonical address, never accepted from operator input. Canonical 0G endpoints come from the [official 0G Mainnet overview](https://docs.0g.ai/developer-hub/mainnet/mainnet-overview).
 
 ## License
 

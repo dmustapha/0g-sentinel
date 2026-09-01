@@ -139,6 +139,8 @@
     .input-row { grid-template-columns: 1fr; }
     .card-row, .detail-header { align-items: flex-start; flex-direction: column; }
     .micro-grid, .coverage-grid, .decision-grid, .health-grid { grid-template-columns: 1fr; }
+    .summary-facts, .summary-reasoning { grid-template-columns: 1fr; }
+    .summary-verdict__head { flex-direction: column; align-items: flex-start; }
     .inventory-card-data .ui-data-row, .inventory-status-row, .inventory-action-row { grid-template-columns: 1fr; gap: 4px; }
     .leaderboard-field { grid-template-columns: 1fr; gap: 4px; }
     .proof-list > div { grid-template-columns: 1fr; gap: 4px; }

@@ -50,9 +50,17 @@ const identitySummarySchema = z.object({ identityKey: hex32, namespace: z.litera
   registrationDigest: hex32, sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32 });
 const resolutionSummarySchema = z.object({ owner: hex20, agentWallet: hex20, agentURI: uri,
   registrationDigest: hex32, sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32 });
+const boundedNarrative = z.string().max(600);
+const riskAnalysisSchema = z.object({
+  behavioralScore: z.number().int().min(0).max(100), codeRisk: z.number().int().min(0).max(100),
+  label: z.string().max(80), behavioralSummary: boundedNarrative.nullable(),
+  behavioralFactors: z.array(boundedNarrative).max(24),
+  codeSummary: boundedNarrative.nullable(), codeFactors: z.array(boundedNarrative).max(24),
+});
 const detailSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("VERIFIED"), identity: identitySummarySchema, resolution: resolutionSummarySchema,
-    gate: z.union([verifiedGateSchema, unknownGateSchema]), consumer: z.union([verifiedConsumerSchema, unknownConsumerSchema]) }),
+    gate: z.union([verifiedGateSchema, unknownGateSchema]), consumer: z.union([verifiedConsumerSchema, unknownConsumerSchema]),
+    analysis: riskAnalysisSchema.optional() }),
   z.object({ status: z.literal("UNAVAILABLE"), code: z.enum(["EVIDENCE_UNAVAILABLE", "EVIDENCE_INVALID", "IDENTITY_UNAVAILABLE", "IDENTITY_INVALID"]),
     identity: z.null(), resolution: z.null(), gate: unknownGateSchema, consumer: unknownConsumerSchema }),
 ]);

@@ -32,16 +32,13 @@ async function main(): Promise<void> {
   const iface = new Interface(ABI);
   const state: Record<string, string> = existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : {};
 
-  // Subject keys with varied activity: the funded deployer (high nonce) + the compute payer, plus
-  // fresh keys (zero activity). Deterministic fresh keys so reruns reuse the same agents.
-  const subjects: Array<{ label: string; key: string }> = [
-    { label: "deployer(active)", key: process.env.DEPLOYER_PRIVATE_KEY! },
-    { label: "compute(some)", key: process.env.PROOFLOCK_COMPUTE_PRIVATE_KEY! },
-  ];
-  for (let i = 1; i <= 8; i++) {
-    const key = `0x${i.toString(16).padStart(2, "0").repeat(32)}`;
-    subjects.push({ label: `fresh-${i}`, key });
-  }
+  // Fresh subject keys with zero prior activity. Use RANDOM persisted keys (well-known keys like
+  // 0x01..01 are swept on-chain instantly, so funding never sticks). Persist so reruns reuse them.
+  const KEYS_FILE = "../.config-batch-keys.json";
+  const freshKeys: string[] = existsSync(KEYS_FILE) ? JSON.parse(readFileSync(KEYS_FILE, "utf8")) : [];
+  while (freshKeys.length < 8) freshKeys.push(Wallet.createRandom().privateKey);
+  writeFileSync(KEYS_FILE, JSON.stringify(freshKeys, null, 1));
+  const subjects: Array<{ label: string; key: string }> = freshKeys.map((key, i) => ({ label: `fresh-${i + 1}`, key }));
 
   const { loadProofLockRunner } = await import("../server/prooflock/operator.js");
   const runner = await loadProofLockRunner();

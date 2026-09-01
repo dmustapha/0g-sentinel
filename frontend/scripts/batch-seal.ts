@@ -24,14 +24,23 @@ async function main(): Promise<void> {
     process.stderr.write(`\n=== sealing agent ${agentId} ===\n`);
     try {
       // Auto-detect: RESEAL an agent that already has a lease (so existing agents get the deep
-      // pipeline), otherwise SEAL a fresh one.
+      // pipeline), otherwise SEAL a fresh one. An absent lease returns a zero record (version 0n)
+      // rather than throwing, so a THROW here means a transient read failure -> skip, never downgrade
+      // an existing lease to a spurious SEAL (which would revert on-chain and log a false FAIL).
       const identityKey = computeIdentityKey(identity);
-      let input: any = { identity, mode: "SEAL" };
+      let record: any;
       try {
-        const record = await reads.readProofLock(identityKey, new AbortController_().signal);
-        const previousProofId = reads.computeProofId(reads.registryAddress, record);
-        input = { identity, mode: "RESEAL", expectedPriorVersion: record.version, previousProofId };
-      } catch { /* no lease: SEAL */ }
+        record = await reads.readProofLock(identityKey, new AbortController_().signal);
+      } catch (err: any) {
+        const msg = (err?.message ?? String(err)).slice(0, 100);
+        console.log(`SKIP agent ${agentId} -> READ_FAILED: ${msg}`);
+        results.push({ agentId, ok: false, detail: "READ_FAILED" });
+        continue;
+      }
+      const input: any = record.version === 0n
+        ? { identity, mode: "SEAL" }
+        : { identity, mode: "RESEAL", expectedPriorVersion: record.version,
+            previousProofId: reads.computeProofId(reads.registryAddress, record) };
       const result: any = await runner.run(input,
         (s: string) => process.stderr.write(`  ${agentId}: ${s}\n`));
       if (result.kind === "SEALED") {

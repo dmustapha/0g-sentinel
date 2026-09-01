@@ -60,7 +60,7 @@ function collectPush4Selectors(code: string): Set<string> {
     const op = bytes[i];
     if (op >= OP_PUSH1 && op <= OP_PUSH32) {
       const dataLen = op - OP_PUSH1 + 1;
-      if (op === OP_PUSH4 && i + 4 < bytes.length) {
+      if (op === OP_PUSH4 && i + 5 <= bytes.length) {
         selectors.add(bytesToHex(bytes.slice(i + 1, i + 5)));
       }
       i += 1 + dataLen;

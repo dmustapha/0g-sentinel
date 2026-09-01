@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useReducer, useRef } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { canonicalProofHref } from "@/lib/prooflock-routes";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
 import type { RunnerStage } from "@/lib/prooflock-types";
@@ -11,6 +11,7 @@ import {
 } from "@/lib/scan-client";
 import { GateDecisionCard } from "./GateDecisionCard";
 import { StreamingScanPanel } from "./StreamingScanPanel";
+import { TurnstileWidget, turnstileConfigured } from "./TurnstileWidget";
 import { Button } from "./ui/Button";
 import { DataRow } from "./ui/DataRow";
 import { Field } from "./ui/Field";
@@ -70,10 +71,16 @@ export function ScanConsole() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const runRef = useRef<AbortController | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
+  // Turnstile token (single-use). resetSignal forces a fresh challenge after each scan attempt.
+  const [token, setToken] = useState<string | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
+  const tokenRef = useRef<string | null>(null);
+  tokenRef.current = token;
+  const needsToken = turnstileConfigured();
   const trimmedInput = state.agentId.trim();
   const isAgentId = isCanonicalAgentId(trimmedInput);
   const isAddress = looksLikeAddress(trimmedInput);
-  const valid = isAgentId || isAddress;
+  const valid = (isAgentId || isAddress) && (!needsToken || !!token);
   const busy = state.phase === "streaming" || state.phase === "reconciling";
 
   useEffect(() => () => runRef.current?.abort(), []);
@@ -91,7 +98,7 @@ export function ScanConsole() {
       const outcome = await runPublicScan(agentId, {
         signal: controller.signal,
         onStage: (stage) => dispatch({ type: "STAGE", stage }),
-      });
+      }, tokenRef.current ?? undefined);
       reachedChainWrite = outcome.reachedChainWrite;
       if (outcome.kind === "SEALED") {
         await reconcileInto(agentId, controller.signal, dispatch, true);
@@ -119,6 +126,9 @@ export function ScanConsole() {
         dispatch({ type: "ERROR", error: friendlyScanError({
           code: "DEPENDENCY_UNAVAILABLE", message: "", stage: "AUTHENTICATING", retryable: true, requestId: "client" }) });
       }
+    } finally {
+      // Turnstile tokens are single-use: after any attempt, drop the token and force a fresh challenge.
+      if (turnstileConfigured()) { setToken(null); setResetSignal((n) => n + 1); }
     }
   }, []);
 
@@ -153,6 +163,11 @@ export function ScanConsole() {
             Scan agent
           </Button>
         </div>
+        {needsToken ? (
+          <div className="scan-challenge">
+            <TurnstileWidget onToken={setToken} resetSignal={resetSignal} />
+          </div>
+        ) : null}
         <p className="scan-disclosure">
           Live demo: runs a real on-chain seal from a capped allowance; keys rotated post-event.
         </p>

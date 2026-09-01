@@ -79,18 +79,34 @@ partial bitmask there (the naive fix) would hard-reject every degraded seal.
 Note: all 13 currently-sealed leaderboard agents had real explorer data, so
 their coverage is genuinely full — no reseal is required for this.
 
-### Rate limiter (MEDIUM/LOW) — public scan + detail reads are per-instance throttled
+### Rate limiter (MEDIUM/LOW) — public scan cost-griefing — MITIGATED (Option 3)
 
 The public `/scan/stream` handler runs the funded ceremony behind an in-memory
 per-instance rate limit (default 6/60s); on multi-instance serverless this
 becomes `6 × instances`. Bounded by the pre-funded role-key balance (fails
 closed — no fund theft), so the exposure is cost-griefing, not compromise.
-Likewise the public detail read re-verifies storage (~4–20s CPU) with no cache.
 
-**Fix (infra decision):** back the limiter + the already-defined
-`DAILY_CEREMONY_LIMIT`/`DAILY_COST_LIMIT` ceilings with a durable store
-(the existing `stateDirectory` file lock, or Redis/Upstash), and add a
-short-TTL cache keyed on `(storageRoot, version)` to the detail route.
+**Shipped — Cloudflare Turnstile (config-gated) + read hardening:**
+- `createPublicScanStreamHandler` now verifies a Cloudflare Turnstile token
+  (`server/prooflock/turnstile.ts`) before any funded work, killing naive
+  automated fan-out. It is config-gated: inert until `TURNSTILE_SECRET_KEY`
+  (server) + `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (client) are set, so there is no
+  regression before activation. `/scan` renders the widget and requires a fresh,
+  single-use token per scan.
+- The lease read in the public handler was hardened the same way as
+  `batch-seal`: a transient read error now fails closed (503) instead of
+  silently downgrading a RESEAL to a spurious SEAL.
+
+**Operational — bound the float (recommended):** fund public sealing from a
+dedicated small sub-wallet so worst-case griefing loss is a known, capped number
+(the balance already fails closed when empty). The daily ceremony/cost ceilings
+(`DAILY_CEREMONY_LIMIT`/`DAILY_COST_LIMIT`) provide a second bound.
+
+**Durable follow-up (Option 2, if the seal stays public post-event):** back the
+limiter + daily ceilings with a shared store (Upstash Redis / Vercel KV) for a
+true global cap across serverless instances, and add a short-TTL cache keyed on
+`(storageRoot, version)` to the public detail route. Deferred: needs an infra
+choice; not required while the balance + Turnstile bound the risk.
 
 ## Scope
 

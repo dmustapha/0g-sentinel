@@ -82,3 +82,7 @@ frontend/.prooflock-build/
 # Never commit env backups (they hold funded keys)
 .env.bak*
 .env.backup*
+
+# Batch-seal local state (contains private keys — never commit)
+.config-batch-keys.json
+.config-batch-agents.json

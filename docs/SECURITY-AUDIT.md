@@ -38,9 +38,22 @@ decision — neither is a vulnerability.
   the last byte. Corrected to `i + 5 <= length`. Harmless in practice; fixed for
   correctness.
 
+## Resolved
+
+### M-01 (MEDIUM) — Degraded deep-risk coverage could present as SAFE — FIXED
+
+Resolved via **option A (label guard)**, implemented as a score floor to keep the
+strict score<->label policy intact. When `bundle.coverage.explorer !== "OK"` (or
+the bundle failed to collect entirely), `floorScoreForCoverage` raises the
+behavioral score to the CAUTION threshold (30), so a degraded seal derives to
+CAUTION and can never present as SAFE. Flooring the score (not the label)
+preserves the invariant that `runner.ts` `assertCompute` re-checks (label is
+derived strictly from score). Covered by 3 unit tests in
+`tests/prooflock/production-operator.test.ts`. See commit below.
+
 ## Open items (need a decision — not vulnerabilities)
 
-### M-01 (MEDIUM) — Degraded deep-risk coverage is not surfaced on-chain
+### (historical) M-01 original write-up — Degraded deep-risk coverage is not surfaced on-chain
 
 When the 0G explorer or a threat-intel source is unavailable at seal time, the
 deep-risk pipeline degrades gracefully (partial/empty bundle) and the behavioral

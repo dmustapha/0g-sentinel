@@ -34,6 +34,19 @@ const ROLE_INTERFACE = new Interface([
   "function hasRole(bytes32 role,address account) view returns (bool)",
 ]);
 const scoreSchema = z.object({ riskScore: z.number().int().min(0).max(100) }).passthrough();
+// Behavioral risk-score bands (must match the label policy re-derived in runner.ts assertCompute):
+// [0,30) SAFE, [30,60) CAUTION, [60,100] FLAGGED. Also the uncertainty floor for a degraded seal.
+const CAUTION_SCORE_THRESHOLD = 30;
+const FLAGGED_SCORE_THRESHOLD = 60;
+
+// A SAFE verdict requires complete behavioral evidence. When the deep-risk explorer coverage is
+// incomplete, the transaction history is partial, so a clean-looking score carries irreducible
+// uncertainty: floor it at the CAUTION threshold so a degraded seal can never present as fully
+// cleared. Flooring the score (not the label) preserves the score<->label policy invariant that
+// runner.ts assertCompute re-checks.
+export function floorScoreForCoverage(combinedScore: number, behavioralCoverageComplete: boolean): number {
+  return behavioralCoverageComplete ? combinedScore : Math.max(combinedScore, CAUTION_SCORE_THRESHOLD);
+}
 type Environment = Record<string, string | undefined>;
 
 export type ProductionOperatorConfig = Readonly<{
@@ -346,11 +359,20 @@ async function computeResult(
   }
   // Combine: computed heuristic evidence must not be undercounted by the LLM (take the max), and a
   // hard signal (sanctioned / known scam / honeypot) clamps risk high regardless of the LLM.
-  const score = deterministic.riskBundle
+  const combined = deterministic.riskBundle
     ? combineBehavioralScore(deterministic.riskBundle, llmScore) : llmScore;
+  // A SAFE verdict requires complete behavioral evidence. If the deep-risk explorer coverage was
+  // unavailable/partial (or the bundle failed to collect entirely), the transaction history the LLM
+  // and heuristics reason over is incomplete, so a clean-looking result carries irreducible
+  // uncertainty. Floor the score at the CAUTION threshold so a degraded seal can never present as
+  // fully cleared. The label is derived strictly from the score downstream, so flooring the score
+  // (not the label) keeps the score<->label policy invariant intact.
+  const behavioralCoverageComplete = deterministic.riskBundle?.coverage.explorer === "OK";
+  const score = floorScoreForCoverage(combined, behavioralCoverageComplete);
   const codeRisk = subject.kind === "EOA" ? 0
     : combineCodeRisk(deterministic.riskBundle ?? emptyBundle(subject.address), deterministic.codeRisk, aiCodeRisk);
-  const label = score < 30 ? "SAFE" as const : score < 60 ? "CAUTION" as const : "FLAGGED" as const;
+  const label = score < CAUTION_SCORE_THRESHOLD ? "SAFE" as const
+    : score < FLAGGED_SCORE_THRESHOLD ? "CAUTION" as const : "FLAGGED" as const;
   return Object.freeze({ proofs: Object.freeze(proofs), behavioralScore: score, codeRisk,
     verdict: Object.freeze({ riskScore: score, codeRisk, label }) });
 }

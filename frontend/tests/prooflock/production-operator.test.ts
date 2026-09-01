@@ -13,6 +13,7 @@ import {
   stableEvidenceDigest,
   retryTransientCompute,
   deterministicCodeRisk,
+  floorScoreForCoverage,
 } from "../../server/prooflock/production-operator";
 import { bindOperatorRunner } from "../../server/prooflock/operator";
 import type { RunnerInput } from "../../server/prooflock/runner";
@@ -114,6 +115,27 @@ async function validEnv() {
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+});
+
+describe("floorScoreForCoverage (degraded behavioral coverage can never present as SAFE)", () => {
+  it("passes the score through unchanged when explorer coverage is complete", () => {
+    expect(floorScoreForCoverage(12, true)).toBe(12);
+    expect(floorScoreForCoverage(0, true)).toBe(0);
+    expect(floorScoreForCoverage(85, true)).toBe(85);
+  });
+
+  it("floors a SAFE-range score to the CAUTION threshold when coverage is incomplete", () => {
+    // 12 (SAFE) with partial/unavailable explorer evidence -> 30 (CAUTION), never stays SAFE.
+    expect(floorScoreForCoverage(12, false)).toBe(30);
+    expect(floorScoreForCoverage(0, false)).toBe(30);
+    expect(floorScoreForCoverage(29, false)).toBe(30);
+  });
+
+  it("never lowers an already-elevated score when coverage is incomplete", () => {
+    expect(floorScoreForCoverage(30, false)).toBe(30);
+    expect(floorScoreForCoverage(55, false)).toBe(55);
+    expect(floorScoreForCoverage(90, false)).toBe(90);
+  });
 });
 
 describe("production ProofLock operator", () => {

@@ -1,4 +1,4 @@
-import { id, Interface, type Provider, type TransactionRequest } from "ethers";
+import { id, Interface, keccak256, toUtf8Bytes, type Provider, type TransactionRequest } from "ethers";
 
 import { IdentityError } from "../errors";
 import {
@@ -6,6 +6,7 @@ import {
   type AgentIdentity,
   type Bytes32,
   type HexAddress,
+  type RegistrationCard,
   type ResolvedAgentIdentity,
 } from "../types";
 import {
@@ -38,6 +39,10 @@ export type ResolveIdentityOptions = Readonly<{
   finalityConfirmations?: number;
   sourceBlockNumber?: bigint;
   cardLoaderOptions?: CardLoaderOptions;
+  // Bind identity on-chain even when the off-chain registration card is unavailable or non-conformant
+  // (records cardVerified=false, drift digest from the tokenURI string). Lets us scan real ecosystem
+  // agents whose cards we do not control. Default false keeps the strict card-verified behavior.
+  allowUnverifiedCard?: boolean;
 }>;
 
 export async function resolveAgentIdentity(
@@ -56,22 +61,37 @@ export async function resolveAgentIdentity(
   const owner = await readOwner(adapter, agentId, blockNumber);
   const agentURI = await readAgentUri(adapter, agentId, blockNumber);
   const agentWallet = await readAgentWallet(adapter, agentId, blockNumber);
-  const registration = await loadRegistrationCard(
-    agentURI,
-    identity,
-    options.cardLoaderOptions,
-  );
+  // The authoritative identity is on-chain (ownerOf + getAgentWallet). The off-chain registration
+  // card is a secondary self-attestation. When `allowUnverifiedCard` is set, a card that cannot be
+  // fetched or does not conform does NOT fail resolution: we bind on-chain and derive the drift
+  // digest from the on-chain tokenURI string (so a later registration change still triggers drift),
+  // recording cardVerified=false. This lets us scan any real ERC-8004 agent in the ecosystem, not
+  // only agents whose card we control. Agents with a conformant card keep cardVerified=true.
+  const card = await resolveRegistrationCard(agentURI, identity, options);
   await assertSourceBlockUnchanged(adapter, block);
   return deepFreeze({
     identity,
     owner,
     agentWallet,
     agentURI,
-    registrationDigest: registration.registrationDigest,
+    registrationDigest: card.registrationDigest,
     sourceBlockNumber: blockNumber.toString(),
     sourceBlockHash: normalizeBytes32(block.hash),
-    card: registration.card,
+    card: card.card,
+    cardVerified: card.cardVerified,
   });
+}
+
+async function resolveRegistrationCard(agentURI: string, identity: AgentIdentity,
+  options: ResolveIdentityOptions): Promise<{ registrationDigest: Bytes32; card: RegistrationCard | null; cardVerified: boolean }> {
+  try {
+    const registration = await loadRegistrationCard(agentURI, identity, options.cardLoaderOptions);
+    return { registrationDigest: registration.registrationDigest, card: registration.card, cardVerified: true };
+  } catch (error) {
+    if (!options.allowUnverifiedCard) throw error;
+    // On-chain-bound fallback: digest the tokenURI string itself (drift-detectable), no card contents.
+    return { registrationDigest: keccak256(toUtf8Bytes(agentURI)) as Bytes32, card: null, cardVerified: false };
+  }
 }
 
 function explicitSourceBlock(value: bigint): bigint {

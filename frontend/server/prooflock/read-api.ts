@@ -546,6 +546,7 @@ async function resolveProductionIdentity(
   signal.throwIfAborted();
   const result = await resolveAgentIdentity({ namespace: "eip155", chainId: CHAIN_ID,
     registryAddress: ERC8004_IDENTITY_REGISTRY, agentId }, { provider, finalityConfirmations: 5,
+    allowUnverifiedCard: true,
     sourceBlockNumber: blockNumber === undefined ? undefined : BigInt(blockNumber) });
   signal.throwIfAborted();
   return result;

@@ -29,7 +29,13 @@ export type ResolvedAgentIdentity = Readonly<{
   registrationDigest: Bytes32;
   sourceBlockNumber: string;
   sourceBlockHash: Bytes32;
-  card: RegistrationCard;
+  // null when the off-chain registration card could not be fetched or did not conform and identity
+  // was bound on-chain only (see cardVerified).
+  card: RegistrationCard | null;
+  // true/undefined when a conformant registration card was fetched and verified; false when identity
+  // was bound to the on-chain wallet with the drift digest derived from the tokenURI string. Optional
+  // so existing fixtures stay valid; production resolution always sets it explicitly.
+  cardVerified?: boolean;
 }>;
 
 export type SubjectKind = "EOA" | "EIP7702_DELEGATED_EOA" | "CONTRACT";

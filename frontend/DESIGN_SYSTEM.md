@@ -35,7 +35,7 @@ Every interactive control is at least 44px high; primary actions are 48px. Icons
 
 The component tier names the future primitive contracts without implementing Task 11: button default/primary height, border, and shadow; field height and border; status-badge padding and type; evidence-sheet surface and shadow; data-row label/value type; state-message border and padding; and proof-plane gap and border. Current selectors consume these tokens where an equivalent element already exists. Behavior, accessible naming, and state matrices still belong to Tasks 11–13.
 
-- `--button-min-height: var(--control-min)`, `--button-primary-height: var(--control-primary)`, `--button-border: var(--border-control-on-dark)`, `--button-shadow: var(--shadow-control)`, `--button-primary-surface: var(--action-on-dark)`, `--button-primary-text: var(--action-ink)`
+- `--button-min-height: var(--control-min)`, `--button-primary-height: var(--control-primary)`, `--button-border: var(--border-control-on-dark)`, `--button-shadow: var(--shadow-control)`, `--button-primary-surface: var(--action-on-dark)`, `--button-primary-text: var(--action-ink)`, `--button-disabled-surface: var(--surface-control)`, `--button-disabled-text: var(--text-muted-on-dark)`
 - `--field-min-height: var(--control-min)`, `--field-border: var(--border-control-on-dark)`, `--field-surface: var(--surface-canvas)`, `--field-text: var(--text-on-dark)`
 - `--status-badge-padding: 5px 8px`, `--status-badge-type: var(--type-caption)`, `--status-badge-success-on-paper: var(--status-success-on-paper)`, `--status-badge-caution-on-paper: var(--status-caution-on-paper)`
 - `--evidence-sheet-surface: var(--surface-paper)`, `--evidence-sheet-shadow: var(--shadow-sheet)`, `--evidence-sheet-cut: var(--dossier-cut)`

@@ -31,7 +31,8 @@
   .evaluate-form label, .operator-controls label, .verify-sheet label, .lifecycle-controls > label { display: block; margin-bottom: 8px; color: var(--text); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); letter-spacing: .08em; text-transform: uppercase; }
   .button { min-height: var(--button-min-height); border: 1px solid var(--button-border); border-radius: var(--shape-square); background: transparent; padding: 12px 16px; cursor: pointer; color: var(--text); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); letter-spacing: .05em; text-transform: uppercase; box-shadow: var(--button-shadow); }
   .button.primary { min-height: var(--button-primary-height); border-color: var(--button-primary-surface); background: var(--button-primary-surface); color: var(--button-primary-text); }
-  .button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  .button:disabled { cursor: not-allowed; box-shadow: none; opacity: 1;
+    background: var(--button-disabled-surface); border-color: var(--button-disabled-surface); color: var(--button-disabled-text); }
   .button:not(:disabled):active { transform: translate(2px, 2px); }
   @media (hover: hover) and (pointer: fine) { .button:not(:disabled):hover { transform: translateY(-2px); border-color: var(--violet); } }
   .demo-action { min-height: var(--control-min); margin-top: 12px; border: 0; background: none; color: var(--warn); cursor: pointer; font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); text-decoration: underline; text-underline-offset: 4px; }
@@ -47,14 +48,17 @@
   .proof-list, .micro-grid { display: grid; margin-top: 22px; }
   .proof-list > div { display: grid; grid-template-columns: minmax(125px, .4fr) 1fr; gap: 18px; padding: 10px 0; border-top: 1px solid var(--line-dark); }
   .micro-grid > div { border-top: 1px solid var(--line-dark); padding-top: 10px; }
-  .micro-grid dd { margin-top: 4px; font-size: var(--type-data); }
+  /* These blocks always render inside paper .evidence-cards; pin explicit paper text colors so a
+     dark-surface token can never leak in and produce light-on-light (the sealed-card class of bug). */
+  .micro-grid dt { color: var(--text-muted-on-paper); }
+  .micro-grid dd { margin-top: 4px; font-size: var(--type-data); color: var(--text-on-paper); }
   .evidence-card.state-good::after, .inventory-row.state-good::before { background: var(--status-success-on-paper); }
   .evidence-card.state-warn::after { background: var(--status-caution-on-paper); }
   .evidence-card.state-bad::after { background: var(--status-failure-on-paper); }
   .decision-card h3 { margin: 8px 0 0; font-size: 2.2rem; color: var(--state); }
   .state-mark { font: 500 2rem var(--font-display); color: var(--state); }
   .reason-code { margin-top: 2px; color: var(--ink) !important; font: 600 var(--type-data)/var(--line-data) var(--font-mono); }
-  .trust-note { margin-top: 18px; font-size: var(--type-data); }
+  .trust-note { margin-top: 18px; font-size: var(--type-data); color: var(--text-muted-on-paper); }
   .operator-panel h3 { margin: 7px 0; }
   .proof-ceremony { position: relative; padding: 26px; border: 1px solid var(--proof-plane-border); background: var(--proof-plane-surface); box-shadow: var(--proof-plane-shadow); }
   .rail-line { position: absolute; left: 43px; top: 48px; bottom: 68px; width: 1px; background: linear-gradient(var(--violet), var(--rail-end-on-ceremony)); }
@@ -166,7 +170,8 @@
   .ui-button--primary { min-height: var(--button-primary-height); border-color: var(--button-primary-surface); background: var(--button-primary-surface); color: var(--button-primary-text); }
   .ui-button--quiet { border-color: transparent; box-shadow: none; color: var(--action-on-dark); }
   .ui-button--destructive { border-color: currentColor; background: transparent; color: var(--status-failure-on-dark); }
-  .ui-button:disabled { opacity: .4; cursor: not-allowed; box-shadow: none; }
+  .ui-button:disabled { cursor: not-allowed; box-shadow: none; opacity: 1;
+    background: var(--button-disabled-surface); border-color: var(--button-disabled-surface); color: var(--button-disabled-text); }
   .ui-button[aria-disabled="true"] { cursor: progress; }
   .ui-button:not(:disabled):not([aria-disabled="true"]):active { transform: translate(2px, 2px); }
   .ui-button:focus-visible, .ui-field__input:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }

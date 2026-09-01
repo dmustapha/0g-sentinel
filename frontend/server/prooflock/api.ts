@@ -53,9 +53,17 @@ export type HistoricalProofLock = Readonly<{ record: RegistryProofLockRecord;
   source: Readonly<{ kind: "ProofLocked"; registryAddress: HexAddress; transactionHash: Bytes32;
     blockNumber: number; blockHash: Bytes32; logIndex: number }> }>;
 
+// Plain-English risk narrative restored from v1 (summary + factors), re-parsed from the enclave-
+// signed compute response, alongside the canonical on-chain scores. null narrative = older/terse seal.
+export type ProofLockRiskAnalysis = Readonly<{
+  behavioralScore: number; codeRisk: number; label: string;
+  behavioralSummary: string | null; behavioralFactors: readonly string[];
+  codeSummary: string | null; codeFactors: readonly string[];
+}>;
 export type ProofLockDetail =
   | Readonly<{ status: "VERIFIED"; identity: ProofLockIdentitySummary;
-    resolution: ProofLockResolutionSummary; gate: GateDetail; consumer: ConsumerDetail }>
+    resolution: ProofLockResolutionSummary; gate: GateDetail; consumer: ConsumerDetail;
+    analysis?: ProofLockRiskAnalysis }>
   | Readonly<{ status: "UNAVAILABLE"; code: "EVIDENCE_UNAVAILABLE" | "EVIDENCE_INVALID" | "IDENTITY_UNAVAILABLE" | "IDENTITY_INVALID";
     identity: null; resolution: null; gate: UnknownGateDetail; consumer: UnknownConsumerDetail }>;
 export type GateDetail = Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number;

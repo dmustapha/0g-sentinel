@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { SubsystemHealthGrid } from "@/components/SubsystemHealthGrid";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { StateMessage } from "@/components/ui/StateMessage";
+import { TechnicalDisclosure } from "@/components/ui/TechnicalDisclosure";
 import { VERIFIER_CLAIM_COPY, assertClaimAllowed, claimFor } from "@/lib/prooflock-claims";
 import { readHealth } from "@/lib/prooflock-client";
 import { canonicalProofHref } from "@/lib/prooflock-routes";
@@ -41,8 +43,25 @@ export default function ProofPage() {
   };
 
   return <section className="workspace-section proof-page"><div className="wrap">
-    <div className="page-heading"><span className="eyebrow">{VERIFIER_CLAIM_COPY.title}</span><h1>{VERIFIER_CLAIM_COPY.title}</h1>
-      <p>{verifierClaim.text}</p></div>
+    <div className="page-heading"><span className="eyebrow">{VERIFIER_CLAIM_COPY.title}</span><h1>Check an agent&apos;s proof</h1>
+      <p>This page lets anyone independently confirm an agent&apos;s sealed evidence and current access. {verifierClaim.text}</p></div>
+
+    <section className="verify-primary" aria-labelledby="verify-primary-title">
+      <h2 id="verify-primary-title" className="verify-primary__title">Just want to check an agent?</h2>
+      <p>You do not need any codes. Browse the agents with sealed proofs and open one to see a plain
+        summary of whether it is admitted and why.</p>
+      <div className="verify-primary__actions">
+        <Link className="ui-button ui-button--primary ui-button--idle" data-variant="primary" href="/agents">
+          <span className="ui-button__content"><span className="ui-button__label">Browse agents</span></span>
+        </Link>
+        <Link className="text-link" href="/scan">Or scan a new agent by ID</Link>
+      </div>
+    </section>
+
+    <TechnicalDisclosure summary="I already have a proof ID"
+      hint="For developers: paste the exact proof ID and identity key to verify a specific sealed artifact.">
+    <p className="verify-help">Where do these come from? Every agent detail page and every sealed proof link
+      carries its own proof ID and identity key. Open an agent above, then use its Verify link.</p>
     <form className="verify-sheet" onSubmit={submit} onKeyDown={validateEnter} noValidate>
       <Field ref={proofRef} label="Proof ID" mono required value={proofId} onChange={(event) => setProofId(event.target.value)}
         placeholder="0x…32-byte proof ID" error={(submitted || proofId) && !exactProofId ? VERIFIER_CLAIM_COPY.entry.proofError : undefined} />
@@ -56,6 +75,7 @@ export default function ProofPage() {
         {VERIFIER_CLAIM_COPY.entry.invalidDetail}
       </StateMessage> : null}
     </form>
+    </TechnicalDisclosure>
     <HealthPanel />
   </div></section>;
 }

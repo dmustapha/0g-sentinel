@@ -1,5 +1,7 @@
 # 0G Sentinel ProofLock: Submission Proof
 
+The problem: when one smart contract wants to let an AI agent act on its behalf (spend funds, trade, call functions), how does it know the agent is safe right now, and how does it revoke that trust the instant the agent's identity changes? ProofLock is a provable, revocable admission pass for AI agents. It does not disable or restrict any agent; it issues a verifiable on-chain verdict that other contracts choose to enforce at their own door, with one call (`gate.requireAgent(agentId)`). Today only our own `ProofLockConsumerDemo` calls it; it is designed for any 0G contract to import, but no third party integrates it yet (hackathon). The evidence below proves the full seal, drift, and reseal lifecycle on mainnet.
+
 Network: 0G Aristotle Mainnet (Chain ID: 16661) · RPC: `https://evmrpc.0g.ai` · Explorer: `https://chainscan.0g.ai`
 Live dashboard: https://sentinel-prooflock.vercel.app
 

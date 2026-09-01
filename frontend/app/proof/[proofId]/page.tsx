@@ -22,6 +22,9 @@ export default function ProofDetailPage({ params }: { params: { proofId: string 
   useEffect(() => { headingRef.current?.focus(); }, [identityKey, params.proofId, rawSourceTxHash]);
   return <section className="workspace-section proof-detail"><div className="wrap"><Link href="/proof" className="text-link">← Verify another proof</Link>
     <header className="detail-header"><div><span className="eyebrow">Historical proof artifact</span><h1 ref={headingRef} tabIndex={-1}>Proof verification</h1></div></header>
+    <p className="verify-help">What this page tells you: it re-checks one sealed proof against the exact bytes stored
+      on chain and reports whether it still matches, plus whether the agent has live access now. Press verify below
+      to run the check. The identifiers used for the check are listed first.</p>
     <ProofIdentifierList proofId={params.proofId} identityKey={identityKey} sourceTxHash={rawSourceTxHash} />
     {valid ? <VerifyEvidenceButton proofId={normalizedProofId} identityKey={normalizedIdentityKey} sourceTxHash={sourceTxHash} /> : <div className="empty-ledger state-bad"><h2>{VERIFIER_CLAIM_COPY.detail.invalidTitle}</h2><p>{VERIFIER_CLAIM_COPY.detail.invalidDetail}</p></div>}
   </div></section>;

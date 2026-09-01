@@ -177,7 +177,7 @@ function runnerDependencies(
 ): ProofLockRunnerDependencies {
   return Object.freeze({
     validateIdentity: (identity) => resolveAgentIdentity(identity,
-      { adapter: createErc8004Adapter(provider), finalityConfirmations: config.confirmations }),
+      { adapter: createErc8004Adapter(provider), finalityConfirmations: config.confirmations, allowUnverifiedCard: true }),
     classifySubject: (identity) => classifyResolved(subjectAdapter, identity),
     runDeterministicChecks: (_identity, subject) => deterministicResult(subjectAdapter, subject),
     runCompute: (identity, subject, deterministic, _signal, costs) => computeResult(config, state.compute,
@@ -219,7 +219,7 @@ function driftDependencies(
       const envelope = snapshots.get(identityKey) ?? await recoverEnvelope(identityKey, chainAdapter, reads);
       snapshots.delete(identityKey);
       const identity = await resolveAgentIdentity(envelope.identity,
-        { adapter: createErc8004Adapter(provider), finalityConfirmations: config.confirmations });
+        { adapter: createErc8004Adapter(provider), finalityConfirmations: config.confirmations, allowUnverifiedCard: true });
       const subject = await classifyResolved(subjectAdapter, identity);
       const report = await runSubjectChecks(subjectAdapter, subject, sourceBlock(subject));
       return resolvedFingerprint(identity, toEvidenceSubject(subject, report), config.policyVersion);

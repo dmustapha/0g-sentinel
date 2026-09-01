@@ -649,3 +649,26 @@ function response(body: string, headers: Record<string, string> = {}): CardHttpR
     body: getBytes("0x" + Buffer.from(body).toString("hex")),
   };
 }
+
+describe("on-chain-bound resolution (allowUnverifiedCard)", () => {
+  const NONCONFORMANT = `data:application/json,${encodeURIComponent(JSON.stringify({ type: "not-a-registration-card" }))}`;
+  it("still fails closed on a bad card when allowUnverifiedCard is not set", async () => {
+    const fake = adapter({ tokenURI: async () => NONCONFORMANT });
+    await expect(resolveAgentIdentity(IDENTITY, { adapter: fake.value })).rejects.toMatchObject({ name: "IdentityError" });
+  });
+  it("binds on-chain and derives the drift digest from the tokenURI when the card is non-conformant", async () => {
+    const fake = adapter({ tokenURI: async () => NONCONFORMANT });
+    const result = await resolveAgentIdentity(IDENTITY, { adapter: fake.value, allowUnverifiedCard: true });
+    expect(result.cardVerified).toBe(false);
+    expect(result.card).toBeNull();
+    expect(result.agentWallet).toBe(WALLET);
+    expect(result.owner).toBe(OWNER);
+    // digest is keccak256 of the tokenURI string (drift-detectable on a registration change)
+    expect(result.registrationDigest).toBe(keccak256(toUtf8Bytes(NONCONFORMANT)));
+  });
+  it("keeps cardVerified true for a conformant card even with allowUnverifiedCard set", async () => {
+    const result = await resolveAgentIdentity(IDENTITY, { adapter: adapter().value, allowUnverifiedCard: true });
+    expect(result.cardVerified).toBe(true);
+    expect(result.card).not.toBeNull();
+  });
+});

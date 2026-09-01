@@ -170,3 +170,32 @@ export function friendlyScanError(detail: ApiErrorShape): Readonly<{ title: stri
       return { title: "The scan stopped safely.", body: "No irreversible state was left behind. You can try the scan again." };
   }
 }
+
+// Client-side address helpers for the /scan front door. An address is resolved to its agentId only
+// when the server verifies getAgentWallet on-chain (foolproof); a non-agent address returns NOT_AN_AGENT.
+export function looksLikeAddress(value: string): boolean {
+  return /^0x[0-9a-fA-F]{40}$/.test(value);
+}
+
+export type AddressResolution =
+  | Readonly<{ status: "AGENT"; agentId: string }>
+  | Readonly<{ status: "NOT_AN_AGENT" }>
+  | Readonly<{ status: "ERROR" }>;
+
+export async function resolveAddressToAgentId(address: string, signal?: AbortSignal): Promise<AddressResolution> {
+  try {
+    const response = await fetch(`/api/agents/resolve-address?address=${encodeURIComponent(address)}`,
+      { headers: { accept: "application/json" }, signal });
+    if (response.ok) {
+      const body = (await response.json()) as { agentId?: unknown };
+      if (typeof body.agentId === "string" && /^(0|[1-9]\d*)$/.test(body.agentId)) {
+        return { status: "AGENT", agentId: body.agentId };
+      }
+      return { status: "ERROR" };
+    }
+    if (response.status === 404) return { status: "NOT_AN_AGENT" };
+    return { status: "ERROR" };
+  } catch {
+    return { status: "ERROR" };
+  }
+}

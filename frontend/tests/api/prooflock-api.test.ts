@@ -820,6 +820,7 @@ describe("public scan stream (no-token front door)", () => {
     loadRunner: (opts.loadRunner as never) ?? (async () => ({ run: failingRun })),
     loadReads: (opts.loadReads as never) ?? reads(),
     registryAddress: ERC8004_IDENTITY_REGISTRY,
+    resolveAddress: opts.resolveAddress as never,
     rate: (opts.rate as never) ?? { max: 3, windowMs: 60_000 },
   });
   const post = (h: (r: Request) => Promise<Response>, body: unknown, headers: Record<string, string> = {}) =>
@@ -866,5 +867,34 @@ describe("public scan stream (no-token front door)", () => {
     await post(handler, { agentId: "7" });
     const third = await post(handler, { agentId: "7" });
     expect(third.status).toBe(429);
+  });
+
+  it("resolves an address to its agentId and seals (foolproof path)", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const run = vi.fn(async (input: Record<string, unknown>) => { captured = input; throw new ProofLockStageError("VALIDATING_IDENTITY", "x"); });
+    const resolveAddress = vi.fn().mockResolvedValue({ status: "AGENT", agentId: "7" });
+    const response = await post(build({ loadRunner: async () => ({ run }), resolveAddress }), { address: "0x1111111111111111111111111111111111111111" });
+    expect(resolveAddress).toHaveBeenCalledWith("0x1111111111111111111111111111111111111111");
+    expect(response.status).not.toBe(401);
+    expect((captured?.identity as { agentId: string }).agentId).toBe("7");
+  });
+
+  it("REFUSES to seal an address that is not a registered agent (404, no run)", async () => {
+    const loadRunner = vi.fn();
+    const resolveAddress = vi.fn().mockResolvedValue({ status: "NOT_AN_AGENT" });
+    const response = await post(build({ loadRunner, resolveAddress }), { address: "0x2222222222222222222222222222222222222222" });
+    expect(response.status).toBe(404);
+    expect((await response.json()).error.code).toBe("AGENT_NOT_FOUND");
+    expect(loadRunner).not.toHaveBeenCalled();
+  });
+
+  it("rejects providing both agentId and address", async () => {
+    const response = await post(build(), { agentId: "7", address: "0x1111111111111111111111111111111111111111" });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a malformed address", async () => {
+    const response = await post(build({ resolveAddress: vi.fn() }), { address: "0x123" });
+    expect(response.status).toBe(400);
   });
 });

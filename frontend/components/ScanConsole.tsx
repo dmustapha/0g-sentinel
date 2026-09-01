@@ -6,7 +6,8 @@ import { canonicalProofHref } from "@/lib/prooflock-routes";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
 import type { RunnerStage } from "@/lib/prooflock-types";
 import {
-  friendlyScanError, reconcileScan, runPublicScan, ScanStreamError, type ScanSealed,
+  friendlyScanError, looksLikeAddress, reconcileScan, resolveAddressToAgentId, runPublicScan,
+  ScanStreamError, type ScanSealed,
 } from "@/lib/scan-client";
 import { GateDecisionCard } from "./GateDecisionCard";
 import { StreamingScanPanel } from "./StreamingScanPanel";
@@ -69,7 +70,10 @@ export function ScanConsole() {
   const [state, dispatch] = useReducer(reducer, initialState);
   const runRef = useRef<AbortController | null>(null);
   const resultRef = useRef<HTMLDivElement>(null);
-  const valid = isCanonicalAgentId(state.agentId);
+  const trimmedInput = state.agentId.trim();
+  const isAgentId = isCanonicalAgentId(trimmedInput);
+  const isAddress = looksLikeAddress(trimmedInput);
+  const valid = isAgentId || isAddress;
   const busy = state.phase === "streaming" || state.phase === "reconciling";
 
   useEffect(() => () => runRef.current?.abort(), []);
@@ -118,18 +122,32 @@ export function ScanConsole() {
     }
   }, []);
 
+  // Accepts an agentId directly, or a wallet address that is first resolved to its agentId on-chain
+  // (foolproof: a non-agent address is rejected, never sealed as an agent).
+  const submit = useCallback(async (raw: string) => {
+    const input = raw.trim();
+    if (isCanonicalAgentId(input)) { void scan(input); return; }
+    if (!looksLikeAddress(input)) return;
+    dispatch({ type: "START" });
+    const resolution = await resolveAddressToAgentId(input);
+    if (resolution.status === "AGENT") { void scan(resolution.agentId); return; }
+    dispatch({ type: "ERROR", error: resolution.status === "NOT_AN_AGENT"
+      ? { title: "Not a registered agent.", body: "This address is not a registered ERC-8004 agent on 0G, so it cannot be sealed as one." }
+      : { title: "Could not resolve that address.", body: "Address resolution is unavailable right now. Try again shortly." } });
+  }, [scan]);
+
   return (
     <div className="evaluate-workbench scan-console">
       <form className="evaluate-form" onSubmit={(event) => {
         event.preventDefault();
-        if (valid && !busy) void scan(state.agentId.trim());
+        if (valid && !busy) void submit(state.agentId.trim());
       }}>
         <div className="input-row">
-          <Field id="scan-agent-id" label="ERC-8004 Agent ID" inputMode="numeric" pattern="[0-9]*"
+          <Field id="scan-agent-id" label="ERC-8004 Agent ID or wallet address"
             value={state.agentId} disabled={busy} autoComplete="off" spellCheck={false}
             invalid={state.agentId !== "" && !valid} aria-describedby="scan-status"
             onChange={(event) => dispatch({ type: "EDIT", agentId: event.target.value.trim() })}
-            placeholder={`e.g. ${DEMO_AGENT_ID}`} />
+            placeholder={`e.g. ${DEMO_AGENT_ID} or 0x…`} />
           <Button variant="primary" type="submit" disabled={!valid || busy} pending={busy}
             pendingLabel={state.phase === "reconciling" ? "Confirming on chain…" : "Sealing…"}>
             Scan agent
@@ -142,7 +160,7 @@ export function ScanConsole() {
 
       <div id="scan-status" aria-live="polite" className="scan-status-region">
         {state.phase === "idle" && state.agentId !== "" && !valid ? (
-          <div className="inline-state state-bad">Invalid Agent ID · use an unsigned decimal token ID.</div>
+          <div className="inline-state state-bad">Enter an ERC-8004 Agent ID (decimal) or a wallet address (0x + 40 hex).</div>
         ) : null}
         {state.phase === "reconciling" ? (
           <StateMessage state="loading" title="Reading the lease back from chain">

@@ -10,6 +10,7 @@ import type { RunnerProgress } from "./runner";
 import type { PublicWriteOutcome } from "./operation-journal";
 import { WriteRecoveryError } from "./recovery";
 import { authenticateOperator } from "./auth";
+import { isEvmAddress } from "./identity/resolve-by-address";
 import type { CurrentAccessV1 } from "@/lib/prooflock-types";
 
 const MAX_BODY_BYTES = 16_384;
@@ -153,6 +154,9 @@ export function createPublicScanStreamHandler(config: Readonly<{
   loadRunner(): Promise<StreamRunner>;
   loadReads(): ProofLockReadDependencies;
   registryAddress: string;
+  // Foolproof address -> agentId resolver. Returns the agentId only when getAgentWallet verifies
+  // on-chain; a raw wallet is never sealed as an agent unless it provably is one.
+  resolveAddress?: (address: string) => Promise<{ status: "AGENT"; agentId: string } | { status: "NOT_AN_AGENT" }>;
   rate?: Readonly<{ max: number; windowMs: number }>;
 }>) {
   const inner = createProofLockStreamHandler({ operatorToken: config.operatorToken, loadRunner: config.loadRunner });
@@ -167,15 +171,37 @@ export function createPublicScanStreamHandler(config: Readonly<{
       return apiErrorResponse(null, { code: "RATE_LIMIT", message: "Public scan is busy; try again shortly",
         stage: "AUTHENTICATING", retryable: true, status: 429, requestId });
     }
+    // Accepts either { agentId } (canonical ERC-8004 id) or { address } (a wallet, resolved to its
+    // agentId only if getAgentWallet verifies on-chain). A non-agent address is rejected, never sealed.
     let agentId: string;
     try {
       const body = await parseSmallObject(request, deadline(request.signal));
-      if (Object.keys(body).some((key) => key !== "agentId") || typeof body.agentId !== "string"
-        || !isCanonicalAgentId(body.agentId)) {
-        return apiErrorResponse(null, { code: "INVALID_INPUT", message: "A canonical ERC-8004 agentId is required",
+      const keys = Object.keys(body);
+      const addressInput = typeof body.address === "string" ? body.address.trim() : undefined;
+      const agentInput = typeof body.agentId === "string" ? body.agentId : undefined;
+      if (keys.some((key) => key !== "agentId" && key !== "address") || (!!addressInput === !!agentInput)) {
+        return apiErrorResponse(null, { code: "INVALID_INPUT", message: "Provide exactly one of agentId or address",
           stage: "VALIDATING_IDENTITY", retryable: false, status: 400, requestId });
       }
-      agentId = body.agentId;
+      if (agentInput !== undefined) {
+        if (!isCanonicalAgentId(agentInput)) {
+          return apiErrorResponse(null, { code: "INVALID_INPUT", message: "A canonical ERC-8004 agentId is required",
+            stage: "VALIDATING_IDENTITY", retryable: false, status: 400, requestId });
+        }
+        agentId = agentInput;
+      } else {
+        if (!config.resolveAddress || !isEvmAddress(addressInput!)) {
+          return apiErrorResponse(null, { code: "INVALID_INPUT", message: "A valid EVM address is required",
+            stage: "VALIDATING_IDENTITY", retryable: false, status: 400, requestId });
+        }
+        const resolved = await config.resolveAddress(addressInput!);
+        if (resolved.status !== "AGENT") {
+          return apiErrorResponse(null, { code: "AGENT_NOT_FOUND",
+            message: "This address is not a registered ERC-8004 agent on 0G",
+            stage: "VALIDATING_IDENTITY", retryable: false, status: 404, requestId });
+        }
+        agentId = resolved.agentId;
+      }
     } catch (error) { return mapApiError(error, "VALIDATING_IDENTITY", requestId); }
 
     const identity: AgentIdentity = { namespace: "eip155", chainId: 16661,

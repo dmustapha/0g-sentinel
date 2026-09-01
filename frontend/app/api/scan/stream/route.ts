@@ -1,6 +1,7 @@
 import { createPublicScanStreamHandler, methodNotAllowedResponse } from "@/server/prooflock/api";
 import { loadProofLockRunner } from "@/server/prooflock/operator";
 import { createProductionReadDependencies } from "@/server/prooflock/read-api";
+import { createProductionAddressResolver, resolveAgentIdByAddress } from "@/server/prooflock/identity/resolve-by-address";
 import { ERC8004_IDENTITY_REGISTRY } from "@/server/prooflock/types";
 
 export const runtime = "nodejs";
@@ -14,6 +15,7 @@ export const POST = createPublicScanStreamHandler({
   loadRunner: loadProofLockRunner,
   loadReads: () => createProductionReadDependencies(process.env),
   registryAddress: ERC8004_IDENTITY_REGISTRY,
+  resolveAddress: (address) => resolveAgentIdByAddress(address, createProductionAddressResolver(process.env)),
   rate: { max: 6, windowMs: 60_000 },
 });
 export const GET = () => methodNotAllowedResponse("AUTHENTICATING");

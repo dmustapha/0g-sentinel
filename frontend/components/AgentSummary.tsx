@@ -1,21 +1,22 @@
 import { leaseStatus } from "@/lib/prooflock-status";
 import { safeDisplayText } from "@/lib/safe-display";
 import {
-  agentVerdict, coverageGloss, historicalPlain, leasePlain, riskBand,
+  agentVerdict, coverageGloss, historicalPlain, leasePlain, riskBand, type GateVerdictInput,
 } from "@/lib/prooflock-verdict";
 import type { CurrentDecisionView, HistoricalPlaneView } from "@/lib/proof-detail-state";
 import type { LeaseStatus, ProofLockRecord, ProofLockRiskAnalysis } from "@/lib/prooflock-types";
 
 // The plain-English verdict banner. Replaces the old raw status token as the visual hero: a
 // non-technical reader learns "is this agent safe / can I trust it" in one line.
-export function SummaryVerdict({ agentId, current, record, historical, nowSeconds }: Readonly<{
+export function SummaryVerdict({ agentId, gate, current, record, historical, nowSeconds }: Readonly<{
   agentId: string;
+  gate?: GateVerdictInput;
   current: CurrentDecisionView | undefined;
   record: ProofLockRecord;
   historical: HistoricalPlaneView | null;
   nowSeconds?: number;
 }>) {
-  const verdict = agentVerdict({ agentId, current, record, nowSeconds });
+  const verdict = agentVerdict({ agentId, gate, current, record, nowSeconds });
   const sealed = historicalPlain(historical);
   return (
     <section className="summary-verdict" data-tone={verdict.tone} aria-labelledby="agent-verdict">

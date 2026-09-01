@@ -2,7 +2,9 @@ import { parseNonZeroBytes32 } from "@/lib/prooflock-validation";
 import { apiErrorResponse, type ProofLockDetail } from "./api";
 import { computeProofLockId, REGISTRY_V2_INTERFACE, type RegistryProofLockRecord } from "./chain";
 
-const TIMEOUT_MS = 10_000;
+// Each candidate is enriched with a 0G Storage evidence read, so a populated leaderboard needs a
+// budget that scales past a handful of agents (kept under the route's maxDuration).
+const TIMEOUT_MS = 45_000;
 const MAX_TTL_SECONDS = 30n * 24n * 60n * 60n;
 
 export type DiscoveryLog = Readonly<{

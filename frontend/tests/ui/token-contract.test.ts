@@ -10,6 +10,7 @@ const COMPONENT_TOKENS = {
   "--button-min-height": "var(--control-min)", "--button-primary-height": "var(--control-primary)",
   "--button-border": "var(--border-control-on-dark)", "--button-shadow": "var(--shadow-control)",
   "--button-primary-surface": "var(--action-on-dark)", "--button-primary-text": "var(--action-ink)",
+  "--button-disabled-surface": "var(--surface-control)", "--button-disabled-text": "var(--text-muted-on-dark)",
   "--field-min-height": "var(--control-min)", "--field-border": "var(--border-control-on-dark)",
   "--field-surface": "var(--surface-canvas)", "--field-text": "var(--text-on-dark)",
   "--status-badge-padding": "5px 8px", "--status-badge-type": "var(--type-caption)",

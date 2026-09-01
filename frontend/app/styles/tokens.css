@@ -107,6 +107,10 @@
     --button-shadow: var(--shadow-control);
     --button-primary-surface: var(--action-on-dark);
     --button-primary-text: var(--action-ink);
+    /* Disabled buttons must stay legible: a muted surface + readable muted label at full opacity,
+       never a low-opacity wash of the colored primary fill (that drops well below 4.5:1). */
+    --button-disabled-surface: var(--surface-control);
+    --button-disabled-text: var(--text-muted-on-dark);
     --field-min-height: var(--control-min);
     --field-border: var(--border-control-on-dark);
     --field-surface: var(--surface-canvas);

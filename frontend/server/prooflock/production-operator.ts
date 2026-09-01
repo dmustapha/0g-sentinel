@@ -10,6 +10,8 @@ import { canonicalizeEvidence } from "./canonical";
 import { createEthersRegistryChainAdapter, computeIdentityKey, readProofLockBack,
   writeProofLock, type RegistryChainAdapter } from "./chain";
 import { runSubjectChecks, toEvidenceSubject, type SubjectCheckReport } from "./checks";
+import { collectRiskBundle, createProductionRiskBundleDeps, combineBehavioralScore, combineCodeRisk, bundleForLlm } from "./analysis/risk-bundle";
+import type { RiskEvidenceBundle } from "./analysis/types";
 import { createProductionStrictComputeDependencies, runStrictCompute } from "./compute/strict-broker";
 import { buildDriftFingerprint, type DriftFingerprint } from "./drift";
 import { createErc8004Adapter, resolveAgentIdentity } from "./identity/erc8004";
@@ -179,7 +181,7 @@ function runnerDependencies(
     validateIdentity: (identity) => resolveAgentIdentity(identity,
       { adapter: createErc8004Adapter(provider), finalityConfirmations: config.confirmations, allowUnverifiedCard: true }),
     classifySubject: (identity) => classifyResolved(subjectAdapter, identity),
-    runDeterministicChecks: (_identity, subject) => deterministicResult(subjectAdapter, subject),
+    runDeterministicChecks: (_identity, subject) => deterministicResult(subjectAdapter, subject, config),
     runCompute: (identity, subject, deterministic, _signal, costs) => computeResult(config, state.compute,
       identity, subject, deterministic, costs),
     buildEvidenceEnvelope: (context) => Promise.resolve(evidenceEnvelope(context)),
@@ -259,19 +261,53 @@ async function classifyResolved(
 async function deterministicResult(
   adapter: SubjectChainAdapter,
   subject: ClassifiedSubject,
+  config?: ProductionOperatorConfig,
 ): Promise<DeterministicStageResult> {
   const report = await runSubjectChecks(adapter, subject, sourceBlock(subject));
   const evidenceSubject = toEvidenceSubject(subject, report);
   assertProductionSealableSubject(subject, evidenceSubject);
-  const findings = reportFindings(report);
+  // Deep-risk evidence: real 0G explorer behavioral data + heuristics + threat intel + contract
+  // analysis. Fully graceful (a down explorer/API degrades to partial coverage, never fails the
+  // seal). Captured as a seal-time snapshot and folded into the findings + compute context.
+  const riskBundle = await safeCollectRiskBundle(subject.address, config);
+  const findings = mergeFindings(reportFindings(report), riskBundle);
+  const codeRisk = combineCodeRisk(
+    riskBundle ?? emptyBundle(subject.address),
+    deterministicCodeRisk(subject.kind, report.status),
+    0,
+  );
   return Object.freeze({
     checks: [Object.freeze({ id: checkId(report), version: "1", status: report.status,
       inputDigest: digest({ address: subject.address, runtimeCodeHash: subject.runtimeCodeHash,
         block: sourceBlock(subject) }), outputDigest: digest(report), findings })],
     report, evidenceSubject,
-    codeRisk: deterministicCodeRisk(subject.kind, report.status),
+    codeRisk: subject.kind === "EOA" ? 0 : codeRisk,
     omissions: subject.kind === "EOA" ? ["Contract code analysis is not applicable to an EOA."] : [],
+    ...(riskBundle ? { riskBundle } : {}),
   });
+}
+
+async function safeCollectRiskBundle(address: string, config?: ProductionOperatorConfig): Promise<RiskEvidenceBundle | undefined> {
+  if (!config) return undefined;
+  try {
+    return await collectRiskBundle(address, createProductionRiskBundleDeps(config.rpcUrl));
+  } catch { return undefined; }
+}
+
+function mergeFindings(base: readonly string[], bundle: RiskEvidenceBundle | undefined): readonly string[] {
+  if (!bundle) return base;
+  const extra = [...bundle.heuristics.factors, ...bundle.contract.factors,
+    ...(bundle.threat.sanctioned ? ["Address appears on a sanctions list."] : []),
+    ...(bundle.threat.scamFlagged ? ["Address flagged as a known scam or drainer."] : [])];
+  return Object.freeze([...base, ...extra].slice(0, 40));
+}
+
+function emptyBundle(address: string): RiskEvidenceBundle {
+  return { address: address as `0x${string}`, isContract: false, nonce: 0, observedAtBlock: 0,
+    heuristics: { signals: [], behavioralScore: 0, factors: [] },
+    threat: { sanctioned: false, scamFlagged: false, sources: [], signals: [] },
+    contract: { isContract: false, bytecodeFlags: [], sourceFindings: [], codeRisk: 0, signals: [], factors: [] },
+    coverage: { explorer: "UNAVAILABLE", rpc: "UNAVAILABLE" } };
 }
 
 export function assertProductionSealableSubject(
@@ -291,12 +327,15 @@ async function computeResult(
   deterministic: DeterministicStageResult,
   costs?: PaidCostController,
 ) {
+  // The LLM reasons over the FULL deep-risk bundle (heuristics + threat intel + contract flags), not
+  // just the deterministic checks, so it detects malicious patterns instead of guessing from a nonce.
+  const riskEvidence = deterministic.riskBundle ? bundleForLlm(deterministic.riskBundle) : undefined;
   const context = canonicalize(normalizeBigints({ identity: identity.identity, subject: deterministic.evidenceSubject,
-    deterministicChecks: deterministic.checks }));
+    deterministicChecks: deterministic.checks, ...(riskEvidence ? { riskEvidence } : {}) }));
   if (typeof context !== "string") throw new Error("Compute context could not be canonicalized");
   const behavioral = await paidCompute("COMPUTE_BEHAVIORAL", costs,
     () => runStrictCompute(computeInput(config, "behavioral-risk", context), dependencies));
-  const score = parseRiskScore(behavioral.content);
+  const llmScore = parseRiskScore(behavioral.content);
   const proofs = [behavioral.proof];
   let aiCodeRisk = 0;
   if (subject.kind !== "EOA") {
@@ -305,7 +344,12 @@ async function computeResult(
     aiCodeRisk = parseContractCodeRisk(code.content);
     proofs.push(code.proof);
   }
-  const codeRisk = Math.max(deterministic.codeRisk, aiCodeRisk);
+  // Combine: computed heuristic evidence must not be undercounted by the LLM (take the max), and a
+  // hard signal (sanctioned / known scam / honeypot) clamps risk high regardless of the LLM.
+  const score = deterministic.riskBundle
+    ? combineBehavioralScore(deterministic.riskBundle, llmScore) : llmScore;
+  const codeRisk = subject.kind === "EOA" ? 0
+    : combineCodeRisk(deterministic.riskBundle ?? emptyBundle(subject.address), deterministic.codeRisk, aiCodeRisk);
   const label = score < 30 ? "SAFE" as const : score < 60 ? "CAUTION" as const : "FLAGGED" as const;
   return Object.freeze({ proofs: Object.freeze(proofs), behavioralScore: score, codeRisk,
     verdict: Object.freeze({ riskScore: score, codeRisk, label }) });
@@ -347,8 +391,8 @@ function computeInput(
   // and factors are the plain-English "why" (restored from v1) and are carried inside the enclave-
   // signed response, so they are tamper-proof and re-verifiable. Keep it JSON-only to stay parseable.
   const systemPrompt = purpose === "behavioral-risk"
-    ? 'You are an on-chain behavioral risk auditor for AI agents. Analyze the subject evidence JSON in the user message and assess how risky it is to admit this agent. Respond with ONLY a strict minified JSON object of exactly this shape and nothing else (no prose, no markdown, no code fences): {"riskScore":N,"summary":S,"factors":F}. N is an integer 0 (safe) to 100 (malicious). S is ONE plain-English sentence (max 200 chars) a non-technical user can understand, stating the verdict and the main reason. F is an array of 2 to 4 short plain-English strings (max 80 chars each) naming the key factors behind the score.'
-    : 'You are a smart-contract code risk auditor. Analyze the deterministic contract evidence JSON in the user message. Respond with ONLY a strict minified JSON object of exactly this shape and nothing else (no prose, no markdown, no code fences): {"riskScore":N,"summary":S,"factors":F}. N is an integer 0 (safe) to 100 (dangerous). S is ONE plain-English sentence (max 200 chars) explaining the code-risk verdict. F is an array of 2 to 4 short plain-English strings (max 80 chars each) naming the key factors.';
+    ? 'You are an on-chain behavioral risk auditor for AI agents. The user message includes a riskEvidence object with computed signals (heuristicScore, riskSignals, threat intel, contract flags) from real 0G on-chain data. Weigh that evidence: unlimited approvals, drain patterns, high failed-tx rate, and single-counterparty concentration raise risk; sanctioned or scam-flagged addresses are maximum risk; a clean active wallet with a registered identity is low risk. Respond with ONLY a strict minified JSON object of exactly this shape and nothing else (no prose, no markdown, no code fences): {"riskScore":N,"summary":S,"factors":F}. N is an integer 0 (safe) to 100 (malicious). S is ONE plain-English sentence (max 200 chars) a non-technical user can understand, stating the verdict and the main reason. F is an array of 2 to 4 short plain-English strings (max 80 chars each) naming the key factors behind the score.'
+    : 'You are a smart-contract code risk auditor. The user message includes a riskEvidence.contract object with bytecode flags (SELFDESTRUCT, DELEGATECALL, owner-controlled mint/pause/blacklist) and source findings from the real contract. Weigh them: self-destruct or honeypot patterns are dangerous; upgradeable/owner-controlled is a warning; none is clean. Respond with ONLY a strict minified JSON object of exactly this shape and nothing else (no prose, no markdown, no code fences): {"riskScore":N,"summary":S,"factors":F}. N is an integer 0 (safe) to 100 (dangerous). S is ONE plain-English sentence (max 200 chars) explaining the code-risk verdict. F is an array of 2 to 4 short plain-English strings (max 80 chars each) naming the key factors.';
   return Object.freeze({ chainId: 16661 as const, purpose, provider: config.computeProvider,
     model: config.computeModel, systemPrompt, userMessage: context,
     spendAuthorized: config.spendAuthorized, timeoutMs: config.timeoutMs });

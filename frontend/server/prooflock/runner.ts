@@ -4,6 +4,7 @@ import { AbiCoder, keccak256, toUtf8Bytes } from "ethers";
 import { canonicalize } from "json-canonicalize";
 
 import { canonicalizeEvidence, canonicalizeStorageCommitment } from "./canonical";
+import type { RiskEvidenceBundle } from "./analysis/types";
 import { computeIdentityKey, type ChainWriteProgress, type ChainWriteRequest, type ChainWriteResult, type RegistryProofLockRecord } from "./chain";
 import type { SubjectCheckReport } from "./checks";
 import { OperationJournalError, type OperationJournal, type OperationRecord, type PaidStage, type PublicWriteOutcome } from "./operation-journal";
@@ -28,6 +29,9 @@ export type RunnerInput = Readonly<{
 export type DeterministicStageResult = Readonly<{
   checks: readonly DeterministicCheck[]; report?: SubjectCheckReport;
   evidenceSubject: EvidenceEnvelopeV1["subject"]; codeRisk: number; omissions: readonly string[];
+  // Deep-risk evidence bundle (0G explorer behavioral data + heuristics + threat intel + contract
+  // analysis), captured at seal time. Optional so fixtures and the light path stay valid.
+  riskBundle?: RiskEvidenceBundle;
 }>;
 export type ComputeStageResult = Readonly<{
   proofs: readonly ComputeProof[]; behavioralScore: number; codeRisk: number;

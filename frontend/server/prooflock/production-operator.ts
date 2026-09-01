@@ -427,6 +427,14 @@ function subjectChainAdapter(provider: JsonRpcProvider): SubjectChainAdapter {
     call: (transaction, blockTag) => provider.call({ ...transaction, blockTag: Number(blockTag) }),
     getTransactionCount: async (address, blockTag) => BigInt(await provider.getTransactionCount(address, Number(blockTag))),
     getBalance: (address, blockTag) => provider.getBalance(address, Number(blockTag)),
+    // Real, block-pinned behavioral signal: the account nonce IS the number of transactions this
+    // address has SENT up to the finalized source block. It is on-chain truth from the same RPC (no
+    // external explorer), so it is deterministic and re-derivable. A fresh agent has 0; an active one
+    // has many. This replaces the previous "history unavailable" default with a real activity read.
+    getHistory: async (address, blockTag) => {
+      const observedTransactions = await provider.getTransactionCount(address, Number(blockTag));
+      return { complete: true, observedTransactions };
+    },
   };
   return Object.freeze(adapter);
 }

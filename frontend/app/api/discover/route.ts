@@ -8,13 +8,16 @@ import { assertZeroGMainnetRpc } from "@/server/prooflock/rpc";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+// Discovery reads + verifies each candidate's evidence (a 0G Storage download per agent), so a
+// populated leaderboard needs headroom beyond the default function budget.
+export const maxDuration = 60;
 
 // 0G RPC serves wide getLogs ranges for this low-volume event, so we scan a generous recent window
 // (well beyond a single lease's lifecycle) rather than the last ~40 minutes. Still "recent finalized
 // activity", not a complete index, but wide enough to surface active leases on the leaderboard.
 const WINDOW = 100_000;
 const CAP = 100;
-const CONCURRENCY = 4;
+const CONCURRENCY = 6;
 const READ_ONLY_SIGNER = "0x0000000000000000000000000000000000000001";
 
 export async function GET(request: Request): Promise<Response> {

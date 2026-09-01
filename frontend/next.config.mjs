@@ -3,15 +3,22 @@ const productionHttps = process.env.NODE_ENV === "production"
 
 function contentSecurityPolicy() {
   const rpcOrigin = safeOrigin(process.env.NEXT_PUBLIC_RPC_URL || "https://evmrpc.0g.ai");
-  const connectSources = ["'self'", rpcOrigin].filter(Boolean).join(" ");
+  // Cloudflare Turnstile (config-gated): the challenge widget loads a script + renders an iframe +
+  // posts from https://challenges.cloudflare.com. Only widen the CSP to that origin when Turnstile is
+  // actually enabled (site key set at build), so the policy stays minimal when the challenge is off.
+  const turnstile = (process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "").length > 0;
+  const cf = "https://challenges.cloudflare.com";
+  const scriptExtra = turnstile ? ` ${cf}` : "";
+  const connectSources = ["'self'", rpcOrigin, turnstile ? cf : ""].filter(Boolean).join(" ");
   const scriptSources = process.env.NODE_ENV === "production"
-    ? "script-src 'self' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline' 'unsafe-eval'";
+    ? `script-src 'self' 'unsafe-inline'${scriptExtra}` : `script-src 'self' 'unsafe-inline' 'unsafe-eval'${scriptExtra}`;
   const directives = [
     "default-src 'self'", "base-uri 'self'", "frame-ancestors 'none'", "object-src 'none'",
     "form-action 'self'", scriptSources, "style-src 'self' 'unsafe-inline'",
     "font-src 'self' data:", "img-src 'self' data: blob:", `connect-src ${connectSources}`,
     "worker-src 'self' blob:", "manifest-src 'self'", "media-src 'self'",
   ];
+  if (turnstile) directives.push(`frame-src ${cf}`);
   if (productionHttps) directives.push("upgrade-insecure-requests");
   return directives.join("; ");
 }

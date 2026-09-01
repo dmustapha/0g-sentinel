@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AgentsTable } from "@/components/AgentsTable";
 import { RiskLeaderboard } from "@/components/RiskLeaderboard";
+import { LeaderboardSkeleton } from "@/components/Skeletons";
 import { Button } from "@/components/ui/Button";
 import { StateMessage } from "@/components/ui/StateMessage";
 import { discoverProofLocks } from "@/lib/prooflock-client";
@@ -32,7 +33,7 @@ export default function ProofLocksPage() {
     {state === "ready" && discovery && partial && <StateMessage className="inventory-partial" announce="off" state="unavailable" title="Partial results">
       Successful rows remain visible; failed Registry enrichment is disclosed in place.
     </StateMessage>}
-    {state === "loading" && <StateMessage state="loading" title="Reading sealed ProofLocks">Reading RegistryV2 and verified identity detail…</StateMessage>}
+    {state === "loading" && <LeaderboardSkeleton />}
     {state === "error" && <StateMessage state="error" title="ProofLock leaderboard unavailable"
       action={<Button onClick={retryRead}>Retry read</Button>}>The public read path failed. No records are inferred from legacy V1.</StateMessage>}
     {state === "ready" && sealed.length === 0 && <StateMessage state="empty" title="No sealed agents yet"

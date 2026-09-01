@@ -1,4 +1,18 @@
 @layer components.prooflock {
+  /* Skeleton loaders: geometry only. Shimmer + reduced-motion handling live in motion.css. */
+  .skeleton-grid { display: grid; gap: var(--space-2); }
+  .skeleton { height: 14px; border: 1px solid var(--line); }
+  .skeleton-line { height: 12px; }
+  .skeleton-line.w-40 { width: 40%; } .skeleton-line.w-60 { width: 60%; } .skeleton-line.w-80 { width: 80%; }
+  .skeleton-card { padding: var(--space-2); border: 1px solid var(--border-subtle-on-dark); background: var(--surface-raised); box-shadow: var(--shadow-control); display: grid; gap: var(--space-1-5); }
+  .skeleton-card .skeleton { height: 16px; }
+  .skeleton-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .skeleton-fact { height: 62px; border-left: 3px solid var(--surface-control); }
+  .skeleton-row { display: grid; grid-template-columns: 40px 1fr 1fr 120px 120px; gap: var(--space-2); padding: 16px 13px; border-bottom: 1px solid var(--line); align-items: center; }
+  .skeleton-row:last-child { border: 0; }
+  .skeleton-cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--proof-plane-gap); }
+  .skeleton-cell { height: 92px; border: 1px solid var(--line); }
+
   .scan-console { margin-top: var(--space-6); display: grid; gap: var(--space-5); }
   .scan-disclosure { margin-top: var(--space-3); color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .scan-status-region:empty { display: none; }
@@ -61,7 +75,9 @@
   .trust-note { margin-top: 18px; font-size: var(--type-data); color: var(--text-muted-on-paper); }
   .operator-panel h3 { margin: 7px 0; }
   .proof-ceremony { position: relative; padding: 26px; border: 1px solid var(--proof-plane-border); background: var(--proof-plane-surface); box-shadow: var(--proof-plane-shadow); }
-  .rail-line { position: absolute; left: 43px; top: 48px; bottom: 68px; width: 1px; background: linear-gradient(var(--violet), var(--rail-end-on-ceremony)); }
+  .rail-line { position: absolute; left: 43px; top: 48px; bottom: 68px; width: 1px; background: var(--border-subtle-on-dark); }
+  /* Advancing progress line, vertical scale set inline from ceremony progress. Transform only, so no reflow / CLS. */
+  .rail-advance { position: absolute; left: 43px; top: 48px; bottom: 68px; width: 1px; transform-origin: top; transform: scaleY(0); background: linear-gradient(var(--violet), var(--rail-end-on-ceremony)); transition: transform var(--duration-maximum) var(--ease-standard); }
   .rail-stage { position: relative; min-height: 60px; opacity: .38; }
   .rail-stage.complete, .rail-stage.running, .rail-stage.failed { opacity: 1; }
   .rail-node { position: relative; z-index: var(--layer-content); width: 34px; height: 34px; display: grid; place-items: center; border: 1px solid var(--border-control-on-dark); background: var(--surface-ceremony); color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
@@ -155,6 +171,9 @@
   .verification-result > [data-plane] { min-width: 0; border: 1px solid currentColor; padding: 20px; }
   .verification-result b { font-family: var(--font-display); }
   .verification-result__action { margin-top: var(--space-3); }
+  .verdict-reveal { display: flex; align-items: center; gap: var(--space-1-5); }
+  .verdict-reveal h2 { margin: 0; }
+  .verdict-icon { flex: 0 0 auto; }
   .verification-proof { margin-top: var(--space-3); color: var(--ink); background: var(--paper); padding: 20px; }
   footer { position: relative; z-index: var(--layer-content); border-top: 1px solid var(--line); background: var(--surface-ceremony); }
   .foot-inner { min-height: 90px; color: var(--muted); }

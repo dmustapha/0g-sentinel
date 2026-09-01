@@ -198,9 +198,13 @@ export function VerificationResult({ state, current, reasonCode, busy = false, h
   const labels: Record<ProofVerificationState, string> = VERIFIER_CLAIM_COPY.historical.labels;
   const currentVisible = current && current !== "IDLE";
   const historicalBusy = state === "VERIFYING" || state === "RETRYING";
+  const outcome = verdictOutcome(state);
   return <div className="verification-result">
     <section data-plane="historical">
-      <h2 ref={historicalRef} tabIndex={-1}>{labels[state]}</h2>
+      {outcome ? <div key={state} className="verdict-reveal" data-outcome={outcome}>
+        <VerdictMark outcome={outcome} />
+        <h2 ref={historicalRef} tabIndex={-1}>{labels[state]}</h2>
+      </div> : <h2 ref={historicalRef} tabIndex={-1}>{labels[state]}</h2>}
       <PlaneAnnouncement busy={historicalBusy || (busy && !currentVisible)} text={labels[state]} />
       <StateMessage announce="off" state={historicalMessageState(state)} title={VERIFIER_CLAIM_COPY.historical.boundaryTitle}>
         {VERIFIER_CLAIM_COPY.historical.boundaryDetail}
@@ -223,6 +227,26 @@ export function VerificationResult({ state, current, reasonCode, busy = false, h
 function PlaneAnnouncement({ busy, text }: Readonly<{ busy: boolean; text: string }>) {
   return <span className="sr-only" role="status" aria-live="polite" aria-atomic="true"
     aria-busy={busy}>{text}</span>;
+}
+
+function verdictOutcome(state: ProofVerificationState): "pass" | "fail" | null {
+  if (state === "MATCH") return "pass";
+  if (state === "MISMATCH" || state === "UNAVAILABLE" || state === "TIMEOUT"
+    || state === "CANCELED" || state === "HINT_REQUIRED") return "fail";
+  return null;
+}
+
+// The verify payoff mark: a drawn check for a pass, a drawn cross for a fail. The stroke draws in via
+// the .verdict-mark class in motion.css; decorative only (announcements live in the sr-only status).
+function VerdictMark({ outcome }: Readonly<{ outcome: "pass" | "fail" }>) {
+  const stroke = outcome === "pass" ? "var(--good)" : "var(--bad)";
+  return <svg className="verdict-icon" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"
+    fill="none" stroke={stroke} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="14" cy="14" r="12" stroke={stroke} strokeWidth="1.4" opacity="0.4" />
+    {outcome === "pass"
+      ? <path d="M8.5 14.5l3.5 3.5 7-8" />
+      : <path d="M9 9l10 10M19 9L9 19" />}
+  </svg>;
 }
 
 function historicalMessageState(state: ProofVerificationState): StateMessageState {

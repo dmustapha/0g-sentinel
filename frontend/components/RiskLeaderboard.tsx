@@ -8,6 +8,7 @@ import { gateReasonMeta } from "@/lib/prooflock-status";
 import { behavioralLevel, codeRiskLevel, rankProofLocksByRisk } from "@/lib/ranking";
 import { safeDisplayText } from "@/lib/safe-display";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
+import { useCountUp } from "@/lib/use-count-up";
 import { CODE_RISK_LABELS, THREAT_LABELS } from "@/lib/types";
 import type { ObservationStatus, ProofLockInventoryItem } from "@/lib/prooflock-types";
 
@@ -152,10 +153,18 @@ function RiskCell({ label, score, level, labels, unit = false }: {
     <span className="leaderboard-risk" data-level={level}>
       <span className="leaderboard-risk-band">{band}</span>
       <span className="leaderboard-risk-score">
-        <span className="sr-only">{label} score </span>{score}{unit ? " / 100" : ""}
+        <span className="sr-only">{label} score {score}{unit ? " out of 100" : ""}</span>
+        <CountUpScore value={score} unit={unit} />
       </span>
     </span>
   );
+}
+
+// Visible count-up of the numeric risk score. The true value is announced in the sibling sr-only
+// span, so screen readers never hear the interpolated numbers.
+function CountUpScore({ value, unit }: Readonly<{ value: number; unit: boolean }>) {
+  const shown = useCountUp(value);
+  return <span aria-hidden="true">{shown}{unit ? " / 100" : ""}</span>;
 }
 
 function GateCell({ row }: { row: Row }) {

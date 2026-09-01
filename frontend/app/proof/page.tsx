@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { SubsystemHealthGrid } from "@/components/SubsystemHealthGrid";
+import { HealthGridSkeleton } from "@/components/Skeletons";
 import { Button } from "@/components/ui/Button";
 import { Field } from "@/components/ui/Field";
 import { StateMessage } from "@/components/ui/StateMessage";
@@ -95,7 +96,7 @@ function HealthPanel() {
   }, [generation, health, pending]);
   return <><div className="section-heading health-heading"><span className="eyebrow">{VERIFIER_CLAIM_COPY.health.eyebrow}</span>
     <h2 ref={headingRef} tabIndex={-1}>{VERIFIER_CLAIM_COPY.health.heading}</h2><p>{VERIFIER_CLAIM_COPY.health.independence}</p></div>
-  {pending && !failed ? <StateMessage state="loading" title={VERIFIER_CLAIM_COPY.health.loadingTitle}>{VERIFIER_CLAIM_COPY.health.loadingDetail}</StateMessage> : null}
+  {pending && !failed ? <HealthGridSkeleton /> : null}
   {failed ? <StateMessage state="unavailable" title={VERIFIER_CLAIM_COPY.health.unavailableTitle} action={<Button pending={pending}
     pendingLabel={VERIFIER_CLAIM_COPY.health.retryingAction} onClick={() => setGeneration((value) => value + 1)}>{VERIFIER_CLAIM_COPY.health.retryAction}</Button>}>
     {VERIFIER_CLAIM_COPY.health.unavailableDetail}

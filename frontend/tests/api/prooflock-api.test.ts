@@ -809,8 +809,11 @@ describe("legacy spend safety", () => {
 describe("public scan stream (no-token front door)", () => {
   const registryV2 = hex("d2", 20);
   const computeProofId = vi.fn().mockReturnValue(proofId);
+  // A fresh agent's lease is an absent mapping entry, which getProofLock returns as a ZERO record
+  // (version 0n) rather than throwing. A genuine read failure (reject) must fail closed, never
+  // silently downgrade to SEAL — see the failing-read test below.
   const reads = (record?: unknown) => () => ({
-    readProofLock: record ? vi.fn().mockResolvedValue(record) : vi.fn().mockRejectedValue(new Error("no proof")),
+    readProofLock: vi.fn().mockResolvedValue(record ?? { version: 0n }),
     computeProofId,
     registryAddress: registryV2,
   }) as unknown as ProofLockReadDependencies;
@@ -859,6 +862,46 @@ describe("public scan stream (no-token front door)", () => {
     // previousProofId MUST be computed against the ProofLock RegistryV2 address (reads.registryAddress),
     // not the ERC-8004 identity registry, or the reseal fails "previous proof ID mismatch".
     expect(computeProofId).toHaveBeenCalledWith(registryV2, { version: 4n });
+  });
+
+  it("fails closed (does not downgrade to SEAL) when the lease read genuinely errors", async () => {
+    const run = vi.fn();
+    const loadReads = () => ({
+      readProofLock: vi.fn().mockRejectedValue(new Error("rpc down")),
+      computeProofId, registryAddress: registryV2,
+    }) as unknown as ProofLockReadDependencies;
+    const response = await post(build({ loadRunner: async () => ({ run }), loadReads }), { agentId: "7" });
+    expect(response.status).toBe(503);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it("rejects the funded ceremony when a configured Turnstile challenge fails (403, no run)", async () => {
+    const run = vi.fn();
+    const verifyTurnstile = vi.fn().mockResolvedValue(false);
+    const handler = createPublicScanStreamHandler({
+      operatorToken, loadRunner: async () => ({ run }), loadReads: reads(),
+      registryAddress: ERC8004_IDENTITY_REGISTRY, rate: { max: 3, windowMs: 60_000 }, verifyTurnstile,
+    });
+    const response = await post(handler, { agentId: "7", turnstileToken: "bad" });
+    expect(response.status).toBe(403);
+    expect((await response.json()).error.code).toBe("CHALLENGE_FAILED");
+    expect(run).not.toHaveBeenCalled();
+    expect(verifyTurnstile).toHaveBeenCalledWith("bad", undefined);
+  });
+
+  it("proceeds when the Turnstile challenge passes", async () => {
+    let captured: Record<string, unknown> | undefined;
+    const run = vi.fn(async (input: Record<string, unknown>) => {
+      captured = input; throw new ProofLockStageError("VALIDATING_IDENTITY", "x");
+    });
+    const verifyTurnstile = vi.fn().mockResolvedValue(true);
+    const handler = createPublicScanStreamHandler({
+      operatorToken, loadRunner: async () => ({ run }), loadReads: reads(),
+      registryAddress: ERC8004_IDENTITY_REGISTRY, rate: { max: 3, windowMs: 60_000 }, verifyTurnstile,
+    });
+    const response = await post(handler, { agentId: "7", turnstileToken: "good" });
+    expect(response.status).not.toBe(403);
+    expect(captured?.mode).toBe("SEAL");
   });
 
   it("rate-limits bursts with 429", async () => {

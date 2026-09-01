@@ -10,6 +10,7 @@ import type { RunnerProgress } from "./runner";
 import type { PublicWriteOutcome } from "./operation-journal";
 import { WriteRecoveryError } from "./recovery";
 import { authenticateOperator } from "./auth";
+import { clientIpFromHeaders, type TurnstileVerifier } from "./turnstile";
 import { isEvmAddress } from "./identity/resolve-by-address";
 import type { CurrentAccessV1 } from "@/lib/prooflock-types";
 
@@ -28,7 +29,8 @@ export type ApiErrorCode =
   | "REQUEST_ABORTED" | "INTERNAL_ERROR" | "SUBMISSION_OUTCOME_UNKNOWN"
   | "FINALIZED_READBACK_UNAVAILABLE" | "NOT_BROADCAST" | "SEALED" | "REVERTED" | "RECOVERY_NOT_FOUND"
   | "IDEMPOTENCY_CONFLICT" | "IDENTITY_ACTIVE" | "CONCURRENCY_LIMIT" | "RATE_LIMIT"
-  | "OPERATOR_CONCURRENCY_LIMIT" | "GLOBAL_CONCURRENCY_LIMIT" | "DAILY_CEREMONY_LIMIT" | "DAILY_COST_LIMIT";
+  | "OPERATOR_CONCURRENCY_LIMIT" | "GLOBAL_CONCURRENCY_LIMIT" | "DAILY_CEREMONY_LIMIT" | "DAILY_COST_LIMIT"
+  | "CHALLENGE_FAILED";
 
 export type ApiErrorOptions = Readonly<{
   code: ApiErrorCode; message: string; stage: ApiStage; retryable: boolean;
@@ -166,6 +168,9 @@ export function createPublicScanStreamHandler(config: Readonly<{
   // on-chain; a raw wallet is never sealed as an agent unless it provably is one.
   resolveAddress?: (address: string) => Promise<{ status: "AGENT"; agentId: string } | { status: "NOT_AN_AGENT" }>;
   rate?: Readonly<{ max: number; windowMs: number }>;
+  // Optional Cloudflare Turnstile gate. When present, a valid token is required before any funded
+  // ceremony runs. When undefined (secret unconfigured) the front door is unprotected, as before.
+  verifyTurnstile?: TurnstileVerifier;
 }>) {
   const inner = createProofLockStreamHandler({ operatorToken: config.operatorToken, loadRunner: config.loadRunner });
   const hits: number[] = [];
@@ -182,12 +187,15 @@ export function createPublicScanStreamHandler(config: Readonly<{
     // Accepts either { agentId } (canonical ERC-8004 id) or { address } (a wallet, resolved to its
     // agentId only if getAgentWallet verifies on-chain). A non-agent address is rejected, never sealed.
     let agentId: string;
+    let turnstileToken: string | undefined;
     try {
       const body = await parseSmallObject(request, deadline(request.signal));
       const keys = Object.keys(body);
+      turnstileToken = typeof body.turnstileToken === "string" ? body.turnstileToken : undefined;
       const addressInput = typeof body.address === "string" ? body.address.trim() : undefined;
       const agentInput = typeof body.agentId === "string" ? body.agentId : undefined;
-      if (keys.some((key) => key !== "agentId" && key !== "address") || (!!addressInput === !!agentInput)) {
+      const allowedKeys = new Set(["agentId", "address", "turnstileToken"]);
+      if (keys.some((key) => !allowedKeys.has(key)) || (!!addressInput === !!agentInput)) {
         return apiErrorResponse(null, { code: "INVALID_INPUT", message: "Provide exactly one of agentId or address",
           stage: "VALIDATING_IDENTITY", retryable: false, status: 400, requestId });
       }
@@ -212,19 +220,37 @@ export function createPublicScanStreamHandler(config: Readonly<{
       }
     } catch (error) { return mapApiError(error, "VALIDATING_IDENTITY", requestId); }
 
+    // Turnstile challenge (when configured) runs before any funded work, so a failed/absent challenge
+    // is rejected cheaply and never consumes a seal. Unconfigured => verifyTurnstile is undefined => skip.
+    if (config.verifyTurnstile) {
+      const passed = await config.verifyTurnstile(turnstileToken, clientIpFromHeaders(request.headers));
+      if (!passed) {
+        return apiErrorResponse(null, { code: "CHALLENGE_FAILED",
+          message: "Human verification failed. Complete the challenge and try again.",
+          stage: "AUTHENTICATING", retryable: true, status: 403, requestId });
+      }
+    }
+
     const identity: AgentIdentity = { namespace: "eip155", chainId: 16661,
       registryAddress: config.registryAddress as HexAddress, agentId };
     const identityKey = computeIdentityKey(identity);
-    // Auto-detect: RESEAL an agent that already has a sealed proof, otherwise SEAL a fresh one.
-    let opInput: Record<string, unknown> = { identity, mode: "SEAL" };
+    // Auto-detect: RESEAL an agent that already has a sealed proof, otherwise SEAL a fresh one. An
+    // absent lease returns a zero record (version 0n), so distinguish that from a transient read
+    // failure: a failed read must NOT silently downgrade an existing lease to a spurious SEAL (which
+    // would revert on-chain). On read failure, fail closed with a retryable dependency error.
+    let opInput: Record<string, unknown>;
     try {
       const reads = config.loadReads();
       const record = await reads.readProofLock(identityKey, deadline(request.signal));
-      // computeProofId requires the ProofLock RegistryV2 address (reads.registryAddress), NOT the
-      // ERC-8004 identity registry used to build the identity key.
-      const previousProofId = reads.computeProofId(reads.registryAddress ?? config.registryAddress, record);
-      opInput = { identity, mode: "RESEAL", expectedPriorVersion: record.version.toString(), previousProofId };
-    } catch { /* no current lease: fall through to SEAL */ }
+      if (record.version === 0n) {
+        opInput = { identity, mode: "SEAL" };
+      } else {
+        // computeProofId requires the ProofLock RegistryV2 address (reads.registryAddress), NOT the
+        // ERC-8004 identity registry used to build the identity key.
+        const previousProofId = reads.computeProofId(reads.registryAddress ?? config.registryAddress, record);
+        opInput = { identity, mode: "RESEAL", expectedPriorVersion: record.version.toString(), previousProofId };
+      }
+    } catch (error) { return mapApiError(error, "READING_PROOF", requestId); }
 
     hits.push(now);
     const proxied = new Request(request.url, { method: "POST",

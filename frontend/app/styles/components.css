@@ -15,6 +15,7 @@
 
   .scan-console { margin-top: var(--space-6); display: grid; gap: var(--space-5); }
   .scan-disclosure { margin-top: var(--space-3); color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .scan-challenge { margin-top: var(--space-3); display: flex; justify-content: flex-start; min-height: 65px; }
   .scan-status-region:empty { display: none; }
   .scan-outcome:focus-visible { outline: 2px solid var(--violet); outline-offset: 6px; }
   .scan-outcome:focus:not(:focus-visible) { outline: none; }

@@ -49,11 +49,12 @@ export function computeScanIdentityKey(agentId: string): `0x${string}` {
 // Streams the seal ceremony. Returns whether the stream reached WRITING_CHAIN so the caller can
 // decide to reconcile on an interrupted or errored connection. Throws ScanStreamError with a typed
 // ApiErrorShape for pre-chain failures (invalid agentId, rate limit, allowance exhausted).
-export async function runPublicScan(agentId: string, handlers: ScanRunHandlers): Promise<ScanStreamResult> {
+export async function runPublicScan(agentId: string, handlers: ScanRunHandlers,
+  turnstileToken?: string): Promise<ScanStreamResult> {
   const response = await fetch("/api/scan/stream", {
     method: "POST", cache: "no-store", redirect: "error", signal: handlers.signal,
     headers: { "content-type": "application/json", accept: "text/event-stream" },
-    body: JSON.stringify({ agentId }),
+    body: JSON.stringify(turnstileToken ? { agentId, turnstileToken } : { agentId }),
   });
   if (!response.ok || !response.body) {
     const detail = await readErrorResponse(response);
@@ -156,6 +157,8 @@ export function friendlyScanError(detail: ApiErrorShape): Readonly<{ title: stri
       return { title: "Agent wallet is not set.", body: "This agent has no current wallet to bind, so it cannot be sealed yet." };
     case "RATE_LIMIT":
       return { title: "The scanner is busy.", body: "The public demo is rate limited. Wait a moment and try again." };
+    case "CHALLENGE_FAILED":
+      return { title: "Human check needed.", body: "Complete the verification challenge, then run the scan again." };
     case "DAILY_CEREMONY_LIMIT":
     case "DAILY_COST_LIMIT":
       return { title: "Live allowance reached for now.", body: "The capped demo allowance is spent. It resets shortly; try again later." };

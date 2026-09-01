@@ -170,9 +170,10 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
   const verifiedSourceTxHash = historical?.status === "MATCH"
     ? historical.proof.source.transactionHash : sourceTxHash;
   const analysis = state.route.base.detail.status === "VERIFIED" ? state.route.base.detail.analysis : undefined;
+  const gate = state.route.base.detail.status === "VERIFIED" ? state.route.base.detail.gate : undefined;
   return <section className="workspace-section detail-page"><div className="wrap"><Link href="/agents" className="text-link">← ProofLocks</Link>
     {isFixture ? <DemoFixtureBadge /> : null}
-    <SummaryVerdict agentId={identity.identity.agentId} current={current?.decision} record={record}
+    <SummaryVerdict agentId={identity.identity.agentId} gate={gate} current={current?.decision} record={record}
       historical={historical} nowSeconds={pinnedNowSeconds} />
     <AgentSummaryCard record={record} current={current?.decision} analysis={analysis} nowSeconds={pinnedNowSeconds} />
     <IdentityHeader identity={identity} />

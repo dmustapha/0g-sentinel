@@ -52,16 +52,42 @@ export function gatePlainSentence(reason: number): string {
   return GATE_PLAIN[gateReasonMeta(reason).code];
 }
 
-// Builds the single verdict banner from whatever we know: the pinned current decision (if any)
-// and the loaded record. A missing current decision is the reassuring "no live session" state.
+export type GateVerdictInput =
+  | Readonly<{ status: "VERIFIED"; allowed: boolean; reason: number }>
+  | Readonly<{ status: "UNKNOWN"; allowed: false; reason: null }>;
+
+// Builds the single verdict banner. The AUTHORITATIVE admission answer is the AgentGateV2 decision
+// (`gate`), which is exactly what a consumer contract gets from requireAgent. A missing live consumer
+// session is benign and must NOT read as "not admitted": if the gate admits, the agent is admitted.
 export function agentVerdict(input: Readonly<{
   agentId: string;
+  gate?: GateVerdictInput;
   current: CurrentDecisionView | undefined;
   record: ProofLockRecord;
   nowSeconds?: number;
 }>): AgentVerdict {
-  const { current, record } = input;
-  if (!current) return NO_SESSION;
+  const { gate, current, record } = input;
+  const lease = safeLease(record, input.nowSeconds);
+  // Prefer the gate decision when we have it.
+  if (gate && gate.status === "VERIFIED") {
+    if (gate.allowed) {
+      return Object.freeze({
+        tone: "good",
+        headline: `Agent #${input.agentId} is admitted`,
+        plain: "The gate admits this agent right now. Behavioral and code checks passed and its time-limited pass is still valid.",
+        technicalDetail: "Gate reason ALLOWED",
+      });
+    }
+    return Object.freeze({
+      tone: "blocked",
+      headline: `Agent #${input.agentId} is not admitted`,
+      plain: gatePlainSentence(gate.reason),
+      technicalDetail: `Gate reason ${gateReasonMeta(gate.reason).code}`,
+    });
+  }
+  // No authoritative gate reading. A missing/unavailable live session is the reassuring neutral state,
+  // not a denial (the sealed pass may be perfectly valid; nobody is requesting live access).
+  if (!current || current.status === "UNAVAILABLE" || current.status === "BLOCKED") return NO_SESSION;
   if (current.status === "VERIFIED") {
     return Object.freeze({
       tone: "good",
@@ -70,8 +96,6 @@ export function agentVerdict(input: Readonly<{
       technicalDetail: "Gate reason ALLOWED",
     });
   }
-  // Any non-verified current status maps to a calm, explanatory blocked/caution state.
-  const lease = safeLease(record, input.nowSeconds);
   const tone: VerdictTone = current.status === "STALE" ? "caution" : "blocked";
   return Object.freeze({
     tone,

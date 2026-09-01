@@ -191,7 +191,7 @@ function SealedCard({ sealed }: Readonly<{ sealed: ScanSealed }>) {
   const proofHref = sealed.proofId
     ? canonicalProofHref(sealed.proofId, sealed.identityKey) : null;
   return (
-    <section className="evidence-card decision-card scan-sealed ui-proof-plane--current"
+    <section className="evidence-card decision-card scan-sealed"
       aria-labelledby="scan-sealed-title">
       <div className="card-row">
         <div>

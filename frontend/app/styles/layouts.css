@@ -1,6 +1,17 @@
 @layer layouts {
   .wrap { position: relative; z-index: var(--layer-content); width: min(100%, var(--measure-ledger)); margin-inline: auto; padding-inline: 28px; }
-  .texture { position: fixed; inset: 0; z-index: var(--layer-canvas); pointer-events: none; opacity: .34; background-image: radial-gradient(var(--texture-dot) .55px, transparent .55px); background-size: 4px 4px; mask-image: linear-gradient(to bottom, var(--shadow-ink), transparent 75%); }
+  /* Blueprint drafting grid: fine minor lines + coarser major lines on the graphite sheet, plus a
+     faint horizontal scanline. Decorative only (token-alpha cyan), never a state indicator. */
+  .texture { position: fixed; inset: 0; z-index: var(--layer-canvas); pointer-events: none;
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(var(--action-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--action-soft) 1px, transparent 1px);
+    background-size: 22px 22px, 22px 22px, 110px 110px, 110px 110px; }
+  .texture::after { content: ""; position: absolute; inset: 0;
+    background-image: repeating-linear-gradient(0deg, var(--grid-line) 0, var(--grid-line) 1px, transparent 1px, transparent 3px);
+    opacity: .5; }
   .topbar-inner { min-height: 70px; max-width: var(--measure-ledger); margin: auto; padding: 12px 28px; display: flex; align-items: center; gap: 18px; }
   .nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
   .ledger-hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); min-height: 670px; display: grid; align-items: center; }

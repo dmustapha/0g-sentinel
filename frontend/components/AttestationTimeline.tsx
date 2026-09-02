@@ -31,10 +31,12 @@ export function AttestationTimeline({ head, previousProofId, identityKey,
   const event = headEvent(head.version, head.drifted);
   const txUrl = head.sourceTxHash ? explorerTransactionUrl(explorerBase, head.sourceTxHash) : null;
   const predecessor = predecessorLink(previousProofId, identityKey);
-  return <section className="evidence-card lifecycle-card attestation-timeline"
+  return <section className="evidence-card lifecycle-card attestation-timeline bp-bracket"
     aria-labelledby="attestation-timeline-heading">
+    <span className="bp-corners" aria-hidden="true" />
     <span className="card-kicker">Append-only attestation history</span>
     <h3 id="attestation-timeline-heading">Attestation timeline</h3>
+    <span className="timeline-dim" aria-hidden="true">Append-only axis · head {versionLabel}</span>
     <ol className="timeline-rail" aria-label="Agent version history, newest first">
       {head.drifted && <li className="timeline-node timeline-node--drift">
         <div className="timeline-node__head"><b>DRIFTED</b>

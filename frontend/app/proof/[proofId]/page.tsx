@@ -38,7 +38,7 @@ function ProofIdentifierList({ proofId, identityKey, sourceTxHash }: Readonly<{
   const normalizedProof = parseNonZeroBytes32(proofId);
   const normalizedIdentity = parseNonZeroBytes32(identityKey);
   const sourceParam = parseSourceTxHashParam(sourceTxHash);
-  return <dl className="proof-list proof-identifiers ui-proof-plane--current"><DataRow label="Proof ID" value={proof.canonical}
+  return <dl className="proof-list proof-identifiers ui-proof-plane--current bp-bracket"><DataRow label="Proof ID" value={proof.canonical}
     displayValue={proof.display} copyable={normalizedProof !== null} />
     <DataRow label="Identity key" value={identity.canonical}
       displayValue={identity.display} copyable={normalizedIdentity !== null} />

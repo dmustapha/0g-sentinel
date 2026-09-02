@@ -202,7 +202,7 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
         explorerBase={process.env.NEXT_PUBLIC_ZERO_G_EXPLORER ?? "https://chainscan.0g.ai"} />
         : <p>The historical evidence dossier is unavailable unless the exact linked artifact matches.</p>}</section>
     <section aria-labelledby="identifiers-lifecycle"><h2 id="identifiers-lifecycle">Identifiers and lifecycle</h2>
-      <dl className="proof-list proof-identifiers"><DataRow label="Identity key (agent's permanent ID)" value={record.identityKey} copyable />
+      <dl className="proof-list proof-identifiers bp-bracket"><DataRow label="Identity key (agent's permanent ID)" value={record.identityKey} copyable />
         <DataRow label="Envelope digest (fingerprint of the sealed evidence)" value={record.envelopeDigest} copyable /></dl>
       <Button pending={state.current.refresh === "REFRESHING"} pendingLabel="Refreshing current state"
         onClick={() => void refreshCurrent()}>Refresh current state</Button>
@@ -223,7 +223,7 @@ function Detail({ identity, refreshCurrent, sourceTxHash, state }: Readonly<{
 function IdentityHeader({ identity }: Readonly<{ identity: CanonicalIdentity }>) {
   return <header className="detail-header detail-header--compact"><div><span className="eyebrow">Canonical ERC-8004 identity</span>
     <h2 aria-label={`Agent #${identity.identity.agentId}`}>Agent #<bdi dir="ltr">{identity.identity.agentId}</bdi></h2>
-    <dl className="proof-list proof-identifiers"><DataRow label="Agent ID" value={identity.identity.agentId} copyable />
+    <dl className="proof-list proof-identifiers bp-bracket"><DataRow label="Agent ID" value={identity.identity.agentId} copyable />
       <DataRow label="Agent wallet" value={identity.agentWallet} copyable /></dl></div>
   </header>;
 }

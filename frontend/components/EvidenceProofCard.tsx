@@ -32,7 +32,7 @@ export function EvidenceProofCard({ record, historical, compute, explorerBase = 
   const networkProofDisplay = storageObservation
     ? `networkProofVerified: ${String(storageObservation.capability.networkProofVerified)}`
     : legacyNetworkProofDisplay(storage);
-  return <section className="evidence-card evidence-stack"><div className="card-row"><div><span className="card-kicker">Exact provenance</span><h3>Evidence commitments</h3></div>
+  return <section className="evidence-card evidence-stack bp-bracket"><span className="bp-corners" aria-hidden="true" /><div className="card-row"><div><span className="card-kicker">Exact provenance</span><h3>Evidence commitments</h3></div>
     <StatusBadge status={computeVerified && storageVerified ? "VERIFIED" : "UNAVAILABLE"} surface="paper" /></div>
     <div className="evidence-segment"><b aria-label={computeVerified ? "Compute evidence" : "0G Compute unavailable"}>Compute evidence</b>
       {provider && model ? <ComputeDetails provider={provider} model={model} capability={capability} />

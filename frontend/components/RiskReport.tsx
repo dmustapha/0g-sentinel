@@ -8,6 +8,7 @@
 // legacy seal without it degrades gracefully to the score + summary + factors.
 import { useState } from "react";
 import { safeDisplayText } from "@/lib/safe-display";
+import { useCountUp } from "@/lib/use-count-up";
 import { bytecodeFlagGloss, riskTone, toneMark } from "@/lib/risk-tone";
 import type {
   ProofLockRiskAnalysis, ProofLockRiskEvidence, ProofLockRiskEvidenceSignal,
@@ -19,13 +20,14 @@ export function RiskReport({ analysis, density = "full" }: Readonly<{
 }>) {
   const tone = riskTone(analysis.label);
   const evidence = analysis.evidence ?? null;
-  const factorLimit = density === "compact" ? 4 : 8;
+  const factorLimit = density === "compact" ? 6 : 24;
   return (
-    <section className="risk-report" data-tone={tone} data-density={density} aria-label="Risk report">
+    <section className="risk-report bp-bracket" data-tone={tone} data-density={density} aria-label="Risk report">
+      <span className="bp-corners" aria-hidden="true" />
       <header className="risk-report__verdict">
         <span className="risk-report__mark" aria-hidden="true">{toneMark(tone)}</span>
         <span className="risk-report__label">{safeDisplayText(analysis.label, { maxGraphemes: 24 })}</span>
-        <span className="risk-report__score">Risk {analysis.behavioralScore}<span className="risk-report__score-max">/100</span></span>
+        <span className="risk-report__score">Risk <ScoreCountUp value={analysis.behavioralScore} /><span className="risk-report__score-max">/100</span></span>
       </header>
 
       {analysis.behavioralSummary ? (
@@ -52,7 +54,7 @@ export function RiskReport({ analysis, density = "full" }: Readonly<{
           <p className="risk-report__summary">{safeDisplayText(analysis.codeSummary, { maxGraphemes: 400 })}</p>
           {analysis.codeFactors.length ? (
             <ul className="risk-report__factors">
-              {analysis.codeFactors.slice(0, 6).map((factor, index) => (
+              {analysis.codeFactors.map((factor, index) => (
                 <li key={index}><bdi>{safeDisplayText(factor, { maxGraphemes: 200 })}</bdi></li>
               ))}
             </ul>
@@ -61,6 +63,17 @@ export function RiskReport({ analysis, density = "full" }: Readonly<{
       ) : null}
     </section>
   );
+}
+
+// Count-up of the risk score. The true value is announced in the sr-only span so screen readers
+// never hear the interpolated numbers; the animated number is aria-hidden and tabular so it never
+// jitters width as it climbs.
+function ScoreCountUp({ value }: Readonly<{ value: number }>) {
+  const shown = useCountUp(value);
+  return <>
+    <span className="sr-only">{value}</span>
+    <span aria-hidden="true">{shown}</span>
+  </>;
 }
 
 // OFAC / Chainalysis / ScamSniffer results as status badges. A red HIT is the visceral proof that the
@@ -77,8 +90,8 @@ function ThreatIntelRow({ evidence }: Readonly<{ evidence: ProofLockRiskEvidence
             <li key={index} className="risk-badge" data-tone={badgeTone}>
               <span className="risk-badge__name">{safeDisplayText(source.name, { maxGraphemes: 40 })}</span>
               <span className="risk-badge__status">{statusText}</span>
-              {source.detail && source.status === "HIT"
-                ? <span className="risk-badge__detail">{safeDisplayText(source.detail, { maxGraphemes: 120 })}</span> : null}
+              {source.detail
+                ? <span className="risk-badge__detail">{safeDisplayText(source.detail, { maxGraphemes: 160 })}</span> : null}
             </li>
           );
         })}
@@ -103,7 +116,7 @@ function ContractSafetyRow({ evidence }: Readonly<{ evidence: ProofLockRiskEvide
       ) : null}
       {evidence.sourceFindings.length ? (
         <ul className="risk-report__factors">
-          {evidence.sourceFindings.slice(0, 6).map((finding, index) => (
+          {evidence.sourceFindings.map((finding, index) => (
             <li key={index}><bdi>{safeDisplayText(finding, { maxGraphemes: 200 })}</bdi></li>
           ))}
         </ul>

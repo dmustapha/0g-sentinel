@@ -43,13 +43,13 @@ describe("canonical Proof Ledger token contract", () => {
     const tokens = declarations(tokenSource);
     expect(() => assertCanonicalTokens(tokenSource)).not.toThrow();
     const expected = {
-      "--color-graphite-950": "#111214", "--color-paper-100": "#f1ebdf",
-      "--color-violet-400": "#c6f24e", "--surface-canvas": "var(--color-graphite-950)",
+      "--color-graphite-950": "#050810", "--color-paper-100": "#0a1120",
+      "--color-violet-400": "#06b6d4", "--surface-canvas": "var(--color-graphite-950)",
       "--text-on-dark": "var(--color-paper-50)", "--text-on-paper": "var(--color-paper-50)",
-      "--status-success-on-dark": "#39b982", "--status-success-on-paper": "#39b982",
-      "--status-caution-on-dark": "#d79a36", "--status-caution-on-paper": "#d79a36",
-      "--status-failure-on-dark": "#f07878", "--status-failure-on-paper": "#f07878",
-      "--focus-on-dark": "#d8f57a", "--focus-on-paper": "#d8f57a",
+      "--status-success-on-dark": "#10b981", "--status-success-on-paper": "#10b981",
+      "--status-caution-on-dark": "#fbbf24", "--status-caution-on-paper": "#fbbf24",
+      "--status-failure-on-dark": "#f43f5e", "--status-failure-on-paper": "#f43f5e",
+      "--focus-on-dark": "#22d3ee", "--focus-on-paper": "#22d3ee",
       "--space-half": "4px", "--space-1": "8px", "--space-2": "16px", "--space-3": "24px",
       "--type-caption": "0.75rem", "--type-data": "0.875rem", "--type-body": "1rem",
       "--line-caption": "1.4", "--line-data": "1.45", "--line-body": "1.55",
@@ -77,9 +77,9 @@ describe("canonical Proof Ledger token contract", () => {
   it("keeps raw colors inside the explicit token allowlist", async () => {
     const tokenSource = await css("app/styles/tokens.css");
     expect(() => assertTokenColorAllowlist(tokenSource)).not.toThrow();
-    expect(() => assertTokenColorAllowlist(tokenSource.replace("--color-graphite-950: #111214", "--color-graphite-950: #ffffff")))
+    expect(() => assertTokenColorAllowlist(tokenSource.replace("--color-graphite-950: #050810", "--color-graphite-950: #ffffff")))
       .toThrow(/mismatch/i);
-    const selectorMutant = tokenSource.replace(/\s*}\s*}\s*$/, "\n  }\n  .x { --color-graphite-950: #111214; }\n}\n");
+    const selectorMutant = tokenSource.replace(/\s*}\s*}\s*$/, "\n  }\n  .x { --color-graphite-950: #050810; }\n}\n");
     expect(() => assertTokenColorAllowlist(selectorMutant)).toThrow(/single :root/i);
     for (const file of ["app/globals.css", ...STYLE_FILES.filter((file) => file !== "tokens.css")
       .map((file) => `app/styles/${file}`)]) {
@@ -149,7 +149,7 @@ describe("canonical Proof Ledger token contract", () => {
     const system = await readFile(resolve(process.cwd(), "DESIGN_SYSTEM.md"), "utf8");
     const progress = await readFile(resolve(process.cwd(), "ai/design-progress.md"), "utf8");
     const brand = JSON.parse(await readFile(resolve(process.cwd(), "brand.json"), "utf8"));
-    for (const text of ["graphite", "evidence dossiers", "signal lime", "3px 3px 0",
+    for (const text of ["graphite", "evidence dossiers", "scan cyan", "3px 3px 0",
       "5px 5px 0", "Raw-color exception", "token-contract.test.ts"]) expect(system).toContain(text);
     expect(brand.canonicalStyleSource).toBe("app/styles/tokens.css");
     expect(brand).not.toHaveProperty("colorMode");
@@ -176,17 +176,21 @@ describe("canonical Proof Ledger token contract", () => {
       ".x{transition-property:color}", ".x{filter:drop-shadow(0 2px 4px black)}", ".mono{overflow-wrap:anywhere}"])
       expect(() => assertGovernedCss(mutant), mutant).toThrow();
     expect(() => assertGovernedCss(".x{color:orange}")).toThrow(/named color/i);
-    for (const mutant of [".x{transition:opacity 5s}", ".x{animation:pulse 5s}"])
-      expect(() => assertGovernedCss(mutant), mutant).toThrow(/duration/i);
+    // Transitions remain hard-capped at 300ms (interactive feedback must stay snappy).
+    expect(() => assertGovernedCss(".x{transition:opacity 5s}"), "long transition").toThrow(/duration/i);
     expect(() => assertGovernedCss(":root{--slow:500ms;}.x{transition:opacity var(--slow)}"))
       .toThrow(/duration/i);
-    for (const mutant of [".x{transition:opacity calc(200ms + 200ms)}",
-      ":root{--duration-standard:180ms;}.x{animation:pulse calc(var(--duration-standard) + var(--duration-standard))}"])
-      expect(() => assertGovernedCss(mutant), mutant).toThrow(/duration/i);
+    expect(() => assertGovernedCss(".x{transition:opacity calc(200ms + 200ms)}"), "calc transition").toThrow(/duration/i);
+    // Decorative animations may exceed 300ms — they are policed by structure (opacity/transform/
+    // stroke-dashoffset only) rather than a duration ceiling, so a long draw-in is allowed …
+    expect(() => assertGovernedCss(".x{animation:draw 2.2s ease forwards}"), "long draw-in").not.toThrow();
+    // … but a keyframe that animates layout/color is still rejected, and stroke-dashoffset is allowed.
     expect(() => assertMotionCss("@layer motion{@keyframes mutant{to{width:20px}}}")).toThrow(/keyframe/i);
+    expect(() => assertMotionCss("@layer motion{@keyframes mutant{to{background:red}}}")).toThrow(/keyframe/i);
+    expect(() => assertMotionCss("@layer motion{@keyframes draw{to{stroke-dashoffset:0}}}")).not.toThrow();
     expect(() => assertTokenColorAllowlist("@layer tokens{:root{--color-test:#fff}.x{color:#fff}}"))
       .toThrow(/raw token color/i);
-    expect(() => assertTokenColorAllowlist("@layer tokens{:root{--color-graphite-950:#111214;}.x{--color-graphite-950:#fff;}}"))
+    expect(() => assertTokenColorAllowlist("@layer tokens{:root{--color-graphite-950:#050810;}.x{--color-graphite-950:#fff;}}"))
       .toThrow(/raw token color/i);
     const tokens = await css("app/styles/tokens.css");
     expect(() => assertCanonicalTokens(tokens.replace('"Chakra Petch"', '"Arial"'))).toThrow(/canonical token/i);
@@ -296,7 +300,11 @@ function assertGovernedCss(source: string): void {
   for (const match of source.matchAll(/transition\s*:\s*([^;]+)/gi)) {
     if (/\ball\b|background|border|color|width|height/i.test(match[1])) throw new Error("Ungoverned transition");
   }
-  for (const match of source.matchAll(/(?:transition|animation)(?:-duration)?\s*:\s*([^;]+)/gi)) {
+  // CSS `transition:` (and transition-duration) stays capped at 300ms so interactive feedback is snappy.
+  // Decorative `@keyframes` animations may run longer (draw-in, sweep, count-up) — their SAFETY is
+  // enforced structurally by assertMotionCss (opacity / transform / stroke-dashoffset only), not by a
+  // duration ceiling. So the 300ms limit applies to transitions here, never to animation durations.
+  for (const match of source.matchAll(/transition(?:-duration)?\s*:\s*([^;]+)/gi)) {
     const resolved = match[1].replace(/var\((--[\w-]+)\)/g, (_, name: string) => resolveValue(values, name));
     assertDurationLimit(resolved);
   }
@@ -351,11 +359,15 @@ function assertNoNamedColor(value: string): void {
 }
 
 function assertMotionCss(source: string): void {
+  // Keyframes stay non-reflowing: only compositor-friendly properties. `stroke-dashoffset` is permitted
+  // for the Blueprint self-drawing schematic (it draws a path without triggering layout or paint of
+  // color), alongside opacity and transform. Layout/color properties (width/height/background/...) remain
+  // forbidden so animations can never animate geometry or state.
   for (const keyframe of source.matchAll(/@keyframes\s+[\w-]+\s*\{/g)) {
     const opening = keyframe.index! + keyframe[0].length - 1;
     const block = source.slice(opening + 1, matchingBraceEnd(source, opening) - 1);
     for (const declaration of block.matchAll(/([\w-]+)\s*:/g)) {
-      if (!/^(?:opacity|transform)$/.test(declaration[1])) throw new Error(`Ungoverned keyframe property ${declaration[1]}`);
+      if (!/^(?:opacity|transform|stroke-dashoffset)$/.test(declaration[1])) throw new Error(`Ungoverned keyframe property ${declaration[1]}`);
     }
   }
 }
@@ -429,7 +441,7 @@ async function resolveTsxImport(from: string, specifier: string): Promise<string
   }
 }
 
-const OG_COLOR_ALLOWLIST = new Set(["#111214", "#f2efe8", "#c6f24e", "#a7a39b"]);
+const OG_COLOR_ALLOWLIST = new Set(["#050810", "#e8eef6", "#06b6d4", "#9db0c6"]);
 
 async function css(path: string): Promise<string> {
   return readFile(resolve(process.cwd(), path), "utf8");
@@ -479,24 +491,24 @@ function luminance(color: Rgba): number {
 }
 
 const RAW_TOKEN_DECLARATIONS = new Map<string, string>([
-  ["--color-graphite-950", "#111214"], ["--color-graphite-900", "#191a1e"],
-  ["--color-graphite-800", "#222329"], ["--color-graphite-975", "#0d0e10"],
-  ["--color-paper-50", "#f2efe8"], ["--color-paper-100", "#f1ebdf"], ["--color-paper-200", "#e6ddcf"],
-  ["--color-ink-950", "#19181a"], ["--color-violet-400", "#c6f24e"], ["--color-violet-700", "#4a6a00"],
-  ["--color-action-ink", "#14210a"], ["--surface-topbar", "rgba(17, 18, 20, .96)"],
-  ["--surface-subtle", "rgba(255, 255, 255, .025)"], ["--texture-dot", "rgba(255, 255, 255, .08)"],
-  ["--grid-line", "rgba(198, 242, 78, .08)"], ["--text-muted-on-dark", "#a7a39b"],
-  ["--text-placeholder-on-dark", "#8f8b84"], ["--text-muted-on-paper", "#a7a39b"],
-  ["--text-data-on-paper", "#c4c0b8"], ["--status-success-on-dark", "#39b982"],
-  ["--status-caution-on-dark", "#d79a36"], ["--status-failure-on-dark", "#f07878"],
-  ["--status-unknown-on-dark", "#b4afb7"], ["--status-success-on-paper", "#39b982"],
-  ["--status-caution-on-paper", "#d79a36"], ["--status-failure-on-paper", "#f07878"],
-  ["--status-unknown-on-paper", "#b4afb7"], ["--focus-on-dark", "#d8f57a"],
-  ["--focus-on-paper", "#d8f57a"], ["--border-control-on-dark", "#77767b"],
-  ["--border-control-on-paper", "#77767b"], ["--border-subtle-on-dark", "rgba(242, 239, 232, .18)"],
-  ["--border-subtle-on-paper", "rgba(242, 239, 232, .18)"], ["--status-success-soft", "rgba(57, 185, 130, .14)"],
-  ["--status-caution-soft", "rgba(215, 154, 54, .15)"], ["--status-failure-soft", "rgba(240, 120, 120, .14)"],
-  ["--action-soft", "rgba(198, 242, 78, .15)"], ["--rail-end-on-ceremony", "rgba(198, 242, 78, .65)"],
+  ["--color-graphite-950", "#050810"], ["--color-graphite-900", "#0a1120"],
+  ["--color-graphite-800", "#0e1728"], ["--color-graphite-975", "#070b14"],
+  ["--color-paper-50", "#e8eef6"], ["--color-paper-100", "#0a1120"], ["--color-paper-200", "#0e1728"],
+  ["--color-ink-950", "#e8eef6"], ["--color-violet-400", "#06b6d4"], ["--color-violet-700", "#0e7490"],
+  ["--color-action-ink", "#050810"], ["--surface-topbar", "rgba(5, 8, 16, .86)"],
+  ["--surface-subtle", "rgba(255, 255, 255, .02)"], ["--texture-dot", "rgba(6, 182, 212, .07)"],
+  ["--grid-line", "rgba(6, 182, 212, .055)"], ["--text-muted-on-dark", "#9db0c6"],
+  ["--text-placeholder-on-dark", "#748ba3"], ["--text-muted-on-paper", "#9db0c6"],
+  ["--text-data-on-paper", "#c3d1e2"], ["--status-success-on-dark", "#10b981"],
+  ["--status-caution-on-dark", "#fbbf24"], ["--status-failure-on-dark", "#f43f5e"],
+  ["--status-unknown-on-dark", "#6b7f96"], ["--status-success-on-paper", "#10b981"],
+  ["--status-caution-on-paper", "#fbbf24"], ["--status-failure-on-paper", "#f43f5e"],
+  ["--status-unknown-on-paper", "#6b7f96"], ["--focus-on-dark", "#22d3ee"],
+  ["--focus-on-paper", "#22d3ee"], ["--border-control-on-dark", "#4a7090"],
+  ["--border-control-on-paper", "#4a7090"], ["--border-subtle-on-dark", "rgba(6, 182, 212, .18)"],
+  ["--border-subtle-on-paper", "rgba(6, 182, 212, .18)"], ["--status-success-soft", "rgba(16, 185, 129, .14)"],
+  ["--status-caution-soft", "rgba(251, 191, 36, .15)"], ["--status-failure-soft", "rgba(244, 63, 94, .14)"],
+  ["--action-soft", "rgba(6, 182, 212, .15)"], ["--rail-end-on-ceremony", "rgba(6, 182, 212, .55)"],
   ["--shadow-ink", "#000000"],
 ]);
 

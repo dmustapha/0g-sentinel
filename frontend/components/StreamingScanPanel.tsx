@@ -28,7 +28,8 @@ export function StreamingScanPanel({ stages, failed }: Readonly<{
   const total = PROOFLOCK_STAGES.length;
   const reachedCount = PROOFLOCK_STAGES.filter((stage) => stages.includes(stage)).length;
   const progress = total > 1 ? Math.max(0, reachedCount - 1) / (total - 1) : 0;
-  return <section className="proof-ceremony" aria-label="ProofLock ceremony" data-writing={writingChain || undefined}>
+  return <section className="proof-ceremony bp-bracket" aria-label="ProofLock ceremony" data-writing={writingChain || undefined}>
+    <span className="bp-corners" aria-hidden="true" />
     <div className="proof-ceremony-rail" aria-hidden="true"><div className="rail-line" />
       <div className="rail-advance" style={{ transform: `scaleY(${progress})` }} />
     {PROOFLOCK_STAGES.map((stage, index) => {

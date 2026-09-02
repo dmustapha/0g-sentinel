@@ -50,7 +50,8 @@ export function RiskLeaderboard({ items }: { items: readonly ProofLockInventoryI
           {rows.length} sealed {rows.length === 1 ? "agent" : "agents"}
         </p>
       </div>
-      <div className="leaderboard-shell">
+      <div className="leaderboard-shell bp-bracket">
+        <span className="bp-corners" aria-hidden="true" />
         <table className="leaderboard-table">
           <caption>{CAPTION}</caption>
           <thead>

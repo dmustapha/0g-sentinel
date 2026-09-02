@@ -17,7 +17,7 @@ Raw-color exception: raw color syntax is permitted only in `tokens.css`, plus th
 
 ## Visual language
 
-Graphite is the working canvas, warm paper is reserved for evidence dossiers, and 0G signal lime marks actions and provenance—not generic decoration. Geometry is square, with a single 16px dossier cut. Controls use a crisp `3px 3px 0` shadow and sheets use `5px 5px 0`; neither shadow blurs. Texture stays quiet and never conveys state.
+Graphite is the working canvas, a darker elevated surface is reserved for evidence dossiers, and 0G signal lime marks actions and provenance—not generic decoration. Geometry is square, with a single 16px dossier cut. Controls use a crisp `3px 3px 0` shadow and sheets use `5px 5px 0`; neither shadow blurs. Texture stays quiet and never conveys state.
 
 The first-viewport signature is a clipped evidence sheet set against the graphite proof workspace: the warm-paper plane establishes evidence as the primary artifact before any decorative treatment. This signature remains consistent across desktop and mobile reflow.
 

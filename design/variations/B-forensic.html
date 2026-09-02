@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>0G Sentinel — B · Forensic Console</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   0G Sentinel — Direction B · Forensic Console
+   Evidence-first investigator's console. Bloomberg-terminal-
+   meets-security-SOC. Same navy+cyan family as V1 Radar
+   Observatory. The evidence forensics are the signature.
+═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ink base — cool blue-black, faint navy, never pure black */
+  --ink-0: #050810;
+  --ink-1: #070b14;
+  --ink-2: #0a1120;
+  --ink-3: #0e1728;
+  --ink-4: #131e33;
+  --line: rgba(6, 182, 212, 0.12);
+  --line-soft: rgba(148, 176, 205, 0.10);
+  --grid: rgba(6, 182, 212, 0.055);
+
+  /* brand — signal cyan, one hue, variety from opacity */
+  --cy: #06b6d4;
+  --cy-55: rgba(6, 182, 212, 0.55);
+  --cy-32: rgba(6, 182, 212, 0.32);
+  --cy-18: rgba(6, 182, 212, 0.18);
+  --cy-12: rgba(6, 182, 212, 0.12);
+  --cy-06: rgba(6, 182, 212, 0.06);
+
+  /* verdict semantics — reserved */
+  --good: #10b981;
+  --warn: #fbbf24;
+  --bad: #f43f5e;
+  --good-12: rgba(16, 185, 129, 0.12);
+  --warn-12: rgba(251, 191, 36, 0.12);
+  --bad-12: rgba(244, 63, 94, 0.12);
+  --bad-32: rgba(244, 63, 94, 0.32);
+  --good-32: rgba(16, 185, 129, 0.32);
+  --warn-32: rgba(251, 191, 36, 0.32);
+
+  /* text */
+  --tx-hi: #e8eef6;
+  --tx-mid: #9db0c6;
+  --tx-lo: #5c6f88;
+  --tx-dim: #3b4a60;
+
+  /* radius scale — tighter for terminal feel */
+  --r-1: 3px;
+  --r-2: 5px;
+  --r-3: 8px;
+  --r-4: 12px;
+
+  /* type scale */
+  --fs-display: clamp(2rem, 5vw, 3.7rem);
+  --fs-h2: clamp(1.25rem, 2.6vw, 1.85rem);
+  --fs-body: 0.95rem;
+  --fs-sm: 0.82rem;
+  --fs-xs: 0.71rem;
+  --fs-mono: 0.78rem;
+
+  --font-display: "Chakra Petch", "Rajdhani", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "JetBrains Mono", monospace;
+
+  --maxw: 1240px;
+  --focus: 0 0 0 2px var(--ink-0), 0 0 0 4px #06b6d4;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--ink-0);
+  color: var(--tx-mid);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  position: relative;
+}
+
+/* fixed scanline + grain texture — heavier for terminal texture */
+.texture {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(6,182,212,0.022) 0px, rgba(6,182,212,0.022) 1px, transparent 1px, transparent 3px);
+  opacity: 0.6;
+}
+.texture::after {
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(148,176,205,0.04) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+}
+::selection { background: var(--cy-32); color: var(--tx-hi); }
+a { color: var(--cy); text-decoration: none; }
+.mono { font-family: var(--font-mono); font-size: var(--fs-mono); letter-spacing: -0.01em; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; position: relative; z-index: 2; }
+h1, h2, h3 { font-family: var(--font-display); color: var(--tx-hi); font-weight: 600; line-height: 1.08; }
+
+/* screen label — each section header for the mockup */
+.screen-label {
+  position: relative; z-index: 2;
+  max-width: var(--maxw); margin: 0 auto; padding: 34px 24px 0;
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.22em;
+  text-transform: uppercase; color: var(--cy-55);
+  display: flex; align-items: center; gap: 12px;
+}
+.screen-label::before { content: "▚"; color: var(--cy-32); }
+.screen-label .n {
+  font-family: var(--font-mono); color: var(--tx-dim);
+  border: 1px solid var(--line); padding: 2px 8px; border-radius: var(--r-1);
+}
+.screen-sep { height: 1px; background: linear-gradient(90deg, var(--cy-18), transparent); margin: 0 24px; max-width: calc(var(--maxw) - 48px); margin-inline: auto; }
+
+.eyebrow {
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  letter-spacing: 0.24em; text-transform: uppercase; color: var(--cy-55);
+  font-weight: 600; display: inline-flex; align-items: center; gap: 8px;
+}
+.eyebrow::before { content: ""; width: 18px; height: 1px; background: var(--cy-32); }
+
+/* ============ TOPBAR ============ */
+.topbar {
+  position: sticky; top: 0; z-index: 40;
+  background: rgba(5, 8, 16, 0.86);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px) saturate(1.2);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+}
+.topbar-inner {
+  max-width: var(--maxw); margin: 0 auto; padding: 0 24px;
+  height: 60px; display: flex; align-items: center; gap: 20px;
+}
+.wordmark {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.02rem;
+  color: var(--tx-hi); letter-spacing: 0.02em; display: flex; align-items: center; gap: 9px;
+  white-space: nowrap;
+}
+.wordmark .mk {
+  width: 22px; height: 22px; flex: none; position: relative;
+  border: 1.5px solid var(--cy-55); border-radius: 4px;
+  display: grid; place-items: center; background: var(--cy-06);
+}
+.wordmark .mk::before {
+  content: ""; width: 2px; height: 9px; background: var(--cy);
+  position: absolute; box-shadow: 0 0 6px var(--cy-55);
+}
+.wordmark .mk::after {
+  content: ""; width: 9px; height: 2px; background: var(--cy);
+  position: absolute; box-shadow: 0 0 6px var(--cy-55);
+}
+.nav { display: flex; gap: 2px; margin-left: 14px; }
+.nav a {
+  font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 500;
+  color: var(--tx-mid); padding: 7px 12px; border-radius: var(--r-2);
+  letter-spacing: 0.02em; transition: color .15s, background .15s;
+}
+.nav a.active { color: var(--tx-hi); background: var(--cy-06); box-shadow: inset 0 -2px 0 var(--cy); }
+.nav a:hover { color: var(--tx-hi); background: var(--cy-06); }
+.nav a:focus-visible { outline: none; box-shadow: var(--focus); }
+.top-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+.chain-tag {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  color: var(--tx-mid); border: 1px solid var(--line);
+  background: var(--ink-2); padding: 6px 11px; border-radius: var(--r-2);
+  letter-spacing: 0.02em; white-space: nowrap;
+}
+.chain-tag .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+  box-shadow: 0 0 0 0 rgba(16,185,129,0.5); animation: beacon 2.4s infinite;
+}
+@keyframes beacon {
+  0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+}
+.chain-tag b { color: var(--cy); font-weight: 600; }
+
+/* ============ HERO ============ */
+.hero {
+  position: relative;
+  border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(ellipse 800px 460px at 82% 30%, var(--cy-06), transparent 60%),
+    var(--ink-0);
+  overflow: hidden;
+}
+.hero-grid {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(ellipse 80% 70% at 65% 40%, #000 30%, transparent 78%);
+}
+.hero-inner {
+  max-width: var(--maxw); margin: 0 auto; padding: 64px 24px 68px;
+  position: relative; z-index: 2;
+  display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center;
+}
+.hero-copy .eyebrow { margin-bottom: 20px; }
+.hero h1 {
+  font-size: var(--fs-display); letter-spacing: -0.015em; margin-bottom: 20px; max-width: 15ch;
+}
+.hero h1 .accent { color: var(--cy); position: relative; }
+.hero h1 .accent::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0.06em; height: 3px;
+  background: linear-gradient(90deg, var(--cy), transparent); opacity: 0.6;
+}
+.hero-body {
+  font-size: 1.0rem; color: var(--tx-mid); max-width: 52ch; margin-bottom: 26px; line-height: 1.66;
+}
+.scan-input-row { display: flex; gap: 10px; margin-bottom: 16px; max-width: 620px; }
+.scan-input {
+  flex: 1; min-width: 0; background: var(--ink-0); border: 1px solid var(--line);
+  border-radius: var(--r-2); padding: 13px 16px; color: var(--tx-hi);
+  font-family: var(--font-mono); font-size: 0.85rem; letter-spacing: 0.01em;
+  transition: border-color .15s, box-shadow .15s;
+}
+.scan-input::placeholder { color: var(--tx-dim); }
+.scan-input:focus-visible { outline: none; border-color: var(--cy-32); box-shadow: var(--focus); }
+.btn {
+  font-family: var(--font-display); font-weight: 600; font-size: var(--fs-sm);
+  letter-spacing: 0.03em; padding: 12px 20px; border-radius: var(--r-2);
+  cursor: pointer; border: 1px solid transparent;
+  transition: transform .16s, box-shadow .16s, background .16s, border-color .16s;
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+}
+.btn-primary {
+  background: var(--cy); color: #04121a;
+  box-shadow: 0 0 0 1px var(--cy-55), 0 0 22px -6px var(--cy-55);
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--cy), 0 0 30px -4px var(--cy-55); }
+.btn:focus-visible { outline: none; box-shadow: var(--focus); }
+.capability {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo);
+  letter-spacing: 0.02em;
+}
+.capability b { color: var(--cy-55); font-weight: 500; }
+
+/* corner scope readout — small, secondary radar */
+.scope-panel {
+  border: 1px solid var(--line); border-radius: var(--r-4);
+  background: linear-gradient(180deg, var(--ink-2), var(--ink-1));
+  overflow: hidden; box-shadow: 0 0 60px -30px var(--cy-55), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+.scope-head {
+  display: flex; align-items: center; gap: 10px; padding: 11px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); letter-spacing: 0.06em;
+}
+.scope-head .lamps { display: flex; gap: 5px; margin-left: auto; }
+.scope-head .lamp { width: 7px; height: 7px; border-radius: 50%; background: var(--tx-dim); }
+.scope-head .lamp:first-child { background: var(--cy-55); }
+.scope-body { display: grid; grid-template-columns: 148px 1fr; gap: 4px; padding: 16px; align-items: center; }
+.scope {
+  position: relative; aspect-ratio: 1/1; width: 100%; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(6,182,212,0.10), transparent 58%), var(--ink-1);
+  border: 1px solid var(--cy-32);
+  box-shadow: inset 0 0 40px -16px var(--cy-55), 0 0 60px -30px var(--cy-55); overflow: hidden;
+}
+.scope .ring { position: absolute; border: 1px solid var(--cy-12); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+.scope .r1 { width: 33%; height: 33%; } .scope .r2 { width: 66%; height: 66%; } .scope .r3 { width: 96%; height: 96%; border-color: var(--cy-32); }
+.scope .cross-h, .scope .cross-v { position: absolute; background: var(--cy-12); top: 50%; left: 50%; }
+.scope .cross-h { width: 96%; height: 1px; transform: translate(-50%,-50%); }
+.scope .cross-v { height: 96%; width: 1px; transform: translate(-50%,-50%); }
+.scope .sweep-line {
+  position: absolute; top: 50%; left: 50%; width: 48%; height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--cy));
+  transform-origin: left center; box-shadow: 0 0 8px var(--cy-55);
+  transform: translate(0,-50%); animation: sweepline 4.6s linear infinite;
+}
+@keyframes sweepline { to { transform: translate(0,-50%) rotate(360deg); } }
+.scope .blip { position: absolute; width: 6px; height: 6px; border-radius: 50%; transform: translate(-50%,-50%); background: var(--cy); box-shadow: 0 0 8px var(--cy-55); }
+.scope .blip.warn { background: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.scope-readout { display: grid; gap: 8px; padding-left: 14px; }
+.scope-readout .rr { font-family: var(--font-mono); font-size: 0.68rem; display: flex; justify-content: space-between; gap: 10px; }
+.scope-readout .rr .k { color: var(--tx-lo); }
+.scope-readout .rr .v { color: var(--tx-hi); }
+.scope-readout .rr .v.cy { color: var(--cy); }
+.scope-readout .rr .v.warn { color: var(--warn); }
+
+/* ============ SECTION SHELL ============ */
+section { position: relative; }
+.pad { padding: 56px 0; }
+.sec-head { margin-bottom: 26px; }
+.sec-head h2 { font-size: var(--fs-h2); letter-spacing: -0.01em; margin-top: 10px; }
+.sec-head p { color: var(--tx-lo); font-size: var(--fs-sm); margin-top: 7px; max-width: 60ch; }
+
+.report-shell { background: var(--ink-1); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+
+/* console frame — the recurring forensic container */
+.console {
+  border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden;
+  background: var(--ink-1); box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+.console-bar {
+  display: flex; align-items: center; gap: 12px; padding: 11px 18px;
+  border-bottom: 1px solid var(--line); background: var(--ink-2);
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); letter-spacing: 0.06em;
+}
+.console-bar .tt { color: var(--tx-mid); text-transform: uppercase; letter-spacing: 0.14em; }
+.console-bar .sp { margin-left: auto; }
+.console-bar .subj { color: var(--cy); }
+
+/* ---- verdict chip (HIT / CLEAR style) ---- */
+.verdict-chip {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-display); font-weight: 700; font-size: var(--fs-xs);
+  letter-spacing: 0.1em; padding: 5px 11px; border-radius: var(--r-1); text-transform: uppercase;
+}
+.verdict-chip::before { content: ""; width: 6px; height: 6px; border-radius: 1px; background: currentColor; }
+.vc-clear { color: var(--good); background: var(--good-12); border: 1px solid var(--good-32); }
+.vc-hit  { color: var(--bad); background: var(--bad-12); border: 1px solid var(--bad-32); }
+.vc-caut { color: var(--warn); background: var(--warn-12); border: 1px solid var(--warn-32); }
+.vc-na   { color: var(--tx-lo); background: rgba(148,176,205,0.06); border: 1px solid var(--line-soft); }
+
+/* ============ SCAN REPORT ============ */
+.report-top {
+  display: grid; grid-template-columns: 300px 1fr; gap: 0;
+}
+.rt-score {
+  padding: 26px 24px; border-right: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--ink-2), var(--ink-1)); position: relative;
+}
+.rt-score.caution { box-shadow: inset 0 0 50px -30px var(--warn); }
+.rt-score .k {
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.16em;
+  text-transform: uppercase; color: var(--tx-lo); margin-bottom: 14px;
+}
+.score-big {
+  font-family: var(--font-display); font-weight: 700; font-size: 3.4rem; line-height: 1;
+  color: var(--warn); letter-spacing: -0.01em; display: flex; align-items: baseline; gap: 4px;
+}
+.score-big .max { font-size: 1.05rem; color: var(--tx-lo); font-weight: 500; }
+.rt-score .v-word { margin-top: 12px; }
+.rep-bar { height: 7px; border-radius: 999px; background: var(--ink-3); overflow: hidden; margin-top: 20px; }
+.rep-bar > i { display: block; height: 100%; width: 39%; background: var(--warn); border-radius: 999px; box-shadow: 0 0 12px -2px var(--warn); }
+.rt-score .scale { display: flex; justify-content: space-between; font-family: var(--font-mono); font-size: 0.62rem; color: var(--tx-dim); margin-top: 7px; letter-spacing: 0.04em; }
+.rt-body { padding: 24px; }
+.summary-line {
+  font-size: 0.98rem; color: var(--tx-mid); line-height: 1.6; margin-bottom: 20px;
+  padding-left: 14px; border-left: 2px solid var(--warn-32);
+}
+.rt-body .subj-meta { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); margin-bottom: 20px; }
+.rt-body .subj-meta b { color: var(--tx-mid); font-weight: 500; }
+
+.blocks { display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-top: 1px solid var(--line); }
+.block { padding: 20px 24px; }
+.block + .block { border-left: 1px solid var(--line); }
+.block .b-title {
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--tx-lo); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.block .b-title::after { content: ""; flex: 1; height: 1px; background: var(--line-soft); }
+
+/* threat intel rows */
+.intel-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 0; border-bottom: 1px solid var(--line-soft);
+}
+.intel-row:last-child { border-bottom: none; }
+.intel-row .src { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx-hi); }
+.intel-row .src small { display: block; color: var(--tx-lo); font-size: 0.64rem; letter-spacing: 0.03em; }
+
+/* contract safety chips */
+.safety-chip {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 12px; border: 1px solid var(--warn-32); border-radius: var(--r-2);
+  background: var(--warn-12); margin-bottom: 9px;
+}
+.safety-chip:last-child { margin-bottom: 0; }
+.safety-chip .ic { font-family: var(--font-mono); color: var(--warn); font-weight: 700; flex: none; }
+.safety-chip .txt { font-size: var(--fs-sm); color: var(--tx-mid); line-height: 1.45; }
+.safety-chip .txt b { color: var(--warn); font-family: var(--font-mono); font-weight: 600; font-size: var(--fs-xs); letter-spacing: 0.04em; text-transform: uppercase; display: block; margin-bottom: 2px; }
+
+/* key factors */
+.factors { border-top: 1px solid var(--line); padding: 20px 24px; }
+.factor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+.factor {
+  display: flex; gap: 10px; align-items: baseline;
+  font-size: var(--fs-sm); color: var(--tx-mid); line-height: 1.5;
+}
+.factor .fx { font-family: var(--font-mono); font-size: 0.7rem; color: var(--cy-55); flex: none; padding-top: 2px; }
+
+/* ---- EVIDENCE AUDIT TABLE (signature) ---- */
+.evidence { border-top: 1px solid var(--line); }
+.evidence-head {
+  display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+  background: var(--ink-2); border-bottom: 1px solid var(--line);
+}
+.evidence-head .et {
+  font-family: var(--font-display); font-weight: 600; font-size: 0.95rem; color: var(--tx-hi);
+  letter-spacing: 0.03em;
+}
+.evidence-head .cnt {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cy);
+  border: 1px solid var(--cy-32); background: var(--cy-06); padding: 3px 9px; border-radius: 999px;
+}
+.evidence-head .exp { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); }
+.audit { width: 100%; border-collapse: collapse; }
+.audit thead th {
+  font-family: var(--font-mono); font-size: 0.64rem; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--tx-lo);
+  text-align: left; padding: 10px 24px; border-bottom: 1px solid var(--line); background: var(--ink-1);
+}
+.audit tbody td { padding: 12px 24px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; font-size: var(--fs-sm); }
+.audit tbody tr:last-child td { border-bottom: none; }
+.audit tbody tr:hover { background: var(--cy-06); }
+.audit .sig { font-family: var(--font-display); font-weight: 500; color: var(--tx-hi); font-size: var(--fs-sm); }
+.audit .sig small { display: block; font-family: var(--font-mono); font-size: 0.62rem; color: var(--tx-dim); letter-spacing: 0.03em; margin-top: 2px; }
+.strength { display: flex; align-items: center; gap: 10px; min-width: 150px; }
+.strength .track { flex: 1; height: 5px; border-radius: 999px; background: var(--ink-3); overflow: hidden; }
+.strength .fill { display: block; height: 100%; border-radius: 999px; }
+.strength .val { font-family: var(--font-mono); font-size: 0.68rem; width: 34px; text-align: right; flex: none; }
+.fill.g { background: var(--good); box-shadow: 0 0 8px -2px var(--good); }
+.fill.w { background: var(--warn); box-shadow: 0 0 8px -2px var(--warn); }
+.fill.b { background: var(--bad); box-shadow: 0 0 8px -2px var(--bad); }
+.fill.n { background: var(--tx-dim); }
+.audit .detail-c { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-mid); }
+.audit .res { font-family: var(--font-mono); font-size: var(--fs-xs); }
+.res.pass { color: var(--good); } .res.na { color: var(--tx-lo); } .res.flag { color: var(--warn); }
+
+/* proof metadata footer */
+.proof-meta {
+  border-top: 1px solid var(--line); padding: 18px 24px;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px 24px;
+  background: var(--ink-0);
+}
+.pm-item { }
+.pm-item .pk { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--tx-lo); margin-bottom: 4px; }
+.pm-item .pv { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx-mid); word-break: break-all; }
+.pm-item .pv.cy { color: var(--cy); }
+.pm-item .pv.good { color: var(--good); }
+
+/* ============ LEADERBOARD ============ */
+.lb-controls { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.lb-controls .search {
+  flex: 1; min-width: 0; max-width: 320px; background: var(--ink-1); border: 1px solid var(--line);
+  border-radius: var(--r-2); padding: 9px 13px; color: var(--tx-hi);
+  font-family: var(--font-mono); font-size: 0.8rem;
+}
+.lb-controls .search:focus-visible { outline: none; border-color: var(--cy-32); box-shadow: var(--focus); }
+.lb-controls .cnt { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); margin-left: auto; }
+.lb-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+.lb-table thead th {
+  font-family: var(--font-mono); font-size: 0.63rem; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--tx-lo);
+  text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--ink-2);
+}
+.lb-table tbody td { padding: 13px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.lb-table tbody tr:last-child td { border-bottom: none; }
+.lb-table tbody tr:hover { background: var(--cy-06); }
+.lb-table tbody tr.flagged { background: var(--bad-12); }
+.lb-table tbody tr.flagged:hover { background: rgba(244,63,94,0.16); }
+.rank { font-family: var(--font-mono); font-size: 0.9rem; color: var(--tx-lo); font-weight: 600; }
+.rank.top { color: var(--cy); }
+.ag-cell .nm { font-family: var(--font-display); font-weight: 600; color: var(--tx-hi); font-size: var(--fs-sm); }
+.ag-cell .nm a { color: inherit; }
+.ag-cell .nm a:hover { color: var(--cy); }
+.ag-cell .ad { font-family: var(--font-mono); font-size: 0.68rem; color: var(--tx-lo); margin-top: 2px; }
+.risk-cell { display: flex; align-items: center; gap: 10px; }
+.risk-cell .num { font-family: var(--font-mono); font-size: 0.82rem; width: 30px; flex: none; }
+.risk-cell .track { flex: 1; height: 5px; border-radius: 999px; background: var(--ink-3); overflow: hidden; min-width: 40px; }
+.risk-cell .fill { display: block; height: 100%; border-radius: 999px; }
+.gate-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-weight: 600; font-size: 0.66rem;
+  letter-spacing: 0.06em; padding: 4px 9px; border-radius: var(--r-1); text-transform: uppercase;
+}
+.gate-chip::before { content: ""; width: 5px; height: 5px; border-radius: 1px; background: currentColor; }
+.gate-allowed { color: var(--good); background: var(--good-12); border: 1px solid var(--good-32); }
+.gate-review  { color: var(--warn); background: var(--warn-12); border: 1px solid var(--warn-32); }
+.gate-blocked { color: var(--bad); background: var(--bad-12); border: 1px solid var(--bad-32); }
+.ver-cell { font-family: var(--font-mono); font-size: 0.72rem; color: var(--tx-lo); }
+.col-rank { width: 6%; } .col-agent { width: 26%; } .col-subj { width: 15%; }
+.col-brisk { width: 16%; } .col-crisk { width: 16%; } .col-gate { width: 13%; } .col-ver { width: 8%; }
+
+/* ============ AGENT DETAIL ============ */
+.detail-top { display: grid; grid-template-columns: 1fr 340px; gap: 20px; margin-bottom: 22px; }
+.trust-summary {
+  border: 1px solid var(--line); border-radius: var(--r-4); padding: 24px;
+  background: linear-gradient(180deg, var(--ink-2), var(--ink-1)); box-shadow: inset 0 0 50px -34px var(--warn);
+}
+.trust-summary .ts-head { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; flex-wrap: wrap; }
+.trust-summary h3 { font-size: 1.3rem; letter-spacing: 0.02em; }
+.trust-summary .ts-addr { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); }
+.trust-summary .ts-body { font-size: var(--fs-sm); color: var(--tx-mid); line-height: 1.6; }
+.trust-stats { display: flex; gap: 26px; margin-top: 18px; flex-wrap: wrap; }
+.trust-stats .st .sk { font-family: var(--font-mono); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--tx-lo); }
+.trust-stats .st .sv { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; color: var(--tx-hi); }
+.trust-stats .st .sv.warn { color: var(--warn); }
+.trust-stats .st .sv.good { color: var(--good); }
+
+/* attestation timeline */
+.timeline-panel {
+  border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; background: var(--ink-1);
+}
+.timeline-panel .tl-head {
+  padding: 13px 18px; border-bottom: 1px solid var(--line); background: var(--ink-2);
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--tx-lo);
+}
+.timeline { padding: 8px 18px 14px; max-height: 340px; overflow-y: auto; }
+.tl-item {
+  position: relative; padding: 12px 0 12px 26px; border-bottom: 1px solid var(--line-soft);
+}
+.tl-item:last-child { border-bottom: none; }
+.tl-item::before {
+  content: ""; position: absolute; left: 5px; top: 17px; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--cy-32); border: 1px solid var(--cy);
+}
+.tl-item.latest::before { background: var(--warn); border-color: var(--warn); box-shadow: 0 0 8px var(--warn); }
+.tl-item::after {
+  content: ""; position: absolute; left: 8.5px; top: 25px; bottom: -12px; width: 1px; background: var(--line);
+}
+.tl-item:last-child::after { display: none; }
+.tl-item .tl-v { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-hi); display: flex; justify-content: space-between; gap: 10px; }
+.tl-item .tl-v .risk { color: var(--tx-lo); }
+.tl-item .tl-meta { font-family: var(--font-mono); font-size: 0.64rem; color: var(--tx-lo); margin-top: 4px; word-break: break-all; }
+
+/* footer */
+footer { border-top: 1px solid var(--line); background: var(--ink-1); padding: 28px 0; margin-top: 24px; }
+.foot-inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.foot-inner .fmk { font-family: var(--font-display); font-weight: 700; color: var(--tx-hi); font-size: 0.95rem; }
+.foot-inner .fnet { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); }
+.foot-inner .flink { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-sm); font-weight: 600; color: var(--cy); }
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 1000px) {
+  .hero-inner { grid-template-columns: 1fr; gap: 40px; }
+  .scope-panel { max-width: 460px; }
+  .report-top { grid-template-columns: 1fr; }
+  .rt-score { border-right: none; border-bottom: 1px solid var(--line); }
+  .detail-top { grid-template-columns: 1fr; }
+  .blocks { grid-template-columns: 1fr; }
+  .block + .block { border-left: none; border-top: 1px solid var(--line); }
+}
+@media (max-width: 720px) {
+  .nav { display: none; }
+  .factor-grid { grid-template-columns: 1fr; }
+  .scope-body { grid-template-columns: 1fr; }
+  .col-subj, .col-crisk { display: none; }
+}
+@media (max-width: 480px) {
+  .wrap { padding: 0 16px; }
+  .topbar-inner { padding: 0 16px; gap: 10px; }
+  .hero-inner { padding: 44px 16px 50px; }
+  .scan-input-row { flex-direction: column; }
+  .audit thead th, .audit tbody td { padding: 10px 16px; }
+  .col-ver { display: none; }
+  .lb-table thead th, .lb-table tbody td { padding: 10px 10px; }
+  .score-big { font-size: 2.8rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="texture"></div>
+
+<!-- ═══════════ 1 · TOP NAV ═══════════ -->
+<div class="topbar">
+  <div class="topbar-inner">
+    <div class="wordmark"><span class="mk"></span>0G&nbsp;Sentinel</div>
+    <nav class="nav">
+      <a href="#">Overview</a>
+      <a href="#scan" class="active">Scan</a>
+      <a href="#agents">Agents</a>
+      <a href="#verify">Verify</a>
+    </nav>
+    <div class="top-right">
+      <span class="chain-tag"><span class="dot"></span>0G Galileo · Chain ID <b>16661</b></span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ 2 · HOMEPAGE HERO ═══════════ -->
+<div class="screen-label"><span class="n">01</span> Homepage — Hero / Scan Entry</div>
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="hero-copy">
+      <span class="eyebrow">Agent trust · forensic console</span>
+      <h1>Is this agent <span class="accent">safe to trust?</span></h1>
+      <p class="hero-body">Scan any AI agent on 0G. We check it against real sanctions and scam-blocklist intelligence, read its contract code, and seal the verdict on-chain.</p>
+      <div class="scan-input-row">
+        <input class="scan-input" type="text" placeholder="0x… address, agent ID, or ENS" value="agent #3527152" aria-label="Agent to scan" />
+        <button class="btn btn-primary">Scan agent →</button>
+      </div>
+      <p class="capability"><b>OFAC</b> · <b>Chainalysis</b> · <b>ScamSniffer</b> · <b>contract bytecode analysis</b></p>
+    </div>
+
+    <div class="scope-panel">
+      <div class="scope-head">
+        SCOPE · SECTOR SWEEP
+        <span class="lamps"><i class="lamp"></i><i class="lamp"></i><i class="lamp"></i></span>
+      </div>
+      <div class="scope-body">
+        <div class="scope">
+          <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span>
+          <span class="cross-h"></span><span class="cross-v"></span>
+          <span class="sweep-line"></span>
+          <span class="blip" style="top:38%;left:60%"></span>
+          <span class="blip" style="top:64%;left:44%"></span>
+          <span class="blip warn" style="top:30%;left:34%"></span>
+          <span class="blip" style="top:56%;left:70%"></span>
+        </div>
+        <div class="scope-readout">
+          <div class="rr"><span class="k">TRACKED</span><span class="v cy">1,284</span></div>
+          <div class="rr"><span class="k">SCANNED 24H</span><span class="v">312</span></div>
+          <div class="rr"><span class="k">FLAGGED</span><span class="v warn">7</span></div>
+          <div class="rr"><span class="k">SEALED</span><span class="v">on-chain</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 3 · SCAN RESULT / RISK REPORT ═══════════ -->
+<div class="screen-label" id="scan"><span class="n">02</span> Scan Result — RiskReport (primary surface)</div>
+<div class="screen-sep"></div>
+<section class="report-shell pad">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Case file · evidence-first verdict</span>
+      <h2>RiskReport — agent&nbsp;#3527152</h2>
+      <p>Full forensic breakdown: threat-intel lookups, contract bytecode findings, weighted signals, and the on-chain proof seal.</p>
+    </div>
+
+    <div class="console">
+      <div class="console-bar">
+        <span class="tt">Case</span> RPT-3527152
+        <span class="subj">· subject 0x9f3a…c204</span>
+        <span class="sp"></span>
+        <span>scanned 2026-09-02 14:07:32 UTC · 812 ms</span>
+      </div>
+
+      <div class="report-top">
+        <div class="rt-score caution">
+          <div class="k">Risk Score</div>
+          <div class="score-big">39<span class="max">/100</span></div>
+          <div class="v-word"><span class="verdict-chip vc-caut">Caution</span></div>
+          <div class="rep-bar"><i></i></div>
+          <div class="scale"><span>0 · SAFE</span><span>50</span><span>100 · FLAGGED</span></div>
+        </div>
+        <div class="rt-body">
+          <p class="summary-line">This wallet appears low-risk with no sanctions or scam flags, but its newness and concentrated activity warrant mild caution.</p>
+          <div class="subj-meta">
+            <span>SUBJECT <b>0x9f3a…c204</b></span>
+            <span>FIRST SEEN <b>2026-08-19</b></span>
+            <span>TX COUNT <b>41</b></span>
+            <span>COUNTERPARTIES <b>6</b></span>
+            <span>CONTRACT <b>verified</b></span>
+          </div>
+
+          <div class="block" style="padding:0;">
+            <div class="b-title">Threat Intelligence</div>
+            <div class="intel-row">
+              <div class="src">OFAC SDN List <small>US Treasury sanctions</small></div>
+              <span class="verdict-chip vc-clear">✓ Clear</span>
+            </div>
+            <div class="intel-row">
+              <div class="src">Chainalysis <small>on-chain risk oracle</small></div>
+              <span class="verdict-chip vc-na">— n/a</span>
+            </div>
+            <div class="intel-row">
+              <div class="src">ScamSniffer <small>phishing / drainer blocklist</small></div>
+              <span class="verdict-chip vc-clear">✓ Clear</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="blocks">
+        <div class="block">
+          <div class="b-title">Contract Safety</div>
+          <div class="safety-chip">
+            <span class="ic">⚠</span>
+            <span class="txt"><b>Self-destruct</b>Contract can be destroyed. Bytecode contains a <code>SELFDESTRUCT</code> opcode — the owner can wipe all logic and funds.</span>
+          </div>
+          <div class="safety-chip">
+            <span class="ic">⚠</span>
+            <span class="txt"><b>Delegatecall</b>Execution can be redirected. A <code>DELEGATECALL</code> path lets an external contract run in this agent's storage context.</span>
+          </div>
+        </div>
+        <div class="block">
+          <div class="b-title">Key Factors</div>
+          <div class="factor-grid">
+            <div class="factor"><span class="fx">[+]</span><span>No sanctions or scam-list matches across three intel providers.</span></div>
+            <div class="factor"><span class="fx">[!]</span><span>Wallet is 14 days old — insufficient behavioral history.</span></div>
+            <div class="factor"><span class="fx">[!]</span><span>82% of volume flows to a single counterparty (concentration).</span></div>
+            <div class="factor"><span class="fx">[!]</span><span>Contract exposes self-destruct + delegatecall surfaces.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SIGNATURE: EVIDENCE AUDIT TABLE -->
+      <div class="evidence">
+        <div class="evidence-head">
+          <span class="et">Evidence</span>
+          <span class="cnt">7 signals</span>
+          <span class="exp">0/7 failed · 4 weighted up · expanded ▾</span>
+        </div>
+        <table class="audit">
+          <thead>
+            <tr>
+              <th style="width:26%">Signal</th>
+              <th style="width:24%">Strength</th>
+              <th style="width:36%">Detail</th>
+              <th style="width:14%">Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="sig">Sanctions match<small>OFAC_SDN_LOOKUP</small></td>
+              <td><span class="strength"><span class="track"><span class="fill g" style="width:100%"></span></span><span class="val" style="color:var(--good)">0.00</span></span></td>
+              <td class="detail-c">No address hit across 12,904 SDN entries</td>
+              <td class="res pass">✓ 0/7 failed</td>
+            </tr>
+            <tr>
+              <td class="sig">Scam blocklist<small>SCAMSNIFFER_HIT</small></td>
+              <td><span class="strength"><span class="track"><span class="fill g" style="width:100%"></span></span><span class="val" style="color:var(--good)">0.00</span></span></td>
+              <td class="detail-c">Not present in drainer / phishing sets</td>
+              <td class="res pass">✓ clear</td>
+            </tr>
+            <tr>
+              <td class="sig">Wallet age<small>ACCOUNT_AGE_DAYS</small></td>
+              <td><span class="strength"><span class="track"><span class="fill w" style="width:64%"></span></span><span class="val" style="color:var(--warn)">0.64</span></span></td>
+              <td class="detail-c">14 days since first tx — below 90d trust floor</td>
+              <td class="res flag">↑ weighted</td>
+            </tr>
+            <tr>
+              <td class="sig">Counterparty concentration<small>CP_HHI_INDEX</small></td>
+              <td><span class="strength"><span class="track"><span class="fill w" style="width:71%"></span></span><span class="val" style="color:var(--warn)">0.71</span></span></td>
+              <td class="detail-c">82% volume to 1 of 6 counterparties</td>
+              <td class="res flag">↑ weighted</td>
+            </tr>
+            <tr>
+              <td class="sig">Bytecode: self-destruct<small>OPCODE_SELFDESTRUCT</small></td>
+              <td><span class="strength"><span class="track"><span class="fill w" style="width:50%"></span></span><span class="val" style="color:var(--warn)">0.50</span></span></td>
+              <td class="detail-c">SELFDESTRUCT present at PC 0x1a4</td>
+              <td class="res flag">↑ weighted</td>
+            </tr>
+            <tr>
+              <td class="sig">Bytecode: delegatecall<small>OPCODE_DELEGATECALL</small></td>
+              <td><span class="strength"><span class="track"><span class="fill w" style="width:45%"></span></span><span class="val" style="color:var(--warn)">0.45</span></span></td>
+              <td class="detail-c">DELEGATECALL to non-immutable target</td>
+              <td class="res flag">↑ weighted</td>
+            </tr>
+            <tr>
+              <td class="sig">Chainalysis oracle<small>CHAINALYSIS_SCORE</small></td>
+              <td><span class="strength"><span class="track"><span class="fill n" style="width:100%"></span></span><span class="val" style="color:var(--tx-lo)">n/a</span></span></td>
+              <td class="detail-c">No coverage for 0G chain — provider skipped</td>
+              <td class="res na">— n/a</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="proof-meta">
+        <div class="pm-item"><div class="pk">Lease</div><div class="pv cy">v11</div></div>
+        <div class="pm-item"><div class="pk">Proof ID</div><div class="pv">0x33419b…</div></div>
+        <div class="pm-item"><div class="pk">Storage Root</div><div class="pv">0xf1766c…</div></div>
+        <div class="pm-item"><div class="pk">Gate</div><div class="pv good">ALLOWED</div></div>
+        <div class="pm-item"><div class="pk">Sealed On</div><div class="pv">0G Storage · 0G DA</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 4 · LEADERBOARD ═══════════ -->
+<div class="screen-label" id="agents"><span class="n">03</span> Leaderboard — /agents ranked registry</div>
+<div class="screen-sep"></div>
+<section class="pad">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Registry · ranked by trust</span>
+      <h2>Scanned agents</h2>
+      <p>Every scanned agent, ranked low-to-high risk. Behavioral risk from on-chain activity; code risk from bytecode forensics; gate is the final on-chain verdict.</p>
+    </div>
+
+    <div class="lb-controls">
+      <input class="search" type="text" placeholder="filter by address, ID, or subject…" aria-label="Filter agents" />
+      <span class="cnt">8 of 1,284 agents · sorted by risk ↑</span>
+    </div>
+
+    <div class="console">
+      <table class="lb-table">
+        <thead>
+          <tr>
+            <th class="col-rank">Rank</th>
+            <th class="col-agent">Agent</th>
+            <th class="col-subj">Subject</th>
+            <th class="col-brisk">Behavioral Risk</th>
+            <th class="col-crisk">Code Risk</th>
+            <th class="col-gate">Gate</th>
+            <th class="col-ver">Version</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="rank top">01</td>
+            <td class="ag-cell"><div class="nm"><a href="#">Aegis Router</a></div><div class="ad">#1180234 · 0x4c1a…8fe0</div></td>
+            <td class="ver-cell">0x4c1a…8fe0</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--good)">20</span><span class="track"><span class="fill g" style="width:20%;background:var(--good)"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--good)">12</span><span class="track"><span class="fill g" style="width:12%;background:var(--good)"></span></span></div></td>
+            <td><span class="gate-chip gate-allowed">Allowed</span></td>
+            <td class="ver-cell">v7</td>
+          </tr>
+          <tr>
+            <td class="rank">02</td>
+            <td class="ag-cell"><div class="nm"><a href="#">Meridian Oracle</a></div><div class="ad">#0993118 · 0x77bd…12aa</div></td>
+            <td class="ver-cell">0x77bd…12aa</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--good)">28</span><span class="track"><span class="fill g" style="width:28%;background:var(--good)"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--good)">18</span><span class="track"><span class="fill g" style="width:18%;background:var(--good)"></span></span></div></td>
+            <td><span class="gate-chip gate-allowed">Allowed</span></td>
+            <td class="ver-cell">v4</td>
+          </tr>
+          <tr>
+            <td class="rank">03</td>
+            <td class="ag-cell"><div class="nm"><a href="#">Coral Settlement Bot</a></div><div class="ad">#1044901 · 0xa2e5…6b31</div></td>
+            <td class="ver-cell">0xa2e5…6b31</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--good)">33</span><span class="track"><span class="fill g" style="width:33%;background:var(--good)"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">41</span><span class="track"><span class="fill w" style="width:41%"></span></span></div></td>
+            <td><span class="gate-chip gate-allowed">Allowed</span></td>
+            <td class="ver-cell">v9</td>
+          </tr>
+          <tr>
+            <td class="rank">04</td>
+            <td class="ag-cell"><div class="nm"><a href="#">agent #3527152</a></div><div class="ad">#3527152 · 0x9f3a…c204</div></td>
+            <td class="ver-cell">0x9f3a…c204</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">39</span><span class="track"><span class="fill w" style="width:39%"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">47</span><span class="track"><span class="fill w" style="width:47%"></span></span></div></td>
+            <td><span class="gate-chip gate-review">Review</span></td>
+            <td class="ver-cell">v11</td>
+          </tr>
+          <tr>
+            <td class="rank">05</td>
+            <td class="ag-cell"><div class="nm"><a href="#">Nimbus Relayer</a></div><div class="ad">#0871550 · 0x33cd…9a0e</div></td>
+            <td class="ver-cell">0x33cd…9a0e</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">40</span><span class="track"><span class="fill w" style="width:40%"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--good)">22</span><span class="track"><span class="fill g" style="width:22%;background:var(--good)"></span></span></div></td>
+            <td><span class="gate-chip gate-allowed">Allowed</span></td>
+            <td class="ver-cell">v3</td>
+          </tr>
+          <tr>
+            <td class="rank">06</td>
+            <td class="ag-cell"><div class="nm"><a href="#">Vault Keeper X</a></div><div class="ad">#1290007 · 0xbe41…7cc2</div></td>
+            <td class="ver-cell">0xbe41…7cc2</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">51</span><span class="track"><span class="fill w" style="width:51%"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">44</span><span class="track"><span class="fill w" style="width:44%"></span></span></div></td>
+            <td><span class="gate-chip gate-review">Review</span></td>
+            <td class="ver-cell">v2</td>
+          </tr>
+          <tr>
+            <td class="rank">07</td>
+            <td class="ag-cell"><div class="nm"><a href="#">Ghost Mixer Proxy</a></div><div class="ad">#0450012 · 0xdd90…4f18</div></td>
+            <td class="ver-cell">0xdd90…4f18</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">58</span><span class="track"><span class="fill w" style="width:58%"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--warn)">55</span><span class="track"><span class="fill w" style="width:55%"></span></span></div></td>
+            <td><span class="gate-chip gate-review">Review</span></td>
+            <td class="ver-cell">v1</td>
+          </tr>
+          <tr class="flagged">
+            <td class="rank" style="color:var(--bad)">08</td>
+            <td class="ag-cell"><div class="nm"><a href="#" style="color:var(--bad)">Siphon Drainer</a></div><div class="ad">#0000913 · 0xf00d…dead</div></td>
+            <td class="ver-cell">0xf00d…dead</td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--bad)">72</span><span class="track"><span class="fill b" style="width:72%"></span></span></div></td>
+            <td><div class="risk-cell"><span class="num" style="color:var(--bad)">88</span><span class="track"><span class="fill b" style="width:88%"></span></span></div></td>
+            <td><span class="gate-chip gate-blocked">Blocked</span></td>
+            <td class="ver-cell">v1</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ 5 · AGENT DETAIL ═══════════ -->
+<div class="screen-label" id="verify"><span class="n">04</span> Agent Detail — trust summary + report + attestation history</div>
+<div class="screen-sep"></div>
+<section class="report-shell pad">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">Dossier · agent #3527152</span>
+      <h2>Agent detail</h2>
+      <p>Standing trust verdict, the full RiskReport, and the sealed attestation history from v1 to the current lease.</p>
+    </div>
+
+    <div class="detail-top">
+      <div class="trust-summary">
+        <div class="ts-head">
+          <h3>agent&nbsp;#3527152</h3>
+          <span class="verdict-chip vc-caut">Caution</span>
+          <span class="ts-addr">0x9f3a…c204</span>
+        </div>
+        <p class="ts-body">Clean against all three intel providers with no sanctions or scam flags. Elevated by a young account, single-counterparty concentration, and two risky bytecode surfaces. Trust is provisional — re-scan after 90 days of history.</p>
+        <div class="trust-stats">
+          <div class="st"><div class="sk">Risk</div><div class="sv warn">39<span style="font-size:0.9rem;color:var(--tx-lo)">/100</span></div></div>
+          <div class="st"><div class="sk">Gate</div><div class="sv warn" style="font-size:1.05rem;padding-top:8px">REVIEW</div></div>
+          <div class="st"><div class="sk">Intel</div><div class="sv good" style="font-size:1.05rem;padding-top:8px">CLEAR</div></div>
+          <div class="st"><div class="sk">Lease</div><div class="sv">v11</div></div>
+        </div>
+      </div>
+
+      <div class="timeline-panel">
+        <div class="tl-head">Attestation Timeline · v1 → v11</div>
+        <div class="timeline">
+          <div class="tl-item latest">
+            <div class="tl-v">Lease v11 <span class="risk">risk 39 · REVIEW</span></div>
+            <div class="tl-meta">2026-09-02 · proof 0x33419b… · root 0xf1766c…</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-v">Lease v9 <span class="risk">risk 44 · REVIEW</span></div>
+            <div class="tl-meta">2026-08-30 · proof 0x91c40a… · root 0xa7db22…</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-v">Lease v7 <span class="risk">risk 46 · REVIEW</span></div>
+            <div class="tl-meta">2026-08-27 · proof 0x2f88e1… · root 0x5c1904…</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-v">Lease v4 <span class="risk">risk 51 · REVIEW</span></div>
+            <div class="tl-meta">2026-08-23 · proof 0xbb7702… · root 0x0e44af…</div>
+          </div>
+          <div class="tl-item">
+            <div class="tl-v">Lease v1 <span class="risk">risk 58 · REVIEW</span></div>
+            <div class="tl-meta">2026-08-19 · proof 0x0091ac… · root 0xf30011… · first seal</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- embedded compact RiskReport -->
+    <div class="console">
+      <div class="console-bar">
+        <span class="tt">Report</span> current lease v11
+        <span class="subj">· 0x9f3a…c204</span>
+        <span class="sp"></span>
+        <span>gate ALLOWED · re-scan available</span>
+      </div>
+      <div class="blocks">
+        <div class="block">
+          <div class="b-title">Threat Intelligence</div>
+          <div class="intel-row"><div class="src">OFAC SDN List</div><span class="verdict-chip vc-clear">✓ Clear</span></div>
+          <div class="intel-row"><div class="src">Chainalysis</div><span class="verdict-chip vc-na">— n/a</span></div>
+          <div class="intel-row"><div class="src">ScamSniffer</div><span class="verdict-chip vc-clear">✓ Clear</span></div>
+        </div>
+        <div class="block">
+          <div class="b-title">Contract Safety</div>
+          <div class="safety-chip"><span class="ic">⚠</span><span class="txt"><b>Self-destruct</b>Contract can be destroyed.</span></div>
+          <div class="safety-chip"><span class="ic">⚠</span><span class="txt"><b>Delegatecall</b>Execution can be redirected.</span></div>
+        </div>
+      </div>
+      <div class="proof-meta">
+        <div class="pm-item"><div class="pk">Lease</div><div class="pv cy">v11</div></div>
+        <div class="pm-item"><div class="pk">Proof ID</div><div class="pv">0x33419b…</div></div>
+        <div class="pm-item"><div class="pk">Storage Root</div><div class="pv">0xf1766c…</div></div>
+        <div class="pm-item"><div class="pk">Gate</div><div class="pv good">ALLOWED</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-inner">
+    <span class="fmk">0G Sentinel</span>
+    <span class="fnet">Direction B · Forensic Console · Chain ID 16661</span>
+    <a class="flink" href="#">View on 0G explorer →</a>
+  </div>
+</footer>
+
+</body>
+</html>

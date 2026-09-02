@@ -28,6 +28,7 @@ const plexMono = IBM_Plex_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"),
   icons: { icon: "/favicon.ico" },
+  other: { "ory-verify": "orynth-19957cf4753042679cc129c11f28707c" },
   title: "0G Agent Watch · live threat intelligence for the agent economy",
   description: "On-chain security attestations for AI agents. Behavioral audit, code scan, and immutable verdicts on 0G Compute, 0G Storage, and 0G Chain.",
   openGraph: {

@@ -6,7 +6,7 @@ export function TrustRoleDisclosure({ admin, guardian, validator, custodyConstra
 }>) {
   const configured = [admin, guardian, validator].every(isAddress);
   const distinct = configured && new Set([admin!.toLowerCase(), guardian!.toLowerCase(), validator!.toLowerCase()]).size === 3;
-  return <aside className="trust-disclosure"><div className="card-row"><h2>Named trust roles</h2>
+  return <aside className="trust-disclosure bp-bracket"><span className="bp-corners" aria-hidden="true" /><div className="card-row"><h2>Named trust roles</h2>
     <StatusBadge status={distinct ? "VERIFIED" : "UNAVAILABLE"} /></div>
     <dl className="proof-list"><Role name="Admin" address={admin} note="Owns deployment administration." />
       <Role name="Guardian" address={guardian} note="May mark on-demand drift lifecycle state." />

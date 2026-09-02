@@ -19,7 +19,8 @@ export function SummaryVerdict({ agentId, gate, current, record, historical, now
   const verdict = agentVerdict({ agentId, gate, current, record, nowSeconds });
   const sealed = historicalPlain(historical);
   return (
-    <section className="summary-verdict" data-tone={verdict.tone} aria-labelledby="agent-verdict">
+    <section className="summary-verdict bp-bracket" data-tone={verdict.tone} aria-labelledby="agent-verdict">
+      <span className="bp-corners" aria-hidden="true" />
       <div className="summary-verdict__head">
         <span className="summary-verdict__eyebrow">Trust summary</span>
         <span className="summary-verdict__chip" data-tone={sealed.tone}>{sealed.label}</span>
@@ -53,7 +54,8 @@ export function AgentSummaryCard({ record, current, analysis, nowSeconds }: Read
   const code = riskBand(analysis?.codeRisk ?? record.codeRisk, "code");
   const coverage = coverageGloss(current ? currentCoverage(current, record) : record.coverage);
   return (
-    <section className="summary-card" aria-labelledby="summary-card-title">
+    <section className="summary-card bp-bracket" aria-labelledby="summary-card-title">
+      <span className="bp-corners" aria-hidden="true" />
       <h2 id="summary-card-title" className="summary-card__title">What we found</h2>
       <ul className="summary-facts">
         <SummaryFact tone={behavioral.tone} label={behavioral.label} detail={behavioral.detail} />

@@ -399,3 +399,134 @@
   .verify-help { max-width: var(--measure-prose); margin: var(--space-2) 0; color: var(--text-muted-on-dark); font-size: var(--type-data); line-height: var(--line-data); }
   .detail-header--compact h2 { margin: var(--space-1) 0 var(--space-half); color: var(--text-on-dark); font: 600 var(--type-title)/var(--line-heading) var(--font-display); }
 }
+@layer components.prooflock {
+  /* ══════════════ BLUEPRINT SCHEMATIC IDENTITY ══════════════ */
+  /* ── A. Corner registration brackets ──
+     One extra <span class="bp-corners"> per surface yields all four cyan corner Ls.
+     .bp-bracket::before = top-left, ::after = bottom-right;
+     .bp-corners::before = top-right, ::after = bottom-left. */
+  .bp-bracket { position: relative; }
+  .bp-bracket > .bp-corners { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  .bp-bracket::before, .bp-bracket::after,
+  .bp-bracket > .bp-corners::before, .bp-bracket > .bp-corners::after {
+    content: ""; position: absolute; width: 16px; height: 16px;
+    pointer-events: none; z-index: 2; border-color: var(--violet); border-style: solid; border-width: 0;
+  }
+  .bp-bracket::before { top: -1px; left: -1px; border-top-width: 1.5px; border-left-width: 1.5px; }
+  .bp-bracket::after { bottom: -1px; right: -1px; border-bottom-width: 1.5px; border-right-width: 1.5px; }
+  .bp-bracket > .bp-corners::before { top: -1px; right: -1px; border-top-width: 1.5px; border-right-width: 1.5px; }
+  .bp-bracket > .bp-corners::after { bottom: -1px; left: -1px; border-bottom-width: 1.5px; border-left-width: 1.5px; }
+  /* Tone variants recolor every corner. */
+  .bp-bracket[data-tone="caution"]::before, .bp-bracket[data-tone="caution"]::after,
+  .bp-bracket[data-tone="caution"] > .bp-corners::before, .bp-bracket[data-tone="caution"] > .bp-corners::after { border-color: var(--warn); }
+  .bp-bracket[data-tone="blocked"]::before, .bp-bracket[data-tone="blocked"]::after,
+  .bp-bracket[data-tone="blocked"] > .bp-corners::before, .bp-bracket[data-tone="blocked"] > .bp-corners::after { border-color: var(--bad); }
+  .bp-bracket[data-tone="good"]::before, .bp-bracket[data-tone="good"]::after,
+  .bp-bracket[data-tone="good"] > .bp-corners::before, .bp-bracket[data-tone="good"] > .bp-corners::after { border-color: var(--good); }
+  /* Paper-toned surfaces (dark navy here): keep corners cyan so they read against the sheet. */
+  .evidence-card.bp-bracket::before, .evidence-card.bp-bracket::after,
+  .evidence-card.bp-bracket > .bp-corners::before, .evidence-card.bp-bracket > .bp-corners::after,
+  .guarantee-sheet.bp-bracket::before, .guarantee-sheet.bp-bracket::after,
+  .guarantee-sheet.bp-bracket > .bp-corners::before, .guarantee-sheet.bp-bracket > .bp-corners::after { border-color: var(--action-on-paper); }
+
+  /* ── B. Uniform bracketed data-row system ──
+     Every grouping inside the RiskReport renders as the same 16px | 1fr | auto grid
+     with a leader-line gutter marker, display-font key, mono right value. */
+  .risk-report__block, .risk-report__signals, .risk-report__code { padding-top: var(--space-2); border-top: 1px solid var(--border-subtle-on-dark); }
+  /* Mono uppercase section header with an index chip + rule fill (blueprint .p-head). */
+  .risk-report__section-title { display: flex; align-items: center; gap: var(--space-1-5); margin: 0 0 var(--space-2); color: var(--muted); font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); letter-spacing: .16em; text-transform: uppercase; }
+  .risk-report__section-title::before { content: ""; width: 6px; height: 6px; border: 1px solid var(--violet); background: var(--surface-canvas); flex: none; }
+  .risk-report__section-title::after { content: ""; flex: 1; height: 1px; background: var(--border-subtle-on-dark); }
+
+  /* Shared row primitive applied to factors, badges, signals. */
+  .risk-report__factors, .risk-badges, .risk-signal-list, .risk-chips {
+    margin: 0; padding: 0; list-style: none; display: grid; gap: 0;
+  }
+  .risk-report__factors > li, .risk-badge, .risk-signal, .risk-chip {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: var(--space-1-5);
+    padding: var(--space-1-5) var(--space-half); border: 0; border-bottom: 1px solid var(--border-subtle-on-dark);
+    border-radius: var(--shape-square); background: transparent; position: relative;
+    color: var(--text-on-dark); font: 500 var(--type-data)/var(--line-data) var(--font-body);
+  }
+  .risk-report__factors > li:last-child, .risk-badge:last-child, .risk-signal:last-child, .risk-chip:last-child { border-bottom: 0; }
+  /* Leader-line gutter marker: cyan tick + hollow square, drawn in the 16px gutter column. */
+  .risk-report__factors > li::before, .risk-badge::before, .risk-signal::before, .risk-chip::before {
+    content: ""; grid-column: 1; justify-self: start; width: 8px; height: 1px; background: var(--action-soft);
+    position: relative;
+  }
+  .risk-report__factors > li::after, .risk-badge::after, .risk-signal::after, .risk-chip::after {
+    content: ""; position: absolute; left: 4px; top: 50%; width: 3px; height: 3px; margin-top: -1px;
+    border: 1px solid var(--rail-end-on-ceremony); background: var(--surface-canvas);
+  }
+  /* Factor / signal / bytecode text is the key column. */
+  .risk-report__factors > li { color: var(--muted); }
+  .risk-report__factors > li > bdi { grid-column: 2; min-width: 0; }
+
+  /* Badge: name+detail is the key; status chip is the right value. */
+  .risk-badge { gap: var(--space-1-5); }
+  .risk-badge__name { grid-column: 2; align-self: center; color: var(--text-on-dark); font: 500 var(--type-data)/var(--line-data) var(--font-display); }
+  .risk-badge__detail { grid-column: 2; grid-row: 2; color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .risk-badge__status { grid-column: 3; grid-row: 1 / span 2; align-self: center; }
+
+  /* Signal: label is the key, bar + detail form the right value stack. */
+  .risk-signal { grid-template-columns: 16px minmax(0, 1fr) minmax(84px, auto); }
+  .risk-signal__label { grid-column: 2; color: var(--text-on-dark); font: 500 var(--type-data)/var(--line-data) var(--font-display); }
+  .risk-signal__bar { grid-column: 3; grid-row: 1; align-self: center; display: block; height: 5px; min-width: 72px; background: var(--surface-control); border: 1px solid var(--border-subtle-on-dark); border-radius: var(--shape-square); overflow: hidden; }
+  .risk-signal__fill { display: block; height: 100%; background: var(--violet); }
+  .risk-signal[data-hard="true"] .risk-signal__fill { background: var(--bad); }
+  .risk-signal__detail { grid-column: 3; grid-row: 2; justify-self: end; text-align: right; color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* Bytecode chip row: gloss text is the key, no right value. */
+  .risk-chip { grid-template-columns: 16px minmax(0, 1fr); color: var(--text-on-dark); font: 500 var(--type-data)/var(--line-data) var(--font-body); }
+  .risk-chip > bdi, .risk-chip { min-width: 0; }
+
+  /* ── Uniform status chip (blueprint .chip): mono uppercase, 1px currentColor, square swatch. ── */
+  .risk-badge__status, .status-chip {
+    display: inline-flex; align-items: center; gap: var(--space-1); white-space: nowrap;
+    padding: 3px var(--space-1); border: 1px solid currentColor; border-radius: var(--shape-square);
+    font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); letter-spacing: .03em; font-variant-numeric: tabular-nums;
+  }
+  .risk-badge__status::before, .status-chip::before { content: ""; width: 5px; height: 5px; background: currentColor; flex: none; }
+  .risk-badge[data-tone="good"] .risk-badge__status { color: var(--good); }
+  .risk-badge[data-tone="blocked"] .risk-badge__status { color: var(--bad); }
+  .risk-badge[data-tone="neutral"] .risk-badge__status { color: var(--muted); }
+
+  /* Score readout gets tabular digits so the count-up never jitters. */
+  .risk-report__score, .risk-report__score-max { font-variant-numeric: tabular-nums; }
+
+  /* ── C. Hero schematic ── */
+  .schematic { position: relative; width: 100%; max-width: 520px; margin-inline: auto; }
+  .schematic svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .schematic .dpath { stroke: var(--rail-end-on-ceremony); stroke-width: 1.2; fill: none; }
+  .schematic .nodebox { fill: var(--surface-raised); stroke: var(--violet); stroke-width: 1.2; }
+  .schematic .nodebracket { stroke: var(--violet); stroke-width: 1.5; fill: none; }
+  .schematic .nodebox--gate { stroke: var(--good); }
+  .schematic .nodebracket--gate { stroke: var(--good); }
+  .schematic .nlabel { fill: var(--text-on-dark); letter-spacing: .04em; }
+  .schematic .nsub { fill: var(--muted); }
+  .schematic .nnum { fill: var(--violet); }
+  .schematic .nnum--gate, .schematic .nsub--gate { fill: var(--good); }
+  .schematic .dim-anno { fill: var(--text-placeholder-on-dark); letter-spacing: .06em; }
+  .schematic .dim-tick { stroke: var(--text-placeholder-on-dark); stroke-width: .6; }
+  .schematic .scandot { fill: var(--violet); }
+  .schematic-title { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  /* ── D. Attestation timeline: dimensioned axis + blueprint diamonds ── */
+  .attestation-timeline .timeline-rail { position: relative; }
+  .attestation-timeline .timeline-rail::before { left: -17px; width: 1px; background: var(--action-on-paper); opacity: 1; }
+  .attestation-timeline .timeline-dim { display: block; margin: 0 0 var(--space-2); color: var(--action-on-paper); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); letter-spacing: .12em; text-transform: uppercase; }
+  .timeline-node::before { width: 9px; height: 9px; border-radius: var(--shape-square); background: var(--evidence-sheet-surface); border-width: 1.5px; transform: rotate(45deg); left: -21px; top: 16px; }
+  .timeline-node--current::before { border-color: var(--status-caution-on-paper); background: var(--status-caution-soft); }
+  .timeline-node--drift::before { border-color: var(--status-failure-on-paper); background: var(--status-failure-soft); }
+  .timeline-node__version { font-variant-numeric: tabular-nums; }
+
+  /* ── E. Leaderboard: quiet hairline rows, hover wash, flagged tint, mono cyan rank ── */
+  .leaderboard-table tbody tr:hover { background: var(--action-soft); }
+  .leaderboard-row:has(.leaderboard-risk[data-level="2"]) { background: var(--status-failure-soft); }
+  .leaderboard-card:has(.leaderboard-risk[data-level="2"]) { background: var(--status-failure-soft); }
+  .leaderboard-rank { color: var(--violet); font-variant-numeric: tabular-nums; }
+  .leaderboard-risk-score, .leaderboard-risk-band, .leaderboard-agent .mono { font-variant-numeric: tabular-nums; }
+
+  /* ── Shared label→value rhythm on the remaining data grids ── */
+  .health-cell dd, .leaderboard-field dd, .trust-disclosure dd, .proof-identifiers dd { font-variant-numeric: tabular-nums; }
+}

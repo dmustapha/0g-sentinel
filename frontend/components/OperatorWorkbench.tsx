@@ -12,7 +12,8 @@ export function OperatorWorkbench({ initialAgentId = "" }: Readonly<{ initialAge
       <p>Recovery is commitment-bound and read-only. Recover an uncertain operation before starting another paid attempt.</p>
     </div>
     <div className="evaluate-workbench">
-      <section className="trust-disclosure" aria-labelledby="operator-architecture-heading">
+      <section className="trust-disclosure bp-bracket" aria-labelledby="operator-architecture-heading">
+        <span className="bp-corners" aria-hidden="true" />
         <span className="eyebrow" id="operator-architecture-heading">Architecture / process</span>
         <p>Illustrative sequence. Not live progress or service health.</p>
         <div className="principle-strip" aria-label="Identity, Checks, Compute, Storage, Lease, Gate">

@@ -47,7 +47,8 @@ export default function ProofPage() {
     <div className="page-heading"><span className="eyebrow">{VERIFIER_CLAIM_COPY.title}</span><h1>Check an agent&apos;s proof</h1>
       <p>This page lets anyone independently confirm an agent&apos;s sealed evidence and current access. {verifierClaim.text}</p></div>
 
-    <section className="verify-primary" aria-labelledby="verify-primary-title">
+    <section className="verify-primary bp-bracket" aria-labelledby="verify-primary-title">
+      <span className="bp-corners" aria-hidden="true" />
       <h2 id="verify-primary-title" className="verify-primary__title">Just want to check an agent?</h2>
       <p>You do not need any codes. Browse the agents with sealed proofs and open one to see a plain
         summary of whether it is admitted and why.</p>

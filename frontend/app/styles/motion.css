@@ -73,8 +73,33 @@
   }
   .skeleton-block { animation: enter-up var(--duration-maximum) var(--ease-standard) both; }
 
+  /* ── Blueprint identity ── */
+  /* Corner registration brackets snap in from their own corner. Opacity + transform only. */
+  @keyframes bp-snap-tl { from { opacity: 0; transform: translate(-8px, -8px); } to { opacity: 1; transform: none; } }
+  @keyframes bp-snap-tr { from { opacity: 0; transform: translate(8px, -8px); } to { opacity: 1; transform: none; } }
+  @keyframes bp-snap-bl { from { opacity: 0; transform: translate(-8px, 8px); } to { opacity: 1; transform: none; } }
+  @keyframes bp-snap-br { from { opacity: 0; transform: translate(8px, 8px); } to { opacity: 1; transform: none; } }
+  .bp-bracket::before { animation: bp-snap-tl 500ms var(--ease-standard) both; }
+  .bp-bracket::after { animation: bp-snap-br 500ms 120ms var(--ease-standard) both; }
+  .bp-corners::before { animation: bp-snap-tr 500ms 60ms var(--ease-standard) both; }
+  .bp-corners::after { animation: bp-snap-bl 500ms 180ms var(--ease-standard) both; }
+
+  /* Hero schematic: paths draw themselves, node groups fade in staggered. */
+  @keyframes bp-draw { to { stroke-dashoffset: 0; } }
+  @keyframes bp-node-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+  .schematic .dpath { stroke-dasharray: 640; stroke-dashoffset: 640; animation: bp-draw 2s 300ms ease forwards; }
+  .schematic .node-g { opacity: 0; transform-box: fill-box; transform-origin: center; animation: bp-node-in 500ms var(--ease-standard) forwards; }
+
+  /* Attestation rail sweep: the cyan hairline draws down its axis. */
+  @keyframes bp-rail-sweep { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+  .attestation-timeline .timeline-rail::before { transform-origin: top center; animation: bp-rail-sweep 900ms 200ms var(--ease-standard) both; }
+
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
     .skeleton::after { display: none; }
+    .bp-bracket::before, .bp-bracket::after, .bp-corners::before, .bp-corners::after { opacity: 1 !important; transform: none !important; }
+    .schematic .dpath { stroke-dashoffset: 0 !important; }
+    .schematic .node-g { opacity: 1 !important; transform: none !important; }
+    .attestation-timeline .timeline-rail::before { transform: scaleY(1) !important; }
   }
 }

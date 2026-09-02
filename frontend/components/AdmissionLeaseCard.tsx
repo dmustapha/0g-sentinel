@@ -13,7 +13,8 @@ export function AdmissionLeaseCard({ basis = "current", reason, record, status: 
   const titleId = useId();
   if (!record) {
     const status = currentStatus ?? "UNAVAILABLE";
-    return <section className="evidence-card lease-card" aria-labelledby={titleId}>
+    return <section className="evidence-card lease-card bp-bracket" aria-labelledby={titleId}>
+    <span className="bp-corners" aria-hidden="true" />
     <div className="card-row"><h3 id={titleId}>Current lease {status}</h3>
       <StatusBadge status={status} surface="paper" /></div>
     <p>{reason ? <>Pinned reason: <bdi>{safeDisplayText(reason, { maxGraphemes: 80 })}</bdi>.</>
@@ -25,7 +26,8 @@ export function AdmissionLeaseCard({ basis = "current", reason, record, status: 
   const badge = leaseState === "ACTIVE" || leaseState === "EXPIRING" ? "VERIFIED"
     : leaseState === "INCOMPLETE" ? "UNAVAILABLE" : "BLOCKED";
   const authoritativeStatus = basis === "current" ? currentStatus : undefined;
-  return <section className="evidence-card lease-card" aria-labelledby={titleId}>
+  return <section className="evidence-card lease-card bp-bracket" aria-labelledby={titleId}>
+    <span className="bp-corners" aria-hidden="true" />
     <div className="card-row"><div><span className="card-kicker">{basis === "current" ? "Pinned current admission lease" : "Registry record fallback · not current admission"}</span><h3 id={titleId}>{isPositiveUint64(record.version) ? <>Version v<bdi dir="ltr">{record.version}</bdi></> : "Version unavailable"}</h3></div>
       <span><StatusBadge status={authoritativeStatus ?? badge} surface="paper" /><span className="sr-only">{authoritativeStatus ? `Pinned observation ${authoritativeStatus}; lease record ${leaseState}` : leaseState}</span><b aria-hidden="true"> {authoritativeStatus ?? leaseState}</b></span></div>
     <dl className="micro-grid"><div><dt>Issued</dt><dd>{formatTime(record.issuedAt)}</dd></div><div><dt>Expires</dt><dd>{formatTime(record.validUntil)}</dd></div>

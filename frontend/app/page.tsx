@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { FeaturedProofLink } from "@/components/FeaturedProofLink";
+import { HeroSchematic } from "@/components/HeroSchematic";
 
 export const metadata: Metadata = {
   title: "0G Sentinel — Is this agent safe to trust?",
@@ -20,7 +21,9 @@ export default function OverviewPage({ searchParams = {} }: Readonly<{
       <div className="action-row hero-enter" style={{ animationDelay: "210ms" }}><Link href="/scan" className="button">Scan an agent</Link><FeaturedProofLink />
         <Link href="/proof" className="button">Verify another proof</Link></div>
       <p className="hero-lede hero-enter" style={{ animationDelay: "210ms" }}>Every scan screens OFAC sanctions, Chainalysis, and ScamSniffer, and disassembles the agent's contract bytecode, then seals the full evidence on 0G Storage. A verdict you can check, not a vibe you have to trust.</p></div>
-    <aside className="guarantee-sheet hero-enter" style={{ animationDelay: "280ms" }}><span className="sheet-index">Architecture / process</span><h2>The admission chain</h2><ol><li>Identity</li><li>Checks</li><li>Compute</li><li>Storage</li><li>Lease</li><li>Gate</li></ol>
+    <aside className="guarantee-sheet bp-bracket hero-enter" style={{ animationDelay: "280ms" }}><span className="bp-corners" aria-hidden="true" /><span className="sheet-index">Architecture / process</span><h2>The admission chain</h2>
+      <HeroSchematic />
+      <ol className="sr-only"><li>Identity</li><li>Checks</li><li>Compute</li><li>Storage</li><li>Lease</li><li>Gate</li></ol>
       <p>Illustrative sequence. Not live progress or service health. Only a current lease plus Gate <b>ALLOWED</b> means admitted.</p></aside>
   </div></section><section className="workspace-section"><div className="wrap"><div className="section-heading"><span className="eyebrow">Public proof ledger</span><h2>Check the work yourself.</h2>
     <p>Every verdict is sealed on 0G with its full evidence. Browse recent scans, or re-open any past proof and reproduce it yourself — no login, no paid inference.</p></div>

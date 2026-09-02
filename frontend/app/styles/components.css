@@ -161,6 +161,8 @@
   .leaderboard-risk[data-level="0"] .leaderboard-risk-band { color: var(--good); }
   .leaderboard-risk[data-level="1"] .leaderboard-risk-band { color: var(--warn); }
   .leaderboard-risk[data-level="2"] .leaderboard-risk-band { color: var(--bad); }
+  .leaderboard-risk[data-level="2"] .leaderboard-risk-score { color: var(--bad); }
+  .leaderboard-risk[data-level="1"] .leaderboard-risk-score { color: var(--warn); }
   .leaderboard-gate small { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .leaderboard-card { padding: 18px; border-bottom: 1px solid var(--line); background: var(--graphite-2); }
   .leaderboard-card:last-child { border: 0; }
@@ -174,7 +176,7 @@
   .legacy-banner, .trust-disclosure { margin-top: 22px; padding: 18px; border: 1px solid var(--line); color: var(--muted); }
   .legacy-banner b { color: var(--warn); font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .legacy-banner span { font-size: var(--type-data); }
-  .detail-header h1 { margin: 10px 0 4px; font-size: clamp(2.3rem, 5vw, 4.4rem); }
+  .detail-header h1 { margin: 10px 0 4px; font-size: clamp(1.5rem, 3vw, 2rem); }
   .fixture-badge { padding: 10px 12px; border: 1px solid var(--warn); color: var(--warn); font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .fixture-badge span { color: var(--muted); font-weight: 400; }
   .consumer-call { border: 1px solid currentColor; background: var(--graphite-3); padding: 20px; }
@@ -338,6 +340,7 @@
   .summary-verdict__chip { padding: var(--status-badge-padding); border: 1px solid var(--border-subtle-on-dark); color: var(--tone-color, var(--text-on-dark)); font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .summary-verdict__chip[data-tone="good"] { --tone-color: var(--good); }
   .summary-verdict__chip[data-tone="caution"] { --tone-color: var(--warn); }
+  .summary-verdict__chip[data-tone="blocked"] { --tone-color: var(--bad); }
   .summary-verdict__chip[data-tone="neutral"] { --tone-color: var(--muted); }
   .summary-verdict__headline { display: flex; align-items: baseline; gap: var(--space-1-5); margin: var(--space-1-5) 0 var(--space-1);
     color: var(--text-on-dark); font: 600 clamp(1.7rem, 4vw, 2.8rem)/var(--line-heading) var(--font-display); }

@@ -24,7 +24,7 @@ export const fixtureIds = Object.freeze({
 });
 
 export const primaryRoutes = Object.freeze([
-  { name: "landing", path: "/", heading: "Admission should be provable" },
+  { name: "landing", path: "/", heading: "Is this agent safe to trust" },
   { name: "inventory", path: "/agents", heading: "Recent ProofLocks" },
   { name: "agent-detail", path: `/agents/${agentId}`, heading: `Agent #${agentId}` },
   { name: "verifier-entry", path: "/proof", heading: "Public evidence verifier" },

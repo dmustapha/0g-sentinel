@@ -138,42 +138,54 @@
   .evidence-card .coverage-total.state-warn { --state: var(--status-badge-caution-on-paper); color: var(--status-badge-caution-on-paper); }
   .text-link { min-height: var(--control-min); display: inline-flex; align-items: center; color: var(--violet); font: 600 var(--type-data)/var(--line-data) var(--font-display); letter-spacing: .04em; }
   .inventory-legend { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
-  .inventory-legend span { border: 1px solid var(--line); padding: 5px 8px; }
+  .inventory-legend span { border: 1px solid var(--line); padding: var(--space-half) var(--space-1); }
+  .inventory-scope { padding: var(--space-1-5) var(--space-2); border: 1px solid var(--line); border-left: 2px solid var(--violet); background: var(--surface-ceremony); color: var(--muted); font: 500 var(--type-caption)/var(--line-data) var(--font-mono); }
+  .inventory-scope b { color: var(--text); }
+  .inventory-order { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .inventory-seal-source > small { color: var(--muted); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); letter-spacing: .06em; text-transform: uppercase; }
+  .inventory-seal-source .inventory-copy-value bdi, .inventory-copy-value.mono bdi { font-variant-numeric: tabular-nums; }
   .inventory-shell { border: 1px solid var(--line); box-shadow: var(--shadow-control); }
   .inventory-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: var(--graphite-2); }
-  .inventory-table th { padding: 13px; text-align: left; color: var(--muted); background: var(--surface-ceremony); border-bottom: 1px solid var(--line); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); text-transform: uppercase; letter-spacing: .08em; }
-  .inventory-table td { position: relative; padding: 16px 13px; border-bottom: 1px solid var(--line); color: var(--text); font-size: var(--type-data); vertical-align: top; }
+  .inventory-table th { padding: var(--space-1-5); text-align: left; color: var(--muted); background: var(--surface-ceremony); border-bottom: 1px solid var(--line); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); text-transform: uppercase; letter-spacing: .08em; }
+  .inventory-table td { position: relative; padding: var(--space-2) var(--space-1-5); border-bottom: 1px solid var(--line); color: var(--text); font-size: var(--type-data); vertical-align: top; }
   .inventory-table tr:last-child td { border: 0; }
   .identity-link b { color: var(--text); }
-  .inventory-card { padding: 18px; border-bottom: 1px solid var(--line); background: var(--graphite-2); }
+  .inventory-card { padding: var(--space-2); border-bottom: 1px solid var(--line); background: var(--graphite-2); }
   .inventory-card:last-child { border: 0; }
   .leaderboard-shell { border: 1px solid var(--line); box-shadow: var(--shadow-control); }
   .leaderboard-table { width: 100%; border-collapse: collapse; table-layout: fixed; background: var(--graphite-2); }
-  .leaderboard-table th { padding: 13px; text-align: left; color: var(--muted); background: var(--surface-ceremony); border-bottom: 1px solid var(--line); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); text-transform: uppercase; letter-spacing: .08em; }
-  .leaderboard-table td { padding: 16px 13px; border-bottom: 1px solid var(--line); color: var(--text); font-size: var(--type-data); vertical-align: top; }
+  .leaderboard-table th { padding: var(--space-1-5); text-align: left; color: var(--muted); background: var(--surface-ceremony); border-bottom: 1px solid var(--line); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); text-transform: uppercase; letter-spacing: .08em; }
+  .leaderboard-table th:nth-child(1), .leaderboard-table td:nth-child(1) { text-align: center; }
+  .leaderboard-table td { padding: var(--space-2) var(--space-1-5); border-bottom: 1px solid var(--line); color: var(--text); font-size: var(--type-data); vertical-align: top; }
   .leaderboard-table tr:last-child td { border: 0; }
-  .leaderboard-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; padding: 0 8px; border: 1px solid var(--line); background: var(--surface-ceremony); color: var(--text); font: 600 var(--type-data)/1 var(--font-mono); }
+  .leaderboard-rank { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 30px; padding: 0 var(--space-1); border: 1px solid var(--line); background: var(--surface-ceremony); color: var(--text); font: 600 var(--type-data)/1 var(--font-mono); font-variant-numeric: tabular-nums; }
   .leaderboard-agent b { color: var(--muted); font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+  .leaderboard-agent .mono { font-variant-numeric: tabular-nums; }
   .leaderboard-subject { color: var(--text); }
   .leaderboard-unavailable { color: var(--muted); font-size: var(--type-caption); }
   .leaderboard-risk-band { display: inline-block; font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); letter-spacing: .06em; }
-  .leaderboard-risk-score { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .leaderboard-risk-score { color: var(--muted); font: 600 var(--type-data)/var(--line-data) var(--font-mono); font-variant-numeric: tabular-nums; }
   .leaderboard-risk[data-level="0"] .leaderboard-risk-band { color: var(--good); }
   .leaderboard-risk[data-level="1"] .leaderboard-risk-band { color: var(--warn); }
   .leaderboard-risk[data-level="2"] .leaderboard-risk-band { color: var(--bad); }
   .leaderboard-risk[data-level="2"] .leaderboard-risk-score { color: var(--bad); }
   .leaderboard-risk[data-level="1"] .leaderboard-risk-score { color: var(--warn); }
-  .leaderboard-gate small { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
-  .leaderboard-card { padding: 18px; border-bottom: 1px solid var(--line); background: var(--graphite-2); }
+  .leaderboard-table td:first-child { border-left: 2px solid transparent; }
+  .leaderboard-row:has(.leaderboard-risk[data-level="2"]) td:first-child { border-left-color: var(--bad); }
+  .leaderboard-card { border-left: 2px solid transparent; }
+  .leaderboard-card:has(.leaderboard-risk[data-level="2"]) { border-left-color: var(--bad); }
+  .leaderboard-row:first-child .leaderboard-rank { border-color: var(--violet); color: var(--violet); }
+  .leaderboard-gate small, .inventory-status small { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .leaderboard-card { padding: var(--space-2); border-bottom: 1px solid var(--line); background: var(--graphite-2); }
   .leaderboard-card:last-child { border: 0; }
   .leaderboard-sort > span { color: var(--muted); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .leaderboard-sort-button { min-height: var(--control-min); padding: 8px 14px; border: 1px solid var(--border-control-on-dark); background: transparent; color: var(--text); font: 600 var(--type-caption)/var(--line-caption) var(--font-display); letter-spacing: .05em; text-transform: uppercase; cursor: pointer; }
   .leaderboard-sort-button[data-active="true"] { border-color: var(--violet); background: var(--violet-soft); color: var(--violet); }
-  .empty-ledger { text-align: center; padding: 54px 24px; }
-  .empty-ledger h2 { margin-bottom: 10px; color: var(--text); }
-  .empty-ledger .button { margin-top: 18px; }
+  .empty-ledger { text-align: center; padding: var(--space-6) var(--space-3); }
+  .empty-ledger h2 { margin-bottom: var(--space-1); color: var(--text); }
+  .empty-ledger .button { margin-top: var(--space-2); }
   .loading-ledger i { width: 7px; height: 7px; background: var(--violet); }
-  .legacy-banner, .trust-disclosure { margin-top: 22px; padding: 18px; border: 1px solid var(--line); color: var(--muted); }
+  .legacy-banner, .trust-disclosure { margin-top: var(--space-3); padding: var(--space-2); border: 1px solid var(--line); color: var(--muted); }
   .legacy-banner b { color: var(--warn); font: 600 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .legacy-banner span { font-size: var(--type-data); }
   .detail-header h1 { margin: 10px 0 4px; font-size: clamp(1.5rem, 3vw, 2rem); }

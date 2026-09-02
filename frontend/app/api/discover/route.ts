@@ -12,10 +12,11 @@ export const dynamic = "force-dynamic";
 // populated leaderboard needs headroom beyond the default function budget.
 export const maxDuration = 60;
 
-// 0G RPC serves wide getLogs ranges for this low-volume event, so we scan a generous recent window
-// (well beyond a single lease's lifecycle) rather than the last ~40 minutes. Still "recent finalized
-// activity", not a complete index, but wide enough to surface active leases on the leaderboard.
-const WINDOW = 100_000;
+// 0G RPC serves wide getLogs ranges for this low-volume event, so we scan the ENTIRE RegistryV2
+// history (from the deploy block via fromBlockFloor) instead of a sliding recent window. This keeps
+// every sealed lease on the leaderboard as the chain advances, rather than older seals aging out.
+// WINDOW is set to the max so the deploy-block floor is what actually bounds the scan.
+const WINDOW = 1_000_000;
 const CAP = 100;
 const CONCURRENCY = 6;
 const READ_ONLY_SIGNER = "0x0000000000000000000000000000000000000001";
@@ -25,8 +26,10 @@ export async function GET(request: Request): Promise<Response> {
     const rpc = requiredRpc(process.env.ZERO_G_RPC || process.env.NEXT_PUBLIC_RPC_URL);
     const registryAddress = requiredAddress(process.env.PROOFLOCK_REGISTRY_V2_ADDRESS);
     const confirmations = positiveInteger(process.env.PROOFLOCK_REGISTRY_V2_CONFIRMATIONS ?? "5", 128);
+    // Scan from the RegistryV2 deploy block so every sealed lease surfaces, not just recent ones.
+    const fromBlockFloor = positiveInteger(process.env.PROOFLOCK_REGISTRY_V2_FROM_BLOCK ?? "1", 1_000_000_000);
     return createDiscoveryHandler(productionDependencies(rpc, registryAddress), {
-      registryAddress, confirmations, window: WINDOW, cap: CAP, concurrency: CONCURRENCY,
+      registryAddress, confirmations, window: WINDOW, cap: CAP, concurrency: CONCURRENCY, fromBlockFloor,
     })(request);
   } catch (error) {
     return apiErrorResponse(error, { code: "DEPENDENCY_UNAVAILABLE", message: "ProofLock discovery is unavailable",

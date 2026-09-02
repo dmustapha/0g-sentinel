@@ -25,6 +25,9 @@ export type DiscoveryDependencies = Readonly<{
 
 export type DiscoveryOptions = Readonly<{
   registryAddress: string; confirmations: number; window: number; cap: number; concurrency: number;
+  // Optional lower bound for the scan (e.g. the RegistryV2 deploy block). When set, discovery reaches
+  // back to it so every sealed lease surfaces on the leaderboard, not just those in the recent window.
+  fromBlockFloor?: number;
 }>;
 
 export function createDiscoveryHandler(dependencies: DiscoveryDependencies, options: DiscoveryOptions) {
@@ -37,7 +40,7 @@ export function createDiscoveryHandler(dependencies: DiscoveryDependencies, opti
       await dependencies.assertChain(signal);
       const latestBlock = await dependencies.getLatestBlock(signal);
       const toBlock = finalizedBlock(latestBlock, config.confirmations);
-      const fromBlock = Math.max(0, toBlock - config.window + 1);
+      const fromBlock = Math.max(0, config.fromBlockFloor ?? 0, toBlock - config.window + 1);
       const boundary = await stableBoundary(dependencies, toBlock, signal);
       const logs = await dependencies.getLogs({ address: config.registryAddress,
         topics: [REGISTRY_V2_INTERFACE.getEvent("ProofLocked")!.topicHash], fromBlock, toBlock }, signal);
@@ -203,7 +206,8 @@ function validateOptions(options: DiscoveryOptions): DiscoveryOptions {
   requiredAddress(options.registryAddress);
   const values = [options.confirmations, options.window, options.cap, options.concurrency];
   if (values.some((value) => !Number.isSafeInteger(value) || value < 1)
-    || options.confirmations > 128 || options.window > 1_000_000 || options.cap > 1_000 || options.concurrency > 32) {
+    || options.confirmations > 128 || options.window > 1_000_000 || options.cap > 1_000 || options.concurrency > 32
+    || (options.fromBlockFloor !== undefined && (!Number.isSafeInteger(options.fromBlockFloor) || options.fromBlockFloor < 0))) {
     throw new Error("Discovery configuration is invalid");
   }
   return Object.freeze({ ...options, registryAddress: options.registryAddress.toLowerCase() });

@@ -1,5 +1,5 @@
 @layer layouts {
-  .wrap { position: relative; z-index: var(--layer-content); width: min(100%, var(--measure-ledger)); margin-inline: auto; padding-inline: 28px; }
+  .wrap { position: relative; z-index: var(--layer-content); width: min(100%, var(--measure-ledger)); margin-inline: auto; padding-inline: var(--space-4); }
   /* Blueprint drafting grid: fine minor lines + coarser major lines on the graphite sheet, plus a
      faint horizontal scanline. Decorative only (token-alpha cyan), never a state indicator. */
   .texture { position: fixed; inset: 0; z-index: var(--layer-canvas); pointer-events: none;
@@ -12,29 +12,39 @@
   .texture::after { content: ""; position: absolute; inset: 0;
     background-image: repeating-linear-gradient(0deg, var(--grid-line) 0, var(--grid-line) 1px, transparent 1px, transparent 3px);
     opacity: .5; }
-  .topbar-inner { min-height: 70px; max-width: var(--measure-ledger); margin: auto; padding: 12px 28px; display: flex; align-items: center; gap: 18px; }
-  .nav { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+  .topbar-inner { min-height: 70px; max-width: var(--measure-ledger); margin: auto; padding: var(--space-1-5) var(--space-4); display: flex; align-items: center; gap: var(--space-2-5); }
+  .nav { margin-left: auto; display: flex; align-items: center; gap: var(--space-half); }
   .ledger-hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--line); min-height: 670px; display: grid; align-items: center; }
   .ledger-grid { position: absolute; inset: 0; }
-  .hero-ledger { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: clamp(44px, 8vw, 110px); align-items: center; padding-block: var(--space-11); }
-  .principle-strip { margin-top: 36px; display: flex; flex-wrap: wrap; gap: var(--space-1); }
+  .hero-ledger { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr); gap: clamp(var(--space-5), 8vw, var(--space-11)); align-items: center; padding-block: var(--space-11); }
+  /* Hero left column: the confirmed cramped stack (eyebrow + h1 + lede + actions + lede).
+     A single grid gap replaces the per-element magic-number margins so nothing jams together. */
+  .hero-ledger > div { display: grid; align-content: center; gap: var(--space-4); }
+  .principle-strip { margin-top: var(--space-5); display: flex; flex-wrap: wrap; gap: var(--space-1); }
   .workspace-section, .trust-section { padding-block: var(--space-11); position: relative; z-index: 1; }
-  .section-heading, .page-heading { max-width: var(--measure-prose); margin-bottom: var(--space-5); }
-  .section-heading h2, .page-heading h1 { margin: var(--space-1-5) 0 var(--space-2); }
-  .evaluate-workbench { display: grid; gap: var(--proof-plane-gap); }
-  .input-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
-  .card-row, .decision-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-  .micro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-  .operator-panel { display: grid; grid-template-columns: 1fr minmax(300px, .8fr); gap: 28px; align-items: end; }
-  .operator-controls { display: grid; gap: var(--space-1); }
-  .action-row { display: flex; flex-wrap: wrap; gap: 10px; }
+  /* Heading stack: eyebrow + title + supporting paragraph, evenly spaced by grid gap so the
+     eyebrow never hugs the title and the paragraph never crowds the heading. */
+  .section-heading, .page-heading { display: grid; gap: var(--space-2); max-width: var(--measure-prose); margin-bottom: var(--space-5); }
+  .section-heading h2, .page-heading h1 { margin: 0; }
+  .evaluate-workbench { display: grid; gap: var(--space-4); }
+  .input-row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-1-5); align-items: end; }
+  .card-row, .decision-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+  .micro-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1-5); }
+  .operator-panel { display: grid; grid-template-columns: 1fr minmax(300px, .8fr); gap: var(--space-4); align-items: end; }
+  .operator-controls { display: grid; gap: var(--space-2); }
+  .action-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
   .proof-ceremony { display: grid; gap: 0; }
-  .rail-stage { display: grid; grid-template-columns: 34px 1fr; gap: 12px; }
-  .coverage-grid { margin-top: 22px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
-  .coverage-item { display: grid; grid-template-columns: 22px 1fr; gap: var(--space-1); }
-  .trust-grid { display: grid; grid-template-columns: .65fr 1fr; gap: 60px; }
-  .trust-copy { display: grid; gap: 18px; }
+  .rail-stage { display: grid; grid-template-columns: 34px 1fr; gap: var(--space-1-5); }
+  .coverage-grid { margin-top: var(--space-3); display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+  .coverage-item { display: grid; grid-template-columns: var(--space-3) 1fr; gap: var(--space-1-5); }
+  .trust-grid { display: grid; grid-template-columns: .65fr 1fr; gap: var(--space-8); align-items: start; }
+  .trust-grid > div:first-child { display: grid; align-content: start; gap: var(--space-2); }
+  .trust-copy { display: grid; gap: var(--space-3); }
   .inventory-page, .detail-page, .proof-page, .proof-detail { min-height: calc(100vh - 70px); }
+  /* Agent detail + proof pages stack a long series of sibling sections/cards/links directly under
+     .wrap. A single grid gap gives the whole page one consistent vertical rhythm so no two blocks
+     jam together — child cards then zero their own vertical margins (below) to avoid doubling. */
+  .detail-page > .wrap, .proof-detail > .wrap { display: grid; align-content: start; gap: var(--space-4); }
   .inventory-legend { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-2); }
   .identity-link { display: grid; gap: var(--space-half); }
   .inventory-table caption { padding: var(--space-2) 13px; color: var(--text-muted-on-dark); background: var(--surface-ceremony); font: 500 var(--type-caption)/var(--line-caption) var(--font-mono); text-align: left; }
@@ -80,7 +90,7 @@
   .leaderboard-table th:nth-child(6) { width: 18%; }
   .leaderboard-table th:nth-child(7) { width: 8%; }
   .leaderboard-agent { display: grid; gap: var(--space-half); min-width: 0; }
-  .leaderboard-gate { display: grid; gap: var(--space-half); justify-items: start; }
+  .leaderboard-gate { display: grid; gap: var(--space-1); justify-items: start; }
   .leaderboard-risk { display: grid; gap: var(--space-half); justify-items: start; }
   .leaderboard-table a { color: var(--action-on-dark); text-decoration: underline; text-underline-offset: 3px; }
   .leaderboard-table a:focus-visible, .leaderboard-sort-button:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
@@ -93,30 +103,30 @@
   .leaderboard-card .leaderboard-agent a, .leaderboard-card .leaderboard-agent { color: var(--action-on-dark); }
   .leaderboard-card .leaderboard-agent a:focus-visible { outline: 2px solid var(--focus-on-dark); outline-offset: 3px; }
   .loading-ledger { display: flex; align-items: center; gap: var(--space-1); }
-  .legacy-banner, .trust-disclosure { display: grid; gap: 4px; }
-  .detail-header { margin: 30px 0; display: flex; justify-content: space-between; gap: var(--space-3); align-items: flex-end; }
-  .fixture-badge { display: grid; gap: 4px; }
-  .decision-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-bottom: 18px; }
-  .consumer-call { margin-bottom: 18px; display: grid; gap: 5px; }
-  .detail-page .coverage-card, .detail-page .evidence-stack, .detail-page .lifecycle-card { margin-bottom: 18px; }
-  .evidence-segment { margin-top: 20px; }
-  .commitments { margin-top: 26px; }
-  .lifecycle-rail { margin-top: 22px; display: grid; gap: 10px; }
-  .life-node { display: grid; gap: 4px; }
-  .timeline-rail { margin: 22px 0 0; padding: 0 0 0 22px; list-style: none; display: grid; gap: 16px; }
-  .timeline-node { position: relative; display: grid; gap: 8px; padding: 12px 14px; border-left: 3px solid var(--status-unknown-on-paper); }
-  .timeline-node__head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .timeline-node__head dl, .timeline-node .proof-list { margin-top: 4px; }
-  .timeline-node__note { margin-top: 2px; }
-  .lifecycle-controls { margin-top: 18px; grid-template-columns: 1fr; }
-  .drift-diff { display: grid; gap: 7px; }
-  .verify-sheet { display: grid; gap: 10px; max-width: var(--measure-verify); }
+  .trust-disclosure { display: grid; gap: var(--space-2); }
+  .legacy-banner { display: grid; gap: var(--space-1); }
+  .detail-header { margin: 0; display: flex; justify-content: space-between; gap: var(--space-3); align-items: flex-end; }
+  .fixture-badge { display: grid; gap: var(--space-half); }
+  .decision-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+  .consumer-call { display: grid; gap: var(--space-1); }
+  .evidence-segment { margin-top: var(--space-2-5); }
+  .commitments { margin-top: var(--space-3); }
+  .lifecycle-rail { margin-top: var(--space-3); display: grid; gap: var(--space-1-5); }
+  .life-node { display: grid; gap: var(--space-half); }
+  .timeline-rail { margin: var(--space-3) 0 0; padding: 0 0 0 var(--space-3); list-style: none; display: grid; gap: var(--space-2); }
+  .timeline-node { position: relative; display: grid; gap: var(--space-1); padding: var(--space-1-5) var(--space-2); border-left: 3px solid var(--status-unknown-on-paper); }
+  .timeline-node__head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1-5); }
+  .timeline-node__head dl, .timeline-node .proof-list { margin-top: var(--space-half); }
+  .timeline-node__note { margin-top: var(--space-half); }
+  .lifecycle-controls { margin-top: var(--space-2-5); grid-template-columns: 1fr; }
+  .drift-diff { display: grid; gap: var(--space-1); }
+  .verify-sheet { display: grid; gap: var(--space-2-5); max-width: var(--measure-verify); }
   .proof-page .verify-sheet { max-width: var(--measure-prose); }
-  .health-heading { margin-top: 70px; }
-  .health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-  .health-cell dl { margin-top: 18px; display: grid; gap: var(--space-1); }
+  .health-heading { margin-top: var(--space-8); }
+  .health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); }
+  .health-cell dl { margin-top: var(--space-2-5); display: grid; gap: var(--space-1); }
   .health-cell dl div { display: flex; justify-content: space-between; gap: var(--space-1); }
-  .verification-control { margin-top: 18px; display: grid; gap: 14px; }
+  .verification-control { margin-top: var(--space-2-5); display: grid; gap: var(--space-2); }
   .verification-result { display: grid; grid-template-columns: minmax(0, 7fr) minmax(0, 4.4fr); gap: var(--space-5); align-items: start; }
   .centered-state { min-height: calc(100vh - 70px); display: grid; place-content: center; justify-items: center; gap: var(--space-2); padding: 30px; text-align: center; }
   .foot-inner { min-height: 90px; display: flex; align-items: center; gap: var(--space-2); }
@@ -141,12 +151,12 @@
   }
 
   @media (max-width: 600px) {
-    .topbar-inner { flex-wrap: wrap; gap: 8px 12px; }
+    .topbar-inner { flex-wrap: wrap; gap: var(--space-1) var(--space-1-5); }
     .network-tag { margin-left: auto; }
     .nav { order: 3; margin: 0; width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-1); }
-    .nav a { text-align: center; padding: 7px 3px; }
-    .workspace-section, .trust-section { padding-block: 62px; }
-    .hero-ledger { padding-block: 58px; }
+    .nav a { text-align: center; padding: var(--space-1) var(--space-half); }
+    .workspace-section, .trust-section { padding-block: var(--space-8); }
+    .hero-ledger { padding-block: var(--space-6); }
     .input-row { grid-template-columns: 1fr; }
     .card-row, .detail-header { align-items: flex-start; flex-direction: column; }
     .micro-grid, .coverage-grid, .decision-grid, .health-grid { grid-template-columns: 1fr; }
@@ -154,8 +164,8 @@
     .summary-verdict__head { flex-direction: column; align-items: flex-start; }
     .inventory-card-data .ui-data-row, .inventory-status-row, .inventory-action-row { grid-template-columns: 1fr; gap: var(--space-half); }
     .leaderboard-field { grid-template-columns: 1fr; gap: var(--space-half); }
-    .proof-list > div { grid-template-columns: 1fr; gap: 4px; }
-    .proof-ceremony { padding: 18px 14px; }
+    .proof-list > div { grid-template-columns: 1fr; gap: var(--space-half); }
+    .proof-ceremony { padding: var(--space-2-5) var(--space-2); }
     .rail-line { left: 31px; }
     .detail-header { display: flex; }
     .foot-inner { align-items: flex-start; flex-direction: column; padding-block: var(--space-3); }
@@ -166,7 +176,7 @@
     .wrap, .topbar-inner { padding-inline: var(--space-2); }
     .network-tag { max-width: 100%; white-space: normal; }
     .guarantee-sheet, .evidence-card, .evaluate-form, .operator-panel, .verify-sheet { padding: var(--space-2-5); }
-    .rail-stage { grid-template-columns: 30px 1fr; gap: 9px; }
+    .rail-stage { grid-template-columns: 30px 1fr; gap: var(--space-1); }
     .rail-line { left: 29px; }
     .action-row { display: grid; }
     .action-row .button { width: 100%; }

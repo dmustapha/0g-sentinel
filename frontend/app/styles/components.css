@@ -16,6 +16,16 @@
   .scan-console { margin-top: var(--space-6); display: grid; gap: var(--space-5); }
   .scan-disclosure { margin-top: var(--space-3); color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); }
   .scan-challenge { margin-top: var(--space-3); display: flex; justify-content: flex-start; min-height: 65px; }
+  .scan-risk { margin: var(--space-4) 0; padding: var(--space-4); border: 1px solid var(--border-subtle-on-dark); border-left: 4px solid var(--tone-color, var(--muted)); border-radius: var(--shape-square); background: var(--surface-raised); }
+  .scan-risk[data-tone="good"] { --tone-color: var(--good); }
+  .scan-risk[data-tone="caution"] { --tone-color: var(--warn); }
+  .scan-risk[data-tone="blocked"] { --tone-color: var(--bad); }
+  .scan-risk__verdict { display: flex; align-items: baseline; gap: var(--space-2); }
+  .scan-risk__mark { color: var(--tone-color, var(--muted)); font: 700 var(--type-body)/var(--line-body) var(--font-mono); }
+  .scan-risk__label { color: var(--tone-color, var(--text-on-dark)); font: 700 var(--type-body)/var(--line-body) var(--font-display); letter-spacing: 0.04em; }
+  .scan-risk__score { margin-left: auto; color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-mono); }
+  .scan-risk__summary { margin: var(--space-3) 0 0; color: var(--text-on-dark); font: 400 var(--type-body)/var(--line-body) var(--font-body); }
+  .scan-risk__factors { margin: var(--space-3) 0 0; padding-left: var(--space-4); display: grid; gap: var(--space-2); color: var(--muted); font: 400 var(--type-caption)/var(--line-caption) var(--font-body); }
   .scan-status-region:empty { display: none; }
   .scan-outcome:focus-visible { outline: 2px solid var(--violet); outline-offset: 6px; }
   .scan-outcome:focus:not(:focus-visible) { outline: none; }

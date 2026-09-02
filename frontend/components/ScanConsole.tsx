@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { canonicalProofHref } from "@/lib/prooflock-routes";
 import { isCanonicalAgentId } from "@/lib/prooflock-validation";
-import type { RunnerStage } from "@/lib/prooflock-types";
+import { safeDisplayText } from "@/lib/safe-display";
+import type { ProofLockRiskAnalysis, RunnerStage } from "@/lib/prooflock-types";
 import {
   friendlyScanError, looksLikeAddress, reconcileScan, resolveAddressToAgentId, runPublicScan,
   ScanStreamError, type ScanSealed,
@@ -234,6 +235,7 @@ function SealedCard({ sealed }: Readonly<{ sealed: ScanSealed }>) {
         </div>
         <span className="verified-stamp">Gate {sealed.gate?.allowed ? "ALLOWED" : "read"}</span>
       </div>
+      {sealed.analysis ? <ScanRiskBlock analysis={sealed.analysis} /> : null}
       <dl className="proof-list">
         {sealed.version ? <DataRow label="Lease version" value={`v${sealed.version}`} technical={false} /> : null}
         {sealed.proofId ? <DataRow label="Proof ID" value={sealed.proofId} copyable /> : null}
@@ -248,6 +250,39 @@ function SealedCard({ sealed }: Readonly<{ sealed: ScanSealed }>) {
       {sealed.gate ? <GateDecisionCard decision={sealed.gate} /> : null}
     </section>
   );
+}
+
+// The plain-English risk verdict for the scan result: label + score, one-line summary, and the key
+// factors. Mirrors the agent detail page's reasoning so /scan finally shows WHAT we found and WHY,
+// not just proof IDs. Tone drives the color band via data-tone (shared with the detail styles).
+function ScanRiskBlock({ analysis }: Readonly<{ analysis: ProofLockRiskAnalysis }>) {
+  const tone = analysis.label === "SAFE" ? "good" : analysis.label === "FLAGGED" ? "blocked" : "caution";
+  return (
+    <div className="scan-risk" data-tone={tone}>
+      <div className="scan-risk__verdict">
+        <span className="scan-risk__mark" aria-hidden="true">{toneMark(tone)}</span>
+        <span className="scan-risk__label">{safeDisplayText(analysis.label, { maxGraphemes: 24 })}</span>
+        <span className="scan-risk__score">Risk {analysis.behavioralScore}/100</span>
+      </div>
+      {analysis.behavioralSummary ? (
+        <p className="scan-risk__summary">{safeDisplayText(analysis.behavioralSummary, { maxGraphemes: 400 })}</p>
+      ) : null}
+      {analysis.behavioralFactors.length ? (
+        <ul className="scan-risk__factors">
+          {analysis.behavioralFactors.slice(0, 6).map((factor, index) => (
+            <li key={index}><bdi>{safeDisplayText(factor, { maxGraphemes: 200 })}</bdi></li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function toneMark(tone: string): string {
+  if (tone === "good") return "✓";
+  if (tone === "blocked") return "×";
+  if (tone === "caution") return "!";
+  return "•";
 }
 
 function streamStage(stage: string): RunnerStage {

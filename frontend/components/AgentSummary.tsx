@@ -1,5 +1,5 @@
 import { leaseStatus } from "@/lib/prooflock-status";
-import { safeDisplayText } from "@/lib/safe-display";
+import { RiskReport } from "./RiskReport";
 import {
   agentVerdict, coverageGloss, historicalPlain, leasePlain, riskBand, type GateVerdictInput,
 } from "@/lib/prooflock-verdict";
@@ -63,42 +63,10 @@ export function AgentSummaryCard({ record, current, analysis, nowSeconds }: Read
           label={`Safety checks: ${coverage.ran} of ${coverage.total}`}
           detail={coverage.complete ? "Every check ran." : "Some checks did not run."} />
       </ul>
-      <ReasoningBlock analysis={analysis} />
+      {analysis
+        ? <RiskReport analysis={analysis} density="full" />
+        : <p className="summary-card__fallback">Detailed reasoning is not available for this seal.</p>}
     </section>
-  );
-}
-
-function ReasoningBlock({ analysis }: Readonly<{ analysis: ProofLockRiskAnalysis | undefined }>) {
-  if (!analysis) {
-    return <p className="summary-card__fallback">Detailed reasoning is not available for this seal.</p>;
-  }
-  return (
-    <div className="summary-reasoning">
-      <ReasoningColumn title="Behavior"
-        summary={analysis.behavioralSummary} factors={analysis.behavioralFactors} />
-      <ReasoningColumn title="Code"
-        summary={analysis.codeSummary} factors={analysis.codeFactors} />
-    </div>
-  );
-}
-
-function ReasoningColumn({ title, summary, factors }: Readonly<{
-  title: string; summary: string | null; factors: readonly string[];
-}>) {
-  return (
-    <div className="summary-reasoning__col">
-      <h3 className="summary-reasoning__title">{title}</h3>
-      <p className="summary-reasoning__summary">
-        {summary ? safeDisplayText(summary, { maxGraphemes: 400 }) : "No summary was provided."}
-      </p>
-      {factors.length ? (
-        <ul className="summary-reasoning__factors">
-          {factors.slice(0, 12).map((factor, index) => (
-            <li key={index}><bdi>{safeDisplayText(factor, { maxGraphemes: 200 })}</bdi></li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
   );
 }
 

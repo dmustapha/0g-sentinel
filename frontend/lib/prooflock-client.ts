@@ -51,11 +51,25 @@ const identitySummarySchema = z.object({ identityKey: hex32, namespace: z.litera
 const resolutionSummarySchema = z.object({ owner: hex20, agentWallet: hex20, agentURI: uri,
   registrationDigest: hex32, sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32 });
 const boundedNarrative = z.string().max(600);
+const riskEvidenceSourceSchema = z.object({
+  name: z.string().max(60), status: z.enum(["HIT", "CLEAR", "UNAVAILABLE"]), detail: z.string().max(240).optional(),
+});
+const riskEvidenceSignalSchema = z.object({
+  label: z.string().max(160), strength: z.number(), hard: z.boolean(), detail: z.string().max(240).optional(),
+});
+const riskEvidenceSchema = z.object({
+  sanctioned: z.boolean(), scamFlagged: z.boolean(),
+  sources: z.array(riskEvidenceSourceSchema).max(12),
+  bytecodeFlags: z.array(z.string().max(48)).max(24),
+  sourceFindings: z.array(z.string().max(240)).max(24),
+  signals: z.array(riskEvidenceSignalSchema).max(32),
+});
 const riskAnalysisSchema = z.object({
   behavioralScore: z.number().int().min(0).max(100), codeRisk: z.number().int().min(0).max(100),
   label: z.string().max(80), behavioralSummary: boundedNarrative.nullable(),
   behavioralFactors: z.array(boundedNarrative).max(24),
   codeSummary: boundedNarrative.nullable(), codeFactors: z.array(boundedNarrative).max(24),
+  evidence: riskEvidenceSchema.nullish(),
 });
 const detailSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("VERIFIED"), identity: identitySummarySchema, resolution: resolutionSummarySchema,

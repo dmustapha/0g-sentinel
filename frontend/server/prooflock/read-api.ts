@@ -8,7 +8,7 @@ import { resolveAgentIdentity } from "./identity/erc8004";
 import { verifyOfflineComputeProof, verifyStorageArtifactBinding } from "./offline-verifier";
 import { resolveService } from "./compute/service";
 import { computeProofRoot } from "./runner";
-import { safeComputeAnalysis, contentFromResponseBytes } from "./compute-analysis";
+import { safeComputeAnalysis, contentFromResponseBytes, safeRiskEvidence } from "./compute-analysis";
 import { computeZeroGLayout, STORAGE_VERIFICATION_CAPABILITY } from "./storage";
 import { assertZeroGMainnetRpc } from "./rpc";
 import { StorageRecoveryMismatchError, recoverStorageCommitment } from "./storage-recovery";
@@ -210,12 +210,19 @@ function buildRiskAnalysis(
   envelope: EvidenceEnvelopeV1,
   record: Awaited<ReturnType<ProofLockReadDependencies["readProofLock"]>>,
 ) {
-  const forPurpose = (purpose: "behavioral-risk" | "contract-risk") => {
-    const proof = envelope.computeProofs.find((candidate) => candidate.purpose === purpose);
-    return proof ? safeComputeAnalysis(contentFromResponseBytes(proof.rawResponseBodyBase64)) : null;
-  };
-  const behavioral = forPurpose("behavioral-risk");
-  const code = forPurpose("contract-risk");
+  const proofFor = (purpose: "behavioral-risk" | "contract-risk") =>
+    envelope.computeProofs.find((candidate) => candidate.purpose === purpose);
+  const behavioralProof = proofFor("behavioral-risk");
+  const codeProof = proofFor("contract-risk");
+  const behavioral = behavioralProof
+    ? safeComputeAnalysis(contentFromResponseBytes(behavioralProof.rawResponseBodyBase64)) : null;
+  const code = codeProof
+    ? safeComputeAnalysis(contentFromResponseBytes(codeProof.rawResponseBodyBase64)) : null;
+  // The structured evidence the model reasoned over is sealed in the REQUEST body of the behavioral
+  // proof (falls back to the contract proof). Recovering it surfaces the threat-intel sources,
+  // bytecode flags, and per-signal evidence that were previously discarded at read time.
+  const evidence = safeRiskEvidence(behavioralProof?.requestBodyBase64)
+    ?? safeRiskEvidence(codeProof?.requestBodyBase64);
   return Object.freeze({
     behavioralScore: record.behavioralScore,
     codeRisk: record.codeRisk,
@@ -224,6 +231,7 @@ function buildRiskAnalysis(
     behavioralFactors: behavioral?.factors ?? [],
     codeSummary: code?.summary ?? null,
     codeFactors: code?.factors ?? [],
+    evidence,
   });
 }
 

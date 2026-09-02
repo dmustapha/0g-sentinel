@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { isCanonicalAgentId, parseNonZeroBytes32 } from "@/lib/prooflock-validation";
 import { computeIdentityKey, type RegistryProofLockRecord } from "./chain";
+import type { RiskEvidence } from "./compute-analysis";
 import { IdentityError, ProofLocatorHintRequiredError, ProofMismatchError } from "./errors";
 import type { AgentIdentity, Bytes32, HexAddress, ResolvedAgentIdentity } from "./types";
 import { ProofLockStageError, type RunnerStage, type RunnerTerminalResult } from "./runner";
@@ -61,6 +62,9 @@ export type ProofLockRiskAnalysis = Readonly<{
   behavioralScore: number; codeRisk: number; label: string;
   behavioralSummary: string | null; behavioralFactors: readonly string[];
   codeSummary: string | null; codeFactors: readonly string[];
+  // The structured evidence recovered from the sealed compute request (threat-intel sources,
+  // contract bytecode flags, per-signal evidence). Optional: absent on a legacy/terse seal.
+  evidence?: RiskEvidence | null;
 }>;
 export type ProofLockDetail =
   | Readonly<{ status: "VERIFIED"; identity: ProofLockIdentitySummary;

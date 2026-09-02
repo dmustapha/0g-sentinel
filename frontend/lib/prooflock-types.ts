@@ -217,11 +217,23 @@ export type ResolvedIdentityLocator = Readonly<{
   identityKey: Bytes32;
 }>;
 
+// The structured evidence recovered from the sealed compute request: threat-intel source results,
+// contract bytecode flags, and per-signal evidence. Optional on legacy/terse seals.
+export type ProofLockRiskEvidenceSource = Readonly<{ name: string; status: "HIT" | "CLEAR" | "UNAVAILABLE"; detail?: string }>;
+export type ProofLockRiskEvidenceSignal = Readonly<{ label: string; strength: number; hard: boolean; detail?: string }>;
+export type ProofLockRiskEvidence = Readonly<{
+  sanctioned: boolean; scamFlagged: boolean;
+  sources: readonly ProofLockRiskEvidenceSource[];
+  bytecodeFlags: readonly string[]; sourceFindings: readonly string[];
+  signals: readonly ProofLockRiskEvidenceSignal[];
+}>;
+
 // Plain-English risk narrative (restored from v1), re-parsed from the enclave-signed compute output.
 export type ProofLockRiskAnalysis = Readonly<{
   behavioralScore: number; codeRisk: number; label: string;
   behavioralSummary: string | null; behavioralFactors: readonly string[];
   codeSummary: string | null; codeFactors: readonly string[];
+  evidence?: ProofLockRiskEvidence | null;
 }>;
 export type ProofLockDetail =
   | Readonly<{ status: "VERIFIED"; identity: Readonly<{

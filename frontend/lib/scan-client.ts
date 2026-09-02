@@ -5,7 +5,7 @@
 import { AbiCoder, keccak256 } from "ethers";
 import { z } from "zod";
 import { ProofLockApiError, readProofLockDetail } from "./prooflock-client";
-import type { ApiErrorShape, GateDecision, ProofLockRecord, RunnerStage } from "./prooflock-types";
+import type { ApiErrorShape, GateDecision, ProofLockRecord, ProofLockRiskAnalysis, RunnerStage } from "./prooflock-types";
 
 // ERC-8004 identity registry on 0G (Chain ID 16661). The public front door binds every scan
 // to this registry, so the identity key derivation must use the exact same constant.
@@ -31,6 +31,9 @@ export type ScanSealed = Readonly<{
   version?: string;
   storageRoot?: `0x${string}`;
   gate: GateDecision | null;
+  // The plain-English risk verdict (score, label, summary, factors) restored from the sealed evidence.
+  // Present when the on-chain read-back returns a VERIFIED detail; the scan result renders it.
+  analysis?: ProofLockRiskAnalysis;
   source: "STREAM" | "RECONCILED";
 }>;
 
@@ -106,7 +109,8 @@ export async function reconcileScan(agentId: string, signal?: AbortSignal): Prom
       ? { allowed: detail.detail.gate.allowed, reason: detail.detail.gate.reason,
         subject: detail.detail.gate.subject, version: detail.detail.gate.version }
       : null;
-    return sealedFromDetail(agentId, identityKey, detail.proofLock, detail.proofId, gate, "RECONCILED");
+    const analysis = detail.detail.status === "VERIFIED" ? detail.detail.analysis : undefined;
+    return sealedFromDetail(agentId, identityKey, detail.proofLock, detail.proofId, gate, "RECONCILED", analysis);
   } catch (cause) {
     if (cause instanceof ProofLockApiError && cause.detail.code === "NOT_FOUND") return null;
     throw cause;
@@ -114,10 +118,11 @@ export async function reconcileScan(agentId: string, signal?: AbortSignal): Prom
 }
 
 function sealedFromDetail(agentId: string, identityKey: `0x${string}`, record: ProofLockRecord,
-  proofId: `0x${string}` | undefined, gate: GateDecision | null, source: ScanSealed["source"]): ScanSealed {
+  proofId: `0x${string}` | undefined, gate: GateDecision | null, source: ScanSealed["source"],
+  analysis?: ProofLockRiskAnalysis): ScanSealed {
   return {
     identityKey, agentId, proofId, version: record.version,
-    storageRoot: record.storageRoot as `0x${string}`, gate, source,
+    storageRoot: record.storageRoot as `0x${string}`, gate, source, analysis,
   };
 }
 

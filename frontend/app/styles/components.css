@@ -207,7 +207,7 @@
   .proof-identifiers dt { color: var(--text-muted-on-dark); }
   .trust-disclosure dt { color: var(--text-muted-on-dark); }
   .proof-identifiers .ui-data-row__value, .trust-disclosure dd { color: var(--text-on-dark); }
-  .proof-identifiers .ui-data-row__value button { color: var(--action-on-dark); }
+  .proof-identifiers .ui-data-row__value button { color: var(--muted); }
   .proof-identifiers .ui-data-row__value button:focus-visible { outline-color: var(--focus-on-dark); }
   .trust-disclosure dd small { color: var(--text-muted-on-dark); }
   .verification-result > [data-plane] { min-width: 0; border: 1px solid currentColor; padding: 20px; }
@@ -284,7 +284,7 @@
   .ui-data-row__technical-value { min-width: 0; font-variant-numeric: tabular-nums; unicode-bidi: isolate; font: 500 var(--data-row-value-type)/var(--line-data) var(--font-mono); }
   .ui-data-row__text-value { min-width: 0; unicode-bidi: isolate; }
   .ui-data-row__value a { min-width: 0; color: var(--action-on-paper); }
-  .ui-data-row__value button { min-width: var(--control-min); min-height: var(--control-min); border: 1px solid currentColor; border-radius: var(--shape-square); padding: var(--space-2); background: transparent; color: var(--action-on-paper); cursor: pointer; font: 600 var(--type-caption)/var(--line-caption) var(--font-display); }
+  .ui-data-row__value button { min-width: var(--control-min); min-height: var(--control-min); border: 1px solid var(--border-subtle-on-dark); border-radius: var(--shape-square); padding: var(--space-2); background: transparent; color: var(--muted); cursor: pointer; font: 600 var(--type-caption)/var(--line-caption) var(--font-display); }
   .ui-data-row__value a:focus-visible, .ui-data-row__value button:focus-visible { outline: 2px solid var(--focus-on-paper); outline-offset: 3px; }
   .ui-data-row__copy-error { color: var(--status-failure-on-paper); font: 500 var(--type-caption)/var(--line-caption) var(--font-body); }
 
@@ -298,7 +298,8 @@
   .ui-proof-plane--current .ui-data-row { border-color: var(--border-subtle-on-dark); }
   .ui-proof-plane--current .ui-data-row__label { color: var(--text-muted-on-dark); }
   .ui-proof-plane--current .ui-data-row__value { color: var(--text-on-dark); }
-  .ui-proof-plane--current .ui-data-row__value a, .ui-proof-plane--current .ui-data-row__value button { color: var(--action-on-dark); }
+  .ui-proof-plane--current .ui-data-row__value a { color: var(--action-on-dark); }
+  .ui-proof-plane--current .ui-data-row__value button { color: var(--muted); }
   .ui-proof-plane--current .ui-data-row__value a:focus-visible, .ui-proof-plane--current .ui-data-row__value button:focus-visible { outline-color: var(--focus-on-dark); }
   .ui-proof-plane--current .ui-data-row__copy-error { color: var(--status-failure-on-dark); }
   .ui-proof-plane--historical { color: var(--text-on-paper); background: var(--evidence-sheet-surface); }

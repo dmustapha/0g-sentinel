@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0G Sentinel — SOC Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink-0:#050810; --ink-1:#070b14; --ink-2:#0a1120; --ink-3:#0e1728; --ink-4:#131e33;
+  --line:rgba(6,182,212,0.14); --line-soft:rgba(148,176,205,0.08); --grid:rgba(6,182,212,0.05);
+  --cy:#06b6d4; --cy-55:rgba(6,182,212,0.55); --cy-32:rgba(6,182,212,0.32);
+  --cy-18:rgba(6,182,212,0.18); --cy-12:rgba(6,182,212,0.12); --cy-06:rgba(6,182,212,0.06);
+  --good:#10b981; --warn:#fbbf24; --bad:#f43f5e;
+  --good-12:rgba(16,185,129,0.12); --warn-12:rgba(251,191,36,0.12); --bad-12:rgba(244,63,94,0.12); --bad-32:rgba(244,63,94,0.32);
+  --tx-hi:#e8eef6; --tx-mid:#9db0c6; --tx-lo:#5c6f88; --tx-dim:#3b4a60;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  --disp:'Chakra Petch',sans-serif;
+  --maxw:1180px;
+  --focus:0 0 0 2px var(--ink-0),0 0 0 4px #06b6d4;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--ink-0); color:var(--tx-mid);
+  font-family:var(--mono); font-size:14px; line-height:1.6;
+  -webkit-font-smoothing:antialiased; overflow-x:hidden; position:relative;
+}
+/* CRT scanline + grain + amber flicker */
+.crt{position:fixed;inset:0;z-index:60;pointer-events:none}
+.crt::before{
+  content:"";position:absolute;inset:0;
+  background:repeating-linear-gradient(0deg,rgba(6,182,212,0.028) 0,rgba(6,182,212,0.028) 1px,transparent 1px,transparent 3px);
+  opacity:.55;
+}
+.crt::after{
+  content:"";position:absolute;inset:0;
+  background-image:radial-gradient(rgba(148,176,205,0.04) .5px,transparent .5px);
+  background-size:3px 3px;
+}
+/* slow moving scan sweep across whole viewport */
+.crt-sweep{
+  position:fixed;left:0;right:0;height:180px;z-index:59;pointer-events:none;
+  background:linear-gradient(180deg,transparent,rgba(6,182,212,0.05),transparent);
+  animation:crtSweep 7s linear infinite;
+}
+@keyframes crtSweep{0%{top:-180px}100%{top:100%}}
+::selection{background:var(--cy-32);color:var(--tx-hi)}
+a{color:var(--cy);text-decoration:none}
+
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 24px;position:relative;z-index:2}
+
+/* screen label chips */
+.screen-label{
+  max-width:var(--maxw);margin:0 auto;padding:34px 24px 12px;
+  display:flex;align-items:center;gap:12px;font-family:var(--mono);
+}
+.screen-label .num{
+  font-family:var(--disp);font-weight:700;font-size:.72rem;letter-spacing:.16em;
+  color:var(--ink-0);background:var(--cy);padding:4px 9px;border-radius:4px;
+}
+.screen-label .txt{font-size:.72rem;letter-spacing:.22em;text-transform:uppercase;color:var(--cy-55);font-weight:600}
+.screen-label .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--cy-32),transparent)}
+
+/* ===================== TERMINAL WINDOW SHELL ===================== */
+.term{
+  border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  background:linear-gradient(180deg,var(--ink-2),var(--ink-1));
+  box-shadow:0 0 70px -34px var(--cy-55),inset 0 1px 0 rgba(255,255,255,.04);
+  position:relative;
+}
+.term-bar{
+  display:flex;align-items:center;gap:12px;padding:11px 16px;
+  border-bottom:1px solid var(--line-soft);background:rgba(5,8,16,.6);
+}
+.term-bar .lamps{display:flex;gap:7px}
+.term-bar .lamp{width:11px;height:11px;border-radius:50%;background:var(--tx-dim)}
+.term-bar .lamp.r{background:var(--bad)}
+.term-bar .lamp.y{background:var(--warn)}
+.term-bar .lamp.g{background:var(--good)}
+.term-bar .title{font-size:.72rem;letter-spacing:.08em;color:var(--tx-lo)}
+.term-bar .title b{color:var(--tx-mid);font-weight:600}
+.term-bar .clock{margin-left:auto;font-size:.68rem;color:var(--cy-55);letter-spacing:.06em}
+.term-body{position:relative}
+/* per-panel scanline sweep */
+.term-body::after{
+  content:"";position:absolute;inset:0;pointer-events:none;z-index:5;
+  background:linear-gradient(180deg,transparent 0%,rgba(6,182,212,0.07) 50%,transparent 100%);
+  height:40%;animation:panelSweep 5.5s ease-in-out infinite;opacity:.6;
+}
+@keyframes panelSweep{0%{transform:translateY(-40%)}100%{transform:translateY(260%)}}
+
+/* command prompt line */
+.cmd{
+  display:flex;align-items:baseline;gap:10px;padding:14px 18px;
+  border-bottom:1px solid var(--line-soft);font-size:.82rem;flex-wrap:wrap;
+}
+.cmd .ps{color:var(--good);font-weight:600;flex:none}
+.cmd .ct{color:var(--tx-hi);font-weight:500}
+.cmd .arg{color:var(--cy)}
+.cmd .flag{color:var(--tx-lo)}
+.cur{display:inline-block;width:8px;height:1.05em;background:var(--cy);vertical-align:text-bottom;margin-left:2px;animation:blink 1.05s steps(1) infinite;box-shadow:0 0 8px var(--cy-55)}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+
+/* ===================== ONE UNIFORM DATA-CELL SYSTEM ===================== */
+/* Every grouping — threat-intel, contract-safety, factors, evidence,
+   leaderboard, proof-meta, timeline — is built from .cell rows. */
+.cellhead{
+  display:flex;align-items:center;gap:10px;padding:12px 18px;
+  border-bottom:1px solid var(--line);background:var(--ink-2);
+}
+.cellhead .h{
+  font-family:var(--disp);font-size:.68rem;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--tx-lo);
+}
+.cellhead .h b{color:var(--cy);font-weight:700}
+.cellhead .meta{margin-left:auto;font-size:.64rem;color:var(--tx-dim);letter-spacing:.06em}
+
+/* the primitive row */
+.cell{
+  display:grid;grid-template-columns:78px 22px 1fr auto;align-items:center;gap:14px;
+  padding:13px 18px;border-bottom:1px solid var(--line-soft);
+  font-size:.8rem;position:relative;transition:background .16s;
+}
+.cell:last-child{border-bottom:none}
+.cell:hover{background:var(--cy-06)}
+/* left gutter: timestamp / line number */
+.cell .ln{color:var(--tx-dim);font-size:.66rem;letter-spacing:.02em;white-space:nowrap}
+/* status glyph column */
+.cell .gl{text-align:center;font-size:.9rem;line-height:1}
+.cell .gl.ok{color:var(--good)} .cell .gl.hit{color:var(--bad)} .cell .gl.warn{color:var(--warn)} .cell .gl.na{color:var(--tx-lo)} .cell .gl.cy{color:var(--cy)}
+/* main content column */
+.cell .main{min-width:0}
+.cell .main .k{color:var(--tx-hi);font-weight:500;letter-spacing:.01em}
+.cell .main .k .src{color:var(--tx-lo);font-weight:400}
+.cell .main .d{color:var(--tx-lo);font-size:.7rem;margin-top:3px;overflow:hidden;text-overflow:ellipsis}
+.cell .main .val{font-size:.72rem;color:var(--tx-mid);word-break:break-all}
+.cell .main .val.cy{color:var(--cy)}
+/* right column: bracket tag / bars / score */
+.cell .rt{justify-self:end;display:flex;align-items:center;gap:12px}
+
+/* bracket status tags [ OK ] [ HIT ] */
+.tag{
+  font-family:var(--mono);font-weight:700;font-size:.68rem;letter-spacing:.1em;
+  padding:3px 2px;white-space:nowrap;
+}
+.tag::before{content:"[ "}.tag::after{content:" ]"}
+.tag.ok{color:var(--good)} .tag.hit{color:var(--bad)} .tag.warn{color:var(--warn)}
+.tag.na{color:var(--tx-lo)} .tag.clr{color:var(--good)} .tag.cy{color:var(--cy)}
+
+/* strength bars (evidence) */
+.bars{display:flex;gap:3px;align-items:center}
+.bars i{width:5px;height:15px;border-radius:1px;background:var(--ink-4)}
+.bars i.on{background:var(--good);box-shadow:0 0 5px rgba(16,185,129,.4)}
+.bars i.warn{background:var(--warn)}
+.bars i.bad{background:var(--bad)}
+.bars.build i{animation:barPop .4s both}
+@keyframes barPop{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.bars.build i:nth-child(2){animation-delay:.06s}.bars.build i:nth-child(3){animation-delay:.12s}
+.bars.build i:nth-child(4){animation-delay:.18s}.bars.build i:nth-child(5){animation-delay:.24s}
+.bars.build i:nth-child(6){animation-delay:.3s}.bars.build i:nth-child(7){animation-delay:.36s}
+
+/* score micro-track used in leaderboard + factors */
+.mtrack{width:96px;height:5px;border-radius:999px;background:var(--ink-3);overflow:hidden}
+.mtrack>i{display:block;height:100%;border-radius:999px;width:0;transition:width 1.2s cubic-bezier(.2,.7,.2,1)}
+.mtrack>i.g{background:var(--good)}.mtrack>i.w{background:var(--warn)}.mtrack>i.b{background:var(--bad)}
+.scoren{font-family:var(--mono);font-weight:600;font-size:.74rem;color:var(--tx-mid);width:34px;text-align:right}
+.scoren.g{color:var(--good)}.scoren.w{color:var(--warn)}.scoren.b{color:var(--bad)}
+
+/* rank cell variant reuses grid but wider gutter */
+.cell.rankrow{grid-template-columns:52px 22px 1fr auto}
+.cell.rankrow .rank{font-family:var(--disp);font-weight:700;color:var(--tx-lo);font-size:.82rem}
+.cell.rankrow.flagged{background:var(--bad-12)}
+.cell.rankrow.flagged:hover{background:rgba(244,63,94,.16)}
+.subj{font-family:var(--mono);font-size:.66rem;color:var(--tx-lo);margin-top:2px}
+.dual{display:flex;gap:16px;align-items:center}
+.dual .lab{font-size:.58rem;color:var(--tx-dim);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+
+/* ===================== TOPBAR ===================== */
+.topbar{
+  position:sticky;top:0;z-index:50;background:rgba(5,8,16,.9);
+  border-bottom:1px solid var(--line);backdrop-filter:blur(14px);
+}
+.topbar-inner{max-width:var(--maxw);margin:0 auto;padding:0 24px;height:58px;display:flex;align-items:center;gap:18px}
+.wordmark{font-family:var(--disp);font-weight:700;font-size:1rem;color:var(--tx-hi);letter-spacing:.02em;display:flex;align-items:center;gap:9px;white-space:nowrap}
+.wordmark .mk{width:20px;height:20px;flex:none;position:relative;border:1.5px solid var(--cy-55);border-radius:5px;display:grid;place-items:center;overflow:hidden}
+.wordmark .mk::before{content:"";position:absolute;inset:0;background:conic-gradient(from 0deg,var(--cy-55),transparent 90deg);animation:sweep 3.4s linear infinite}
+.wordmark .mk::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--cy);box-shadow:0 0 8px var(--cy);z-index:1}
+@keyframes sweep{to{transform:rotate(360deg)}}
+.nav{display:flex;gap:2px;margin-left:auto}
+.nav a{font-family:var(--disp);font-size:.78rem;font-weight:500;color:var(--tx-mid);padding:7px 12px;border-radius:6px;letter-spacing:.04em;transition:color .15s,background .15s}
+.nav a.active{color:var(--cy);background:var(--cy-06)}
+.nav a:hover{color:var(--tx-hi);background:var(--cy-06)}
+.chainpill{display:inline-flex;align-items:center;gap:7px;font-size:.68rem;color:var(--tx-mid);border:1px solid var(--line);background:var(--ink-2);padding:6px 11px;border-radius:999px;letter-spacing:.03em;white-space:nowrap}
+.chainpill .dot{width:7px;height:7px;border-radius:50%;background:var(--good);box-shadow:0 0 0 0 rgba(16,185,129,.5);animation:beacon 2.4s infinite}
+@keyframes beacon{0%{box-shadow:0 0 0 0 rgba(16,185,129,.45)}70%{box-shadow:0 0 0 6px rgba(16,185,129,0)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}}
+
+/* ===================== HERO ===================== */
+.hero{position:relative;border-bottom:1px solid var(--line);background:radial-gradient(ellipse 900px 500px at 70% 40%,var(--cy-06),transparent 62%),var(--ink-0);overflow:hidden}
+.hero-grid{position:absolute;inset:0;pointer-events:none;z-index:1;background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);background-size:44px 44px;mask-image:radial-gradient(ellipse 80% 70% at 55% 45%,#000 30%,transparent 78%)}
+.hero-inner{max-width:var(--maxw);margin:0 auto;padding:60px 24px 66px;position:relative;z-index:2}
+.eyebrow{font-family:var(--disp);font-size:.68rem;letter-spacing:.28em;text-transform:uppercase;color:var(--cy-55);font-weight:600;display:inline-flex;align-items:center;gap:8px;margin-bottom:22px}
+.eyebrow::before{content:"";width:18px;height:1px;background:var(--cy-32)}
+.hero h1{font-family:var(--disp);font-size:clamp(2rem,5vw,3.7rem);letter-spacing:-.015em;color:var(--tx-hi);line-height:1.06;margin-bottom:20px;max-width:16ch;font-weight:700}
+.hero h1 .type-target{color:var(--cy)}
+.hero h1 .cur{width:.5ch;height:.92em;margin-left:4px}
+.hero-body{font-size:.94rem;color:var(--tx-mid);max-width:60ch;line-height:1.7;margin-bottom:26px}
+/* command-prompt scan input */
+.scanbox{max-width:680px;border:1px solid var(--line);border-radius:8px;background:var(--ink-0);overflow:hidden;box-shadow:0 0 50px -26px var(--cy-55)}
+.scanbox .row{display:flex;align-items:center;gap:10px;padding:14px 16px}
+.scanbox .ps{color:var(--good);font-weight:600;font-size:.86rem;flex:none}
+.scanbox .ph{flex:1;min-width:0;font-size:.86rem;color:var(--tx-hi);letter-spacing:.01em}
+.scanbox .ph .placeholder{color:var(--tx-dim)}
+.scanbox .go{font-family:var(--disp);font-weight:600;font-size:.78rem;letter-spacing:.04em;color:var(--ink-0);background:var(--cy);border:none;padding:9px 16px;border-radius:6px;cursor:pointer;transition:transform .16s,box-shadow .16s;box-shadow:0 0 20px -6px var(--cy-55)}
+.scanbox .go:hover{transform:translateY(-1px);box-shadow:0 0 26px -4px var(--cy-55)}
+.scanbox .caps{border-top:1px solid var(--line-soft);padding:10px 16px;font-size:.68rem;color:var(--tx-lo);letter-spacing:.04em;background:rgba(5,8,16,.4)}
+.scanbox .caps b{color:var(--cy-55);font-weight:500}
+
+/* section shell */
+.pad{padding:8px 0 44px}
+.divide{border-top:1px solid var(--line-soft)}
+
+/* ===================== REPORT HEADER (verdict + score) ===================== */
+.verdict-strip{
+  display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:20px;
+  padding:20px 22px;border-bottom:1px solid var(--line);flex-wrap:wrap;
+}
+.vword{font-family:var(--disp);font-weight:700;font-size:1.7rem;letter-spacing:.05em;color:var(--warn);display:flex;align-items:center;gap:12px}
+.vword .badgeflag{font-family:var(--mono);font-weight:700;font-size:.7rem;letter-spacing:.1em;color:var(--warn);border:1px solid rgba(251,191,36,.4);background:var(--warn-12);padding:4px 10px;border-radius:5px}
+.scoreblock{justify-self:end;text-align:right}
+.scoreblock .lab{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;color:var(--tx-lo);margin-bottom:4px}
+.scoreblock .big{font-family:var(--disp);font-weight:700;font-size:2.6rem;line-height:1;color:var(--warn);display:flex;align-items:baseline;gap:3px;justify-content:flex-end}
+.scoreblock .big .max{font-size:1rem;color:var(--tx-lo);font-weight:500}
+.scoreblock .rep-bar{width:180px;height:6px;border-radius:999px;background:var(--ink-3);overflow:hidden;margin-top:10px;margin-left:auto}
+.scoreblock .rep-bar>i{display:block;height:100%;width:0;background:var(--warn);border-radius:999px;transition:width 1.4s cubic-bezier(.2,.7,.2,1);box-shadow:0 0 12px -2px var(--warn)}
+.summary{
+  padding:16px 22px;border-bottom:1px solid var(--line-soft);
+  font-size:.84rem;color:var(--tx-mid);line-height:1.65;border-left:2px solid var(--warn);
+  background:var(--warn-12);
+}
+.summary .lab{font-family:var(--disp);font-weight:700;font-size:.62rem;letter-spacing:.14em;text-transform:uppercase;color:var(--warn);display:block;margin-bottom:6px}
+
+/* two-column cell region */
+.dualcol{display:grid;grid-template-columns:1fr 1fr;gap:0}
+.dualcol > div{border-right:1px solid var(--line-soft)}
+.dualcol > div:last-child{border-right:none}
+
+/* streaming live log line */
+.logstream{border-bottom:1px solid var(--line-soft)}
+.logline{
+  display:grid;grid-template-columns:78px 22px 1fr;gap:14px;align-items:center;
+  padding:9px 18px;font-size:.74rem;opacity:0;animation:logIn .5s forwards;
+}
+.logline .ln{color:var(--tx-dim);font-size:.64rem}
+.logline .gl{text-align:center;color:var(--cy)}
+.logline .msg{color:var(--tx-mid)}
+.logline .msg b{color:var(--tx-hi);font-weight:500}
+.logline.live .msg::after{content:"";display:inline-block;width:7px;height:1em;background:var(--cy);margin-left:4px;vertical-align:text-bottom;animation:blink 1s steps(1) infinite}
+@keyframes logIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1;transform:none}}
+.logline:nth-child(1){animation-delay:.1s}.logline:nth-child(2){animation-delay:.5s}
+.logline:nth-child(3){animation-delay:.9s}.logline:nth-child(4){animation-delay:1.3s}
+.logline:nth-child(5){animation-delay:1.7s}.logline:nth-child(6){animation-delay:2.1s}
+
+/* footer */
+footer{border-top:1px solid var(--line);background:var(--ink-1);padding:28px 0;margin-top:20px}
+.foot-inner{display:flex;align-items:center;gap:16px;flex-wrap:wrap;font-size:.72rem}
+.foot-inner .fmk{font-family:var(--disp);font-weight:700;color:var(--tx-hi);font-size:.9rem}
+.foot-inner .fnet{color:var(--tx-lo)}
+.foot-inner .flink{margin-left:auto;font-family:var(--disp);font-weight:600;color:var(--cy)}
+
+/* entrance */
+@keyframes riseIn{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+.rise{animation:riseIn .7s cubic-bezier(.2,.7,.2,1) both}
+
+/* responsive */
+@media(max-width:820px){
+  .dualcol{grid-template-columns:1fr}
+  .dualcol>div{border-right:none;border-bottom:1px solid var(--line-soft)}
+  .verdict-strip{grid-template-columns:1fr}
+  .scoreblock{justify-self:start;text-align:left}
+  .scoreblock .big,.scoreblock .rep-bar{justify-content:flex-start;margin-left:0}
+  .cell{grid-template-columns:64px 20px 1fr auto;gap:10px}
+}
+@media(max-width:560px){
+  .nav{display:none}
+  .cell{grid-template-columns:20px 1fr auto;gap:10px}
+  .cell .ln{display:none}
+  .cell.rankrow{grid-template-columns:40px 1fr auto}
+  .logline{grid-template-columns:20px 1fr}
+  .logline .ln{display:none}
+  .dual .lab{display:none}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .cur{opacity:1!important}
+  .logline{opacity:1!important}
+  .crt-sweep,.term-body::after{display:none!important}
+  .rep-bar>i,.mtrack>i,.scoreblock .big{width:auto}
+}
+</style>
+</head>
+<body>
+<div class="crt"></div>
+<div class="crt-sweep"></div>
+
+<!-- ============ SCREEN 1 — NAV ============ -->
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="wordmark"><span class="mk"></span>0G Sentinel</div>
+    <nav class="nav">
+      <a href="#" class="active">Overview</a>
+      <a href="#">Scan</a>
+      <a href="#">Agents</a>
+      <a href="#">Verify</a>
+    </nav>
+    <span class="chainpill"><span class="dot"></span>Chain ID 16661</span>
+  </div>
+</header>
+
+<!-- ============ SCREEN 2 — HERO ============ -->
+<div class="screen-label"><span class="num">02</span><span class="txt">Hero · Command Console</span><span class="rule"></span></div>
+<section class="hero">
+  <div class="hero-grid"></div>
+  <div class="hero-inner">
+    <div class="eyebrow">SOC · Agent Trust Scanner</div>
+    <h1>Is this agent <span class="type-target" id="typer">safe to trust?</span><span class="cur"></span></h1>
+    <p class="hero-body">Scan any AI agent on 0G. We check it against real sanctions and scam-blocklist intelligence, read its contract code, and seal the verdict on-chain.</p>
+    <div class="scanbox rise">
+      <div class="row">
+        <span class="ps">&gt; sentinel scan</span>
+        <span class="ph"><span id="scanid">3527152</span><span class="cur"></span></span>
+        <button class="go">Scan agent</button>
+      </div>
+      <div class="caps"><b>OFAC</b> · <b>Chainalysis</b> · <b>ScamSniffer</b> · <b>contract bytecode analysis</b></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 3 — SCAN RESULT / RISKREPORT ============ -->
+<div class="screen-label"><span class="num">03</span><span class="txt">Scan Result · RiskReport #3527152</span><span class="rule"></span></div>
+<div class="wrap pad">
+  <div class="term">
+    <div class="term-bar">
+      <span class="lamps"><i class="lamp r"></i><i class="lamp y"></i><i class="lamp g"></i></span>
+      <span class="title"><b>sentinel</b>@0g — riskreport #3527152</span>
+      <span class="clock" id="clock1">14:22:07 UTC</span>
+    </div>
+    <div class="term-body">
+      <div class="cmd">
+        <span class="ps">&gt;</span>
+        <span><span class="ct">sentinel scan</span> <span class="arg">3527152</span> <span class="flag">--full --seal</span></span>
+      </div>
+
+      <!-- verdict strip with count-up score -->
+      <div class="verdict-strip">
+        <div class="vword">CAUTION <span class="badgeflag">MILD</span></div>
+        <div></div>
+        <div class="scoreblock">
+          <div class="lab">Risk Score</div>
+          <div class="big"><span class="count" data-to="39">0</span><span class="max">/100</span></div>
+          <div class="rep-bar"><i data-w="39%"></i></div>
+        </div>
+      </div>
+      <div class="summary">
+        <span class="lab">Verdict Summary</span>
+        This wallet appears low-risk with no sanctions or scam flags, but its newness and concentrated activity warrant mild caution.
+      </div>
+
+      <!-- streaming live log -->
+      <div class="logstream">
+        <div class="logline"><span class="ln">14:22:03.114</span><span class="gl">⟩</span><span class="msg">resolving <b>0x9f…3527152</b> on 0G-Newton</span></div>
+        <div class="logline"><span class="ln">14:22:04.402</span><span class="gl">⟩</span><span class="msg">querying threat-intel providers <b>OFAC / Chainalysis / ScamSniffer</b></span></div>
+        <div class="logline"><span class="ln">14:22:05.870</span><span class="gl">⟩</span><span class="msg">decompiling contract bytecode <b>· 2 patterns matched</b></span></div>
+        <div class="logline live"><span class="ln">14:22:07.031</span><span class="gl">⟩</span><span class="msg">sealing verdict to storage root</span></div>
+      </div>
+
+      <!-- THREAT INTELLIGENCE + CONTRACT SAFETY — same cell system, two cols -->
+      <div class="dualcol">
+        <div>
+          <div class="cellhead"><span class="h"><b>»</b> Threat Intelligence</span><span class="meta">3 sources</span></div>
+          <div class="cell"><span class="ln">ti.01</span><span class="gl ok">✓</span><div class="main"><div class="k">OFAC <span class="src">· sanctions list</span></div></div><div class="rt"><span class="tag clr">CLEAR</span></div></div>
+          <div class="cell"><span class="ln">ti.02</span><span class="gl na">—</span><div class="main"><div class="k">Chainalysis <span class="src">· risk API</span></div></div><div class="rt"><span class="tag na">N/A</span></div></div>
+          <div class="cell"><span class="ln">ti.03</span><span class="gl ok">✓</span><div class="main"><div class="k">ScamSniffer <span class="src">· scam blocklist</span></div></div><div class="rt"><span class="tag clr">CLEAR</span></div></div>
+        </div>
+        <div>
+          <div class="cellhead"><span class="h"><b>»</b> Contract Safety</span><span class="meta">2 findings</span></div>
+          <div class="cell"><span class="ln">cs.01</span><span class="gl warn">▲</span><div class="main"><div class="k">Self-destruct</div><div class="d">contract can be destroyed</div></div><div class="rt"><span class="tag warn">FLAG</span></div></div>
+          <div class="cell"><span class="ln">cs.02</span><span class="gl warn">▲</span><div class="main"><div class="k">Delegatecall</div><div class="d">execution can be redirected</div></div><div class="rt"><span class="tag warn">FLAG</span></div></div>
+          <div class="cell"><span class="ln">cs.03</span><span class="gl ok">✓</span><div class="main"><div class="k">Ownership</div><div class="d">renounced · immutable admin</div></div><div class="rt"><span class="tag ok">OK</span></div></div>
+        </div>
+      </div>
+
+      <!-- KEY FACTORS — same cell system, with micro score tracks -->
+      <div class="cellhead" style="border-top:1px solid var(--line)"><span class="h"><b>»</b> Key Factors</span><span class="meta">4 weighted</span></div>
+      <div class="cell"><span class="ln">kf.01</span><span class="gl warn">▲</span><div class="main"><div class="k">Wallet age <span class="src">· 11 days</span></div></div><div class="rt"><span class="mtrack"><i class="w" data-w="62%"></i></span><span class="scoren w">+18</span></div></div>
+      <div class="cell"><span class="ln">kf.02</span><span class="gl warn">▲</span><div class="main"><div class="k">Activity concentration <span class="src">· 3 counterparties</span></div></div><div class="rt"><span class="mtrack"><i class="w" data-w="48%"></i></span><span class="scoren w">+12</span></div></div>
+      <div class="cell"><span class="ln">kf.03</span><span class="gl ok">✓</span><div class="main"><div class="k">Sanctions exposure <span class="src">· none</span></div></div><div class="rt"><span class="mtrack"><i class="g" data-w="8%"></i></span><span class="scoren g">+0</span></div></div>
+      <div class="cell"><span class="ln">kf.04</span><span class="gl ok">✓</span><div class="main"><div class="k">Scam-report history <span class="src">· none</span></div></div><div class="rt"><span class="mtrack"><i class="g" data-w="12%"></i></span><span class="scoren g">+0</span></div></div>
+
+      <!-- EVIDENCE — same cell system, strength bars -->
+      <div class="cellhead" style="border-top:1px solid var(--line)"><span class="h"><b>»</b> Evidence Signals</span><span class="meta">7 signals · 0/7 failed</span></div>
+      <div class="cell"><span class="ln">ev.01</span><span class="gl ok">✓</span><div class="main"><div class="k">Sanctions match</div><div class="d">0/7 failed · verified against OFAC SDN</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div></div>
+      <div class="cell"><span class="ln">ev.02</span><span class="gl ok">✓</span><div class="main"><div class="k">Blocklist presence</div><div class="d">absent from ScamSniffer feed</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div></div>
+      <div class="cell"><span class="ln">ev.03</span><span class="gl warn">▲</span><div class="main"><div class="k">Bytecode risk pattern</div><div class="d">self-destruct + delegatecall present</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="warn"></i><i class="warn"></i><i></i><i></i></span></div></div>
+      <div class="cell"><span class="ln">ev.04</span><span class="gl warn">▲</span><div class="main"><div class="k">Wallet maturity</div><div class="d">11 days · below 30d threshold</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="warn"></i><i></i><i></i></span></div></div>
+      <div class="cell"><span class="ln">ev.05</span><span class="gl ok">✓</span><div class="main"><div class="k">Counterparty reputation</div><div class="d">no flagged counterparties</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></div></div>
+      <div class="cell"><span class="ln">ev.06</span><span class="gl ok">✓</span><div class="main"><div class="k">Fund-flow tracing</div><div class="d">no mixer / bridge exposure</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div></div>
+      <div class="cell"><span class="ln">ev.07</span><span class="gl ok">✓</span><div class="main"><div class="k">On-chain identity</div><div class="d">ERC-8004 registered · consistent</div></div><div class="rt"><span class="bars build"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span></div></div>
+
+      <!-- PROOF METADATA — same cell system -->
+      <div class="cellhead" style="border-top:1px solid var(--line)"><span class="h"><b>»</b> Proof Metadata</span><span class="meta">sealed on-chain</span></div>
+      <div class="cell"><span class="ln">px.01</span><span class="gl cy">◇</span><div class="main"><div class="k">Lease</div></div><div class="rt"><span class="main"><span class="val cy">v11</span></span></div></div>
+      <div class="cell"><span class="ln">px.02</span><span class="gl cy">◇</span><div class="main"><div class="k">Proof ID</div></div><div class="rt"><span class="main"><span class="val cy">0x33419b…</span></span></div></div>
+      <div class="cell"><span class="ln">px.03</span><span class="gl cy">◇</span><div class="main"><div class="k">Storage root</div></div><div class="rt"><span class="main"><span class="val cy">0xf1766c…</span></span></div></div>
+      <div class="cell"><span class="ln">px.04</span><span class="gl ok">✓</span><div class="main"><div class="k">Gate</div></div><div class="rt"><span class="tag ok">ALLOWED</span></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 4 — LEADERBOARD ============ -->
+<div class="screen-label"><span class="num">04</span><span class="txt">Leaderboard · Live Scan Board</span><span class="rule"></span></div>
+<div class="wrap pad">
+  <div class="term">
+    <div class="term-bar">
+      <span class="lamps"><i class="lamp r"></i><i class="lamp y"></i><i class="lamp g"></i></span>
+      <span class="title"><b>sentinel</b>@0g — leaderboard --sort risk</span>
+      <span class="clock">stream · live</span>
+    </div>
+    <div class="term-body">
+      <div class="cmd"><span class="ps">&gt;</span><span><span class="ct">sentinel agents</span> <span class="flag">--board --limit 8</span></span></div>
+      <!-- column header uses cellhead grid manually -->
+      <div class="cell" style="background:var(--ink-2);border-bottom:1px solid var(--line)">
+        <span class="ln" style="color:var(--tx-lo);font-family:var(--disp);font-weight:700;letter-spacing:.14em">RANK</span>
+        <span class="gl na" style="color:var(--tx-lo)">·</span>
+        <div class="main"><div class="k" style="font-family:var(--disp);font-size:.62rem;letter-spacing:.14em;color:var(--tx-lo);text-transform:uppercase">Agent / Subject</div></div>
+        <div class="rt"><span class="dual"><span style="font-size:.58rem;letter-spacing:.1em;color:var(--tx-lo);text-transform:uppercase">Behav · Code · Gate · Ver</span></span></div>
+      </div>
+      <!-- 8 rows, same primitive -->
+      <div class="cell rankrow"><span class="rank">01</span><span class="gl ok">✓</span><div class="main"><div class="k">Helios Router <span class="src">SAFE</span></div><div class="subj">0x7a2e…9c01</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren g">20</span></div><div><div class="lab">Code</div><span class="scoren g">18</span></div><span class="tag ok">ALLOW</span><span class="scoren" style="color:var(--tx-lo)">v14</span></div></div></div>
+      <div class="cell rankrow"><span class="rank">02</span><span class="gl ok">✓</span><div class="main"><div class="k">Vega Settlement <span class="src">SAFE</span></div><div class="subj">0x11bd…04af</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren g">28</span></div><div><div class="lab">Code</div><span class="scoren g">24</span></div><span class="tag ok">ALLOW</span><span class="scoren" style="color:var(--tx-lo)">v09</span></div></div></div>
+      <div class="cell rankrow"><span class="rank">03</span><span class="gl warn">▲</span><div class="main"><div class="k">Nimbus Oracle <span class="src">CAUTION</span></div><div class="subj">0x93cc…7712</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren w">33</span></div><div><div class="lab">Code</div><span class="scoren w">31</span></div><span class="tag ok">ALLOW</span><span class="scoren" style="color:var(--tx-lo)">v06</span></div></div></div>
+      <div class="cell rankrow"><span class="rank">04</span><span class="gl warn">▲</span><div class="main"><div class="k">Atlas Keeper <span class="src">CAUTION</span></div><div class="subj">0x9f00…3527</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren w">39</span></div><div><div class="lab">Code</div><span class="scoren w">40</span></div><span class="tag ok">ALLOW</span><span class="scoren" style="color:var(--tx-lo)">v11</span></div></div></div>
+      <div class="cell rankrow"><span class="rank">05</span><span class="gl warn">▲</span><div class="main"><div class="k">Cygnus Vault <span class="src">CAUTION</span></div><div class="subj">0x2d41…8bc9</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren w">40</span></div><div><div class="lab">Code</div><span class="scoren w">37</span></div><span class="tag ok">ALLOW</span><span class="scoren" style="color:var(--tx-lo)">v08</span></div></div></div>
+      <div class="cell rankrow"><span class="rank">06</span><span class="gl warn">▲</span><div class="main"><div class="k">Orion Bridge <span class="src">CAUTION</span></div><div class="subj">0x55ee…12a3</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren w">48</span></div><div><div class="lab">Code</div><span class="scoren w">52</span></div><span class="tag warn">REVIEW</span><span class="scoren" style="color:var(--tx-lo)">v05</span></div></div></div>
+      <div class="cell rankrow"><span class="rank">07</span><span class="gl warn">▲</span><div class="main"><div class="k">Draco Exec <span class="src">CAUTION</span></div><div class="subj">0x8ab2…44f0</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren w">55</span></div><div><div class="lab">Code</div><span class="scoren w">49</span></div><span class="tag warn">REVIEW</span><span class="scoren" style="color:var(--tx-lo)">v03</span></div></div></div>
+      <div class="cell rankrow flagged"><span class="rank" style="color:var(--bad)">08</span><span class="gl hit">✕</span><div class="main"><div class="k" style="color:var(--bad)">Wraith Drainer <span class="src" style="color:var(--bad)">FLAGGED</span></div><div class="subj">0xdead…b00b</div></div><div class="rt"><div class="dual"><div><div class="lab">Behav</div><span class="scoren b">72</span></div><div><div class="lab">Code</div><span class="scoren b">88</span></div><span class="tag hit">DENY</span><span class="scoren" style="color:var(--tx-lo)">v01</span></div></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SCREEN 5 — AGENT DETAIL ============ -->
+<div class="screen-label"><span class="num">05</span><span class="txt">Agent Detail · Atlas Keeper · Attestation Log</span><span class="rule"></span></div>
+<div class="wrap pad">
+  <div class="term">
+    <div class="term-bar">
+      <span class="lamps"><i class="lamp r"></i><i class="lamp y"></i><i class="lamp g"></i></span>
+      <span class="title"><b>sentinel</b>@0g — agent atlas-keeper</span>
+      <span class="clock" id="clock2">14:22:31 UTC</span>
+    </div>
+    <div class="term-body">
+      <div class="cmd"><span class="ps">&gt;</span><span><span class="ct">sentinel agent</span> <span class="arg">atlas-keeper</span> <span class="flag">--history --attest</span></span></div>
+
+      <!-- verdict + compact riskreport reusing verdict-strip + cells -->
+      <div class="verdict-strip">
+        <div class="vword">CAUTION <span class="badgeflag">MILD</span></div>
+        <div></div>
+        <div class="scoreblock">
+          <div class="lab">Composite Risk</div>
+          <div class="big"><span class="count" data-to="39">0</span><span class="max">/100</span></div>
+          <div class="rep-bar"><i data-w="39%"></i></div>
+        </div>
+      </div>
+      <div class="dualcol">
+        <div>
+          <div class="cellhead"><span class="h"><b>»</b> Threat Intelligence</span></div>
+          <div class="cell"><span class="ln">ti.01</span><span class="gl ok">✓</span><div class="main"><div class="k">OFAC <span class="src">· sanctions</span></div></div><div class="rt"><span class="tag clr">CLEAR</span></div></div>
+          <div class="cell"><span class="ln">ti.02</span><span class="gl ok">✓</span><div class="main"><div class="k">ScamSniffer <span class="src">· blocklist</span></div></div><div class="rt"><span class="tag clr">CLEAR</span></div></div>
+        </div>
+        <div>
+          <div class="cellhead"><span class="h"><b>»</b> Contract Safety</span></div>
+          <div class="cell"><span class="ln">cs.01</span><span class="gl warn">▲</span><div class="main"><div class="k">Self-destruct</div><div class="d">contract can be destroyed</div></div><div class="rt"><span class="tag warn">FLAG</span></div></div>
+          <div class="cell"><span class="ln">cs.02</span><span class="gl warn">▲</span><div class="main"><div class="k">Delegatecall</div><div class="d">execution can be redirected</div></div><div class="rt"><span class="tag warn">FLAG</span></div></div>
+        </div>
+      </div>
+
+      <!-- v1 -> v11 attestation timeline as a log stream, same cell grid -->
+      <div class="cellhead" style="border-top:1px solid var(--line)"><span class="h"><b>»</b> Attestation Timeline <b style="color:var(--tx-lo)">v1 → v11</b></span><span class="meta">on-chain sealed</span></div>
+      <div class="logstream">
+        <div class="logline"><span class="ln">v01 · 08-19</span><span class="gl">◇</span><span class="msg">initial registration <b>ALLOWED</b> · risk 22 · 0x8a11…</span></div>
+        <div class="logline"><span class="ln">v04 · 08-24</span><span class="gl">◇</span><span class="msg">contract upgraded · self-destruct introduced <b>risk 31</b></span></div>
+        <div class="logline"><span class="ln">v07 · 08-28</span><span class="gl">◇</span><span class="msg">delegatecall pattern detected <b>risk 37</b> · gate ALLOWED</span></div>
+        <div class="logline"><span class="ln">v09 · 08-30</span><span class="gl">◇</span><span class="msg">rescan · counterparty set widened · <b>risk 38</b></span></div>
+        <div class="logline"><span class="ln">v11 · 09-02</span><span class="gl">◇</span><span class="msg">latest seal · <b>risk 39</b> · storage root 0xf1766c…</span></div>
+        <div class="logline live"><span class="ln">now · live</span><span class="gl">⟩</span><span class="msg">watching for next state change</span></div>
+      </div>
+      <div class="cell"><span class="ln">gate</span><span class="gl ok">✓</span><div class="main"><div class="k">Current gate decision</div></div><div class="rt"><span class="tag ok">ALLOWED</span></div></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap foot-inner">
+    <span class="fmk">0G Sentinel</span>
+    <span class="fnet">SOC terminal · Chain ID 16661 · Newton testnet</span>
+    <a href="#" class="flink">View on 0G Explorer →</a>
+  </div>
+</footer>
+
+<script>
+const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* count-up risk scores */
+function runCount(el){
+  const to = +el.dataset.to; if(reduce){el.textContent=to;return;}
+  let cur=0; const step=Math.max(1,Math.round(to/34));
+  const t=setInterval(()=>{cur+=step; if(cur>=to){cur=to;clearInterval(t);} el.textContent=cur;},26);
+}
+/* fill bars/tracks */
+function fill(el){ if(reduce){el.style.width=el.dataset.w;return;} requestAnimationFrame(()=>{el.style.width=el.dataset.w;}); }
+
+const io = new IntersectionObserver((ents)=>{
+  ents.forEach(e=>{
+    if(!e.isIntersecting) return;
+    e.target.querySelectorAll('.count').forEach(runCount);
+    e.target.querySelectorAll('[data-w]').forEach(fill);
+    io.unobserve(e.target);
+  });
+},{threshold:.2});
+document.querySelectorAll('.term, .verdict-strip').forEach(el=>io.observe(el));
+
+/* typewriter headline: cycle the target phrase */
+const typer = document.getElementById('typer');
+if(typer && !reduce){
+  const phrase = 'safe to trust?';
+  typer.textContent = '';
+  let i=0;
+  (function tick(){
+    if(i<=phrase.length){ typer.textContent = phrase.slice(0,i); i++; setTimeout(tick,70); }
+  })();
+}
+
+/* live UTC-ish clocks ticking */
+function tickClock(id){
+  const el=document.getElementById(id); if(!el||reduce) return;
+  let base = el.textContent.match(/(\d+):(\d+):(\d+)/);
+  let s = base ? (+base[1]*3600 + +base[2]*60 + +base[3]) : 51727;
+  setInterval(()=>{ s=(s+1)%86400;
+    const h=String(Math.floor(s/3600)).padStart(2,'0');
+    const m=String(Math.floor(s%3600/60)).padStart(2,'0');
+    const sec=String(s%60).padStart(2,'0');
+    el.textContent=`${h}:${m}:${sec} UTC`;
+  },1000);
+}
+tickClock('clock1'); tickClock('clock2');
+</script>
+</body>
+</html>

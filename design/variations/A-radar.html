@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>0G Sentinel — Radar Observatory (Variation A)</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   0G Sentinel — Variation A · RADAR-CENTRIC
+   Mission-control observatory. The sonar sweep is the hero and a
+   recurring section motif. One signal cyan, verdict semantics
+   reserved. Palette + components honor v1-radar-globals.css.
+═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* ink base — cool blue-black */
+  --ink-0: #050810;
+  --ink-1: #070b14;
+  --ink-2: #0a1120;
+  --ink-3: #0e1728;
+  --ink-4: #131e33;
+  --line: rgba(6, 182, 212, 0.12);
+  --line-soft: rgba(148, 176, 205, 0.10);
+  --grid: rgba(6, 182, 212, 0.055);
+
+  /* brand — signal cyan, variety from opacity */
+  --cy: #06b6d4;
+  --cy-55: rgba(6, 182, 212, 0.55);
+  --cy-32: rgba(6, 182, 212, 0.32);
+  --cy-18: rgba(6, 182, 212, 0.18);
+  --cy-12: rgba(6, 182, 212, 0.12);
+  --cy-06: rgba(6, 182, 212, 0.06);
+
+  /* verdict semantics */
+  --good: #10b981;
+  --warn: #fbbf24;
+  --bad: #f43f5e;
+  --good-12: rgba(16, 185, 129, 0.12);
+  --warn-12: rgba(251, 191, 36, 0.12);
+  --bad-12: rgba(244, 63, 94, 0.12);
+  --bad-32: rgba(244, 63, 94, 0.32);
+
+  /* text */
+  --tx-hi: #e8eef6;
+  --tx-mid: #9db0c6;
+  --tx-lo: #5c6f88;
+  --tx-dim: #3b4a60;
+
+  --r-1: 4px; --r-2: 8px; --r-3: 12px; --r-4: 18px;
+
+  --fs-display: clamp(2.1rem, 5.4vw, 4.15rem);
+  --fs-h2: clamp(1.35rem, 2.8vw, 2.05rem);
+  --fs-h3: clamp(1.05rem, 1.8vw, 1.3rem);
+  --fs-body: 0.975rem;
+  --fs-sm: 0.83rem;
+  --fs-xs: 0.72rem;
+  --fs-mono: 0.8rem;
+
+  --font-display: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", monospace;
+
+  --maxw: 1200px;
+  --focus: 0 0 0 2px var(--ink-0), 0 0 0 4px #06b6d4;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--ink-0);
+  color: var(--tx-mid);
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  position: relative;
+}
+.texture {
+  position: fixed; inset: 0; z-index: 1; pointer-events: none;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(6,182,212,0.018) 0px, rgba(6,182,212,0.018) 1px, transparent 1px, transparent 3px);
+  opacity: 0.5;
+}
+.texture::after {
+  content: ""; position: absolute; inset: 0;
+  background-image: radial-gradient(rgba(148,176,205,0.035) 0.5px, transparent 0.5px);
+  background-size: 3px 3px;
+}
+::selection { background: var(--cy-32); color: var(--tx-hi); }
+a { color: var(--cy); text-decoration: none; }
+.mono { font-family: var(--font-mono); font-size: var(--fs-mono); letter-spacing: -0.01em; }
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; position: relative; z-index: 2; }
+
+.eyebrow {
+  font-family: var(--font-display); font-size: var(--fs-xs);
+  letter-spacing: 0.28em; text-transform: uppercase; color: var(--cy-55);
+  font-weight: 600; display: inline-flex; align-items: center; gap: 8px;
+}
+.eyebrow::before { content: ""; width: 18px; height: 1px; background: var(--cy-32); }
+h1, h2, h3 { font-family: var(--font-display); color: var(--tx-hi); font-weight: 700; line-height: 1.08; }
+
+/* ── scope glyph: recurring radar section marker ── */
+.scope-glyph {
+  width: 26px; height: 26px; flex: none; position: relative;
+  border: 1px solid var(--cy-32); border-radius: 50%; overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, rgba(6,182,212,0.12), transparent 60%);
+}
+.scope-glyph::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--cy-55) 0deg, transparent 55deg, transparent 360deg);
+  animation: sweep 3.2s linear infinite;
+  mask-image: radial-gradient(circle, #000 99%, transparent 100%);
+}
+.scope-glyph::after {
+  content: ""; position: absolute; top: 50%; left: 50%; width: 4px; height: 4px;
+  background: var(--cy); border-radius: 50%; transform: translate(-50%,-50%);
+  box-shadow: 0 0 6px var(--cy);
+}
+
+/* ── mockup screen frame chrome ── */
+.mock-label {
+  max-width: var(--maxw); margin: 0 auto; padding: 46px 24px 14px;
+  display: flex; align-items: center; gap: 14px; position: relative; z-index: 2;
+}
+.mock-label .idx {
+  font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--cy);
+  border: 1px solid var(--cy-32); background: var(--cy-06);
+  padding: 4px 10px; border-radius: 999px; letter-spacing: 0.08em;
+}
+.mock-label .txt {
+  font-family: var(--font-display); font-weight: 700; font-size: var(--fs-sm);
+  color: var(--tx-hi); letter-spacing: 0.14em; text-transform: uppercase;
+}
+.mock-label .rule { flex: 1; height: 1px; background: var(--line); }
+.mock-frame {
+  border: 1px solid var(--line); border-radius: var(--r-4);
+  overflow: hidden; margin: 0 24px 12px; max-width: calc(var(--maxw) + 0px);
+  margin-left: auto; margin-right: auto; width: calc(100% - 48px);
+  box-shadow: 0 0 90px -50px var(--cy-55);
+  background: var(--ink-0); position: relative; z-index: 2;
+}
+
+/* ============ TOPBAR ============ */
+.topbar {
+  background: rgba(5, 8, 16, 0.82);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(14px) saturate(1.2);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+.topbar-inner {
+  padding: 0 24px; height: 62px; display: flex; align-items: center; gap: 20px;
+}
+.wordmark {
+  font-family: var(--font-display); font-weight: 700; font-size: 1.02rem;
+  color: var(--tx-hi); letter-spacing: 0.02em; display: flex; align-items: center; gap: 9px;
+  white-space: nowrap;
+}
+.wordmark .mk {
+  width: 22px; height: 22px; flex: none; position: relative;
+  border: 1.5px solid var(--cy-55); border-radius: 50%;
+  display: grid; place-items: center; overflow: hidden;
+}
+.wordmark .mk::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, var(--cy-55) 0deg, transparent 60deg, transparent 360deg);
+  animation: sweep 3.6s linear infinite;
+}
+.wordmark .mk::after {
+  content: ""; width: 4px; height: 4px; border-radius: 50%; background: var(--cy);
+  box-shadow: 0 0 8px var(--cy); position: relative;
+}
+.nav { display: flex; gap: 4px; margin-left: auto; }
+.nav a {
+  font-family: var(--font-display); font-size: var(--fs-sm); font-weight: 500;
+  color: var(--tx-mid); padding: 7px 13px; border-radius: var(--r-2);
+  letter-spacing: 0.04em; transition: color .15s, background .15s, transform .15s;
+}
+.nav a.active { color: var(--tx-hi); background: var(--cy-06); }
+.nav a:hover { color: var(--tx-hi); background: var(--cy-06); transform: translateY(-1px); }
+.nav a:focus-visible { outline: none; box-shadow: var(--focus); }
+.status-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  font-family: var(--font-mono); font-size: var(--fs-xs);
+  color: var(--tx-mid); border: 1px solid var(--line);
+  background: var(--ink-2); padding: 6px 11px; border-radius: 999px;
+  letter-spacing: 0.02em; white-space: nowrap;
+}
+.status-pill .dot {
+  width: 7px; height: 7px; border-radius: 50%; background: var(--good);
+  animation: beacon 2.4s infinite;
+}
+@keyframes beacon {
+  0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.45); }
+  70% { box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+  100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); }
+}
+
+/* ============ HERO ============ */
+.hero {
+  position: relative; border-bottom: 1px solid var(--line);
+  background:
+    radial-gradient(ellipse 900px 520px at 78% 42%, var(--cy-06), transparent 62%),
+    var(--ink-0);
+  overflow: hidden;
+}
+.hero-grid {
+  position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 46px 46px;
+  mask-image: radial-gradient(ellipse 80% 70% at 62% 45%, #000 30%, transparent 78%);
+}
+.hero-inner {
+  padding: 68px 40px 74px; position: relative; z-index: 2;
+  display: grid; grid-template-columns: 1.02fr 0.98fr; gap: 54px; align-items: center;
+}
+.hero-copy .eyebrow { margin-bottom: 20px; }
+.hero h1 {
+  font-size: var(--fs-display); letter-spacing: -0.015em; margin-bottom: 20px; max-width: 15ch;
+}
+.hero h1 .accent { color: var(--cy); position: relative; }
+.hero h1 .accent::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0.08em; height: 3px;
+  background: linear-gradient(90deg, var(--cy), transparent); opacity: 0.6;
+}
+.hero-body { font-size: 1.02rem; color: var(--tx-mid); max-width: 48ch; margin-bottom: 26px; line-height: 1.68; }
+.scan-hero-row { display: flex; gap: 12px; margin-bottom: 16px; max-width: 560px; flex-wrap: wrap; }
+.scan-input {
+  flex: 1; min-width: 220px; background: var(--ink-0); border: 1px solid var(--line);
+  border-radius: var(--r-2); padding: 13px 16px; color: var(--tx-hi);
+  font-family: var(--font-mono); font-size: 0.86rem; letter-spacing: 0.01em;
+  transition: border-color .15s, box-shadow .15s;
+}
+.scan-input::placeholder { color: var(--tx-dim); }
+.scan-input:focus-visible { outline: none; border-color: var(--cy-32); box-shadow: var(--focus); }
+.btn {
+  font-family: var(--font-display); font-weight: 600; font-size: var(--fs-sm);
+  letter-spacing: 0.03em; padding: 12px 20px; border-radius: var(--r-2);
+  cursor: pointer; border: 1px solid transparent;
+  transition: transform .16s, box-shadow .16s, background .16s, border-color .16s;
+  display: inline-flex; align-items: center; gap: 8px;
+}
+.btn-primary { background: var(--cy); color: #04121a; box-shadow: 0 0 0 1px var(--cy-55), 0 0 22px -6px var(--cy-55); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 0 1px var(--cy), 0 0 30px -4px var(--cy-55); }
+.btn:focus-visible { outline: none; box-shadow: var(--focus); }
+.cap-line { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); letter-spacing: 0.02em; }
+.cap-line b { color: var(--cy-55); font-weight: 500; }
+
+/* ---- THE RADAR (signature hero) ---- */
+.radar-stage { position: relative; aspect-ratio: 1 / 1; width: 100%; max-width: 440px; margin: 0 auto; justify-self: end; }
+.radar-stage.compact { max-width: 240px; }
+.radar {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, rgba(6,182,212,0.10), transparent 58%), var(--ink-1);
+  border: 1px solid var(--cy-32);
+  box-shadow: inset 0 0 60px -20px var(--cy-55), 0 0 0 1px rgba(6,182,212,0.06), 0 0 90px -30px var(--cy-55);
+  overflow: hidden;
+}
+.ring { position: absolute; border: 1px solid var(--cy-12); border-radius: 50%; top: 50%; left: 50%; transform: translate(-50%,-50%); }
+.ring.r1 { width: 25%; height: 25%; }
+.ring.r2 { width: 50%; height: 50%; }
+.ring.r3 { width: 75%; height: 75%; }
+.ring.r4 { width: 98%; height: 98%; border-color: var(--cy-32); }
+.cross-h, .cross-v { position: absolute; background: var(--cy-12); top: 50%; left: 50%; }
+.cross-h { width: 98%; height: 1px; transform: translate(-50%,-50%); }
+.cross-v { height: 98%; width: 1px; transform: translate(-50%,-50%); }
+.sweep {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(6,182,212,0.34) 0deg, rgba(6,182,212,0.05) 26deg, transparent 46deg, transparent 360deg);
+  animation: sweep 4.6s linear infinite;
+  mask-image: radial-gradient(circle, #000 99%, transparent 100%);
+}
+.sweep-line {
+  position: absolute; top: 50%; left: 50%; width: 50%; height: 1.5px;
+  background: linear-gradient(90deg, transparent, var(--cy));
+  transform-origin: left center; box-shadow: 0 0 8px var(--cy-55);
+  transform: translate(0,-50%); animation: sweepline 4.6s linear infinite;
+}
+@keyframes sweep { to { transform: rotate(360deg); } }
+@keyframes sweepline { to { transform: translate(0,-50%) rotate(360deg); } }
+.blip { position: absolute; width: 8px; height: 8px; border-radius: 50%; transform: translate(-50%,-50%); background: var(--cy); box-shadow: 0 0 8px var(--cy-55); }
+.blip.faint { width: 5px; height: 5px; background: var(--cy-55); box-shadow: 0 0 5px var(--cy-32); opacity: 0.7; }
+.blip.hot { background: var(--bad); box-shadow: 0 0 0 0 rgba(244,63,94,0.6); animation: hotpulse 1.8s ease-out infinite; }
+.blip.warm { background: var(--warn); box-shadow: 0 0 8px rgba(251,191,36,0.6); }
+@keyframes hotpulse {
+  0% { box-shadow: 0 0 0 0 rgba(244,63,94,0.55); }
+  70% { box-shadow: 0 0 0 9px rgba(244,63,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(244,63,94,0); }
+}
+.radar-center { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: var(--cy); border-radius: 50%; transform: translate(-50%,-50%); box-shadow: 0 0 10px var(--cy); }
+.radar-readout { position: absolute; z-index: 3; font-family: var(--font-mono); font-size: 0.62rem; color: var(--cy-55); letter-spacing: 0.04em; }
+.radar-readout.tl { top: 6%; left: 7%; }
+.radar-readout.br { bottom: 6%; right: 7%; text-align: right; }
+.radar-badge {
+  position: absolute; z-index: 4; bottom: -12px; left: 50%; transform: translateX(-50%);
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: 0.68rem; color: var(--tx-mid);
+  background: var(--ink-2); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; white-space: nowrap;
+}
+.radar-badge b { color: var(--warn); font-weight: 500; }
+
+/* ============ SECTION SHELL ============ */
+section { position: relative; }
+.sec-head { margin-bottom: 30px; display: flex; align-items: flex-start; gap: 14px; }
+.sec-head .scope-glyph { margin-top: 4px; }
+.sec-head h2 { font-size: var(--fs-h2); letter-spacing: -0.01em; }
+.sec-head .eyebrow { margin-bottom: 8px; }
+.sec-head p { color: var(--tx-lo); font-size: var(--fs-sm); margin-top: 8px; max-width: 54ch; }
+.pad { padding: 60px 40px; }
+
+/* ============ SCAN RESULT / REPORT ============ */
+.report-shell { background: var(--ink-1); }
+.verdict-banner {
+  display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  padding: 22px 24px; border: 1px solid rgba(251,191,36,0.3); border-radius: var(--r-4);
+  background: linear-gradient(180deg, rgba(251,191,36,0.06), var(--ink-2));
+  box-shadow: inset 0 0 50px -34px var(--warn); margin-bottom: 20px;
+}
+.verdict-scope {
+  width: 74px; height: 74px; flex: none; position: relative; border-radius: 50%;
+  border: 1px solid rgba(251,191,36,0.4); overflow: hidden;
+  background: radial-gradient(circle at 50% 50%, rgba(251,191,36,0.12), transparent 62%), var(--ink-0);
+}
+.verdict-scope::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(251,191,36,0.5) 0deg, transparent 50deg, transparent 360deg);
+  animation: sweep 4.2s linear infinite; mask-image: radial-gradient(circle, #000 99%, transparent 100%);
+}
+.verdict-scope::after { content: ""; position: absolute; top:50%; left:50%; width:5px; height:5px; background: var(--warn); border-radius:50%; transform: translate(-50%,-50%); box-shadow: 0 0 8px var(--warn); }
+.verdict-main { flex: 1; min-width: 220px; }
+.verdict-word { font-family: var(--font-display); font-weight: 700; font-size: 1.9rem; letter-spacing: 0.05em; color: var(--warn); line-height: 1; }
+.verdict-sub { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx-mid); margin-top: 8px; max-width: 62ch; line-height: 1.55; }
+.verdict-score { text-align: right; flex: none; }
+.verdict-score .n { font-family: var(--font-mono); font-weight: 700; font-size: 2.6rem; color: var(--warn); line-height: 1; }
+.verdict-score .n .max { font-size: 1rem; color: var(--tx-lo); }
+.verdict-score .lb { font-family: var(--font-display); font-size: var(--fs-xs); letter-spacing: 0.14em; text-transform: uppercase; color: var(--tx-lo); margin-top: 6px; }
+
+.rep-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+.panel { border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; background: var(--ink-0); }
+.panel-head {
+  padding: 13px 20px; border-bottom: 1px solid var(--line-soft);
+  font-family: var(--font-display); font-size: var(--fs-xs); letter-spacing: 0.14em;
+  text-transform: uppercase; color: var(--tx-lo); display: flex; align-items: center; gap: 10px;
+}
+.panel-body { padding: 18px 20px; }
+
+/* threat intel source badges */
+.source-row { display: flex; flex-wrap: wrap; gap: 10px; }
+.src {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-family: var(--font-mono); font-size: var(--fs-xs); letter-spacing: 0.02em;
+  padding: 8px 13px; border-radius: 999px; border: 1px solid var(--line-soft); background: var(--ink-2);
+}
+.src .nm { color: var(--tx-hi); font-family: var(--font-display); font-weight: 600; }
+.src .st { display: inline-flex; align-items: center; gap: 5px; }
+.src.clear .st { color: var(--good); }
+.src.clear .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 6px var(--good); }
+.src.na { opacity: 0.72; }
+.src.na .st { color: var(--tx-lo); }
+.src.na .st::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--tx-dim); }
+
+/* contract safety chips */
+.chip-note { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); margin-bottom: 12px; word-break: break-all; }
+.chip-note b { color: var(--tx-mid); font-weight: 400; }
+.chips { display: flex; flex-direction: column; gap: 10px; }
+.chip {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.5;
+  padding: 10px 13px; border-radius: var(--r-2);
+  color: var(--bad); background: var(--bad-12); border: 1px solid var(--bad-32);
+}
+.chip .ic { flex: none; font-weight: 700; }
+.chip .cx { color: var(--tx-mid); }
+.chip b { color: var(--bad); font-family: var(--font-display); font-weight: 600; letter-spacing: 0.02em; }
+
+/* key factors */
+.factors { list-style: none; display: grid; gap: 2px; }
+.factors li {
+  display: flex; align-items: flex-start; gap: 12px;
+  padding: 12px 0; border-bottom: 1px solid var(--line-soft);
+  font-size: var(--fs-sm); color: var(--tx-mid);
+}
+.factors li:last-child { border-bottom: none; }
+.factors li .mark { flex: none; margin-top: 1px; width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-family: var(--font-mono); font-size: 0.6rem; font-weight: 700; }
+.factors li.neg .mark { color: var(--warn); background: var(--warn-12); border: 1px solid rgba(251,191,36,0.3); }
+.factors li.pos .mark { color: var(--good); background: var(--good-12); border: 1px solid rgba(16,185,129,0.3); }
+
+/* evidence expandable */
+.evidence { border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; margin-bottom: 20px; }
+.evidence > summary {
+  list-style: none; cursor: pointer; padding: 15px 20px;
+  display: flex; align-items: center; gap: 12px;
+  font-family: var(--font-display); font-size: var(--fs-sm); font-weight: 600; color: var(--tx-hi);
+  background: var(--ink-2); letter-spacing: 0.02em;
+}
+.evidence > summary::-webkit-details-marker { display: none; }
+.evidence > summary .caret { margin-left: auto; color: var(--cy); font-family: var(--font-mono); transition: transform .2s; }
+.evidence[open] > summary .caret { transform: rotate(90deg); }
+.evidence > summary .ct { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); }
+.sig { display: grid; grid-template-columns: 1fr 120px 96px; align-items: center; gap: 16px; padding: 14px 20px; border-top: 1px solid var(--line-soft); }
+.sig .sig-nm { font-size: var(--fs-sm); color: var(--tx-hi); }
+.sig .sig-nm span { display: block; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); margin-top: 3px; }
+.strength { height: 6px; border-radius: 999px; background: var(--ink-3); overflow: hidden; }
+.strength > i { display: block; height: 100%; border-radius: 999px; }
+.sig .res { font-family: var(--font-mono); font-size: var(--fs-xs); text-align: right; color: var(--good); }
+
+/* proof metadata */
+.kv { display: grid; grid-template-columns: minmax(140px, 200px) 1fr; gap: 10px; padding: 12px 20px; border-bottom: 1px solid var(--line-soft); align-items: center; }
+.kv:last-child { border-bottom: none; }
+.kv .kk { font-family: var(--font-display); font-size: var(--fs-sm); font-weight: 500; color: var(--tx-lo); letter-spacing: 0.02em; }
+.kv .vv { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--tx-mid); word-break: break-all; text-align: right; }
+.kv .vv.cy { color: var(--cy); }
+.kv .vv.good { color: var(--good); }
+.gate-tag { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--good); border: 1px solid rgba(16,185,129,0.3); background: var(--good-12); padding: 3px 10px; border-radius: 999px; }
+.gate-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--good); box-shadow: 0 0 6px var(--good); }
+
+/* ============ LEADERBOARD ============ */
+.board { border: 1px solid var(--line); border-radius: var(--r-4); overflow: hidden; background: var(--ink-1); }
+.board table { width: 100%; border-collapse: collapse; }
+.board thead th {
+  font-family: var(--font-display); font-size: var(--fs-xs); font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase; color: var(--tx-lo);
+  text-align: left; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--ink-2);
+}
+.board thead th.num { text-align: right; }
+.board tbody td { padding: 15px 16px; border-bottom: 1px solid var(--line-soft); vertical-align: middle; }
+.board tbody tr:last-child td { border-bottom: none; }
+.board tbody tr { transition: background .18s; }
+.board tbody tr:hover { background: var(--cy-06); }
+.board tbody tr.hi { background: rgba(244,63,94,0.05); }
+.board tbody tr.hi:hover { background: rgba(244,63,94,0.09); }
+.board tbody tr.hi td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.rank { font-family: var(--font-mono); font-size: 0.9rem; color: var(--tx-lo); width: 48px; }
+.rank b { color: var(--tx-hi); }
+.agent-cell .nm { font-family: var(--font-display); font-weight: 600; color: var(--tx-hi); font-size: var(--fs-sm); }
+.agent-cell .nm a { color: inherit; }
+.agent-cell .nm a:hover { color: var(--cy); }
+.agent-cell .ad { font-family: var(--font-mono); font-size: 0.72rem; color: var(--tx-lo); margin-top: 2px; }
+.subj { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-mid); }
+.risk-cell { min-width: 140px; }
+.score-wrap { display: flex; align-items: center; gap: 10px; }
+.score-num { font-family: var(--font-mono); font-size: 0.82rem; width: 30px; flex: none; text-align: right; }
+.score-track { flex: 1; height: 6px; border-radius: 999px; background: var(--ink-3); overflow: hidden; min-width: 44px; }
+.score-fill { height: 100%; border-radius: 999px; }
+.f-good { color: var(--good); } .f-warn { color: var(--warn); } .f-bad { color: var(--bad); }
+.bg-good { background: var(--good); } .bg-warn { background: var(--warn); } .bg-bad { background: var(--bad); }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-display); font-weight: 600; font-size: var(--fs-xs);
+  letter-spacing: 0.06em; padding: 5px 11px; border-radius: 999px; white-space: nowrap;
+}
+.badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.badge.b-flag { color: var(--bad); background: var(--bad-12); border: 1px solid var(--bad-32); }
+.badge.b-caut { color: var(--warn); background: var(--warn-12); border: 1px solid rgba(251,191,36,0.3); }
+.badge.b-safe { color: var(--good); background: var(--good-12); border: 1px solid rgba(16,185,129,0.3); }
+.ver-cell { font-family: var(--font-mono); font-size: 0.72rem; color: var(--tx-lo); }
+
+/* ============ AGENT DETAIL ============ */
+.detail-head { display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 30px; align-items: center; margin-bottom: 30px; }
+.trust-line { font-family: var(--font-display); font-size: clamp(1.4rem, 3vw, 2.1rem); font-weight: 700; color: var(--tx-hi); letter-spacing: -0.01em; line-height: 1.15; }
+.trust-line .warn-w { color: var(--warn); }
+.trust-meta { font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--tx-lo); margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.trust-meta b { color: var(--tx-mid); font-weight: 400; }
+
+/* attestation timeline */
+.timeline-panel { border: 1px solid var(--line); border-radius: var(--r-4); background: var(--ink-1); padding: 22px 24px; margin-top: 20px; }
+.timeline-head { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; font-family: var(--font-display); font-size: var(--fs-xs); letter-spacing: 0.14em; text-transform: uppercase; color: var(--tx-lo); }
+.timeline { display: flex; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; gap: 0; }
+.tl-node { flex: none; min-width: 92px; text-align: center; position: relative; }
+.tl-node::before { content: ""; position: absolute; top: 8px; left: 50%; width: 100%; height: 1px; background: var(--cy-18); z-index: 0; }
+.tl-node:last-child::before { display: none; }
+.tl-node .dot { position: relative; z-index: 1; width: 16px; height: 16px; border-radius: 50%; background: var(--ink-0); border: 2px solid var(--cy-32); margin: 0 auto 10px; }
+.tl-node.live .dot { border-color: var(--warn); background: var(--warn); box-shadow: 0 0 10px var(--warn); }
+.tl-node.done .dot { border-color: var(--cy); background: var(--cy); }
+.tl-node .v { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-mid); }
+.tl-node.live .v { color: var(--warn); }
+.tl-node .s { font-family: var(--font-mono); font-size: 0.62rem; color: var(--tx-dim); margin-top: 3px; }
+
+/* ============ FOOTER ============ */
+.page-foot { border-top: 1px solid var(--line); background: var(--ink-1); padding: 30px 40px; margin-top: 20px; }
+.foot-inner { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.foot-inner .fmk { font-family: var(--font-display); font-weight: 700; color: var(--tx-hi); font-size: 0.95rem; display: flex; align-items: center; gap: 9px; }
+.foot-inner .fnet { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--tx-lo); }
+.foot-inner .flink { margin-left: auto; font-family: var(--font-display); font-size: var(--fs-sm); font-weight: 600; color: var(--cy); }
+
+/* ============ RESPONSIVE ============ */
+@media (max-width: 940px) {
+  .hero-inner { grid-template-columns: 1fr; gap: 44px; padding: 54px 24px; }
+  .radar-stage { order: -1; max-width: 340px; }
+  .rep-grid { grid-template-columns: 1fr; }
+  .detail-head { grid-template-columns: 1fr; }
+  .sig { grid-template-columns: 1fr 90px; }
+  .sig .res { grid-column: 2; }
+}
+@media (max-width: 620px) {
+  .nav { display: none; }
+  .status-pill { margin-left: auto; }
+  .pad { padding: 44px 18px; }
+  .mock-frame { width: calc(100% - 24px); margin: 0 12px 12px; }
+  .board .subj, .board thead th:nth-child(3) { display: none; }
+  .verdict-score { text-align: left; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+</head>
+<body>
+<div class="texture"></div>
+
+<!-- ══════════════════ 1. TOP NAV ══════════════════ -->
+<div class="mock-label">
+  <span class="idx">SCREEN 01</span>
+  <span class="txt">Top Navigation</span>
+  <span class="rule"></span>
+</div>
+<div class="mock-frame">
+  <div class="topbar">
+    <div class="topbar-inner">
+      <div class="wordmark"><span class="mk"></span>0G&nbsp;Sentinel</div>
+      <nav class="nav">
+        <a href="#" class="active">Overview</a>
+        <a href="#">Scan</a>
+        <a href="#">Agents</a>
+        <a href="#">Verify</a>
+      </nav>
+      <span class="status-pill"><span class="dot"></span>Chain ID 16661</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 2. HOMEPAGE HERO ══════════════════ -->
+<div class="mock-label">
+  <span class="idx">SCREEN 02</span>
+  <span class="txt">Homepage — Hero</span>
+  <span class="rule"></span>
+</div>
+<div class="mock-frame">
+  <section class="hero">
+    <div class="hero-grid"></div>
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <div class="eyebrow">Agent Trust Observatory</div>
+        <h1>Is this agent <span class="accent">safe to trust?</span></h1>
+        <p class="hero-body">Scan any AI agent on 0G. We check it against real sanctions and scam-blocklist intelligence, read its contract code, and seal the verdict on-chain.</p>
+        <div class="scan-hero-row">
+          <input class="scan-input" type="text" value="0x3527152" placeholder="Agent ID, address, or contract…" aria-label="Scan target">
+          <button class="btn btn-primary">Scan agent →</button>
+        </div>
+        <p class="cap-line"><b>OFAC</b> · <b>Chainalysis</b> · <b>ScamSniffer</b> · contract bytecode analysis</p>
+      </div>
+
+      <div class="radar-stage">
+        <div class="radar">
+          <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span><span class="ring r4"></span>
+          <span class="cross-h"></span><span class="cross-v"></span>
+          <span class="sweep"></span>
+          <span class="sweep-line"></span>
+          <span class="radar-center"></span>
+          <span class="blip" style="top:34%;left:62%"></span>
+          <span class="blip faint" style="top:58%;left:40%"></span>
+          <span class="blip faint" style="top:44%;left:29%"></span>
+          <span class="blip warm" style="top:66%;left:68%"></span>
+          <span class="blip hot" style="top:26%;left:44%"></span>
+          <span class="radar-readout tl">SWEEP 04.6s<br>SECTOR NE</span>
+          <span class="radar-readout br">TARGETS · 5<br>GATE · LIVE</span>
+        </div>
+        <span class="radar-badge">CONTACT <b>#3527152</b> · caution</span>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════ 3. SCAN RESULT — RiskReport ══════════════════ -->
+<div class="mock-label">
+  <span class="idx">SCREEN 03</span>
+  <span class="txt">Scan Result — RiskReport</span>
+  <span class="rule"></span>
+</div>
+<div class="mock-frame">
+  <section class="report-shell">
+    <div class="pad">
+      <div class="sec-head">
+        <span class="scope-glyph"></span>
+        <div>
+          <div class="eyebrow">Verdict</div>
+          <h2 style="margin-top:6px">Agent #3527152</h2>
+        </div>
+      </div>
+
+      <!-- verdict banner -->
+      <div class="verdict-banner">
+        <div class="verdict-scope"></div>
+        <div class="verdict-main">
+          <div class="verdict-word">CAUTION</div>
+          <p class="verdict-sub">This wallet appears low-risk with no sanctions or scam flags, but its newness and concentrated activity warrant mild caution.</p>
+        </div>
+        <div class="verdict-score">
+          <div class="n">39<span class="max">/100</span></div>
+          <div class="lb">Risk Score</div>
+        </div>
+      </div>
+
+      <!-- intel + contract panels -->
+      <div class="rep-grid">
+        <div class="panel">
+          <div class="panel-head"><span class="scope-glyph" style="width:18px;height:18px"></span>Threat Intelligence</div>
+          <div class="panel-body">
+            <div class="source-row">
+              <span class="src clear"><span class="nm">OFAC</span><span class="st">✓ CLEAR</span></span>
+              <span class="src na"><span class="nm">Chainalysis</span><span class="st">— n/a</span></span>
+              <span class="src clear"><span class="nm">ScamSniffer</span><span class="st">✓ CLEAR</span></span>
+            </div>
+            <p class="chip-note" style="margin-top:14px">Cross-checked against sanctioned-entity and scam-blocklist feeds. No matches across active sources.</p>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head"><span class="scope-glyph" style="width:18px;height:18px"></span>Contract Safety</div>
+          <div class="panel-body">
+            <p class="chip-note">Bytecode analyzed · <b>0x8a3f…c012</b> · 2 patterns flagged</p>
+            <div class="chips">
+              <div class="chip"><span class="ic">⚠</span><span class="cx"><b>Self-destruct</b> — contract can be destroyed</span></div>
+              <div class="chip"><span class="ic">⚠</span><span class="cx"><b>Delegatecall</b> — execution can be redirected</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- key factors -->
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head">Key Factors</div>
+        <div class="panel-body" style="padding:6px 20px">
+          <ul class="factors">
+            <li class="neg"><span class="mark">!</span>New address with limited on-chain history</li>
+            <li class="neg"><span class="mark">!</span>Most activity flows to a single counterparty</li>
+            <li class="pos"><span class="mark">✓</span>No unlimited approvals or drain patterns</li>
+            <li class="pos"><span class="mark">✓</span>No sanctions or scam flags</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- evidence expandable -->
+      <details class="evidence" open>
+        <summary><span class="scope-glyph" style="width:18px;height:18px"></span>Evidence <span class="ct">(7 signals · 0/7 failed)</span><span class="caret">›</span></summary>
+        <div class="sig">
+          <div class="sig-nm">Address age &lt; 30 days<span>first_seen · 18 days ago</span></div>
+          <div class="strength"><i class="bg-warn" style="width:64%"></i></div>
+          <div class="res f-warn">contributes +14</div>
+        </div>
+        <div class="sig">
+          <div class="sig-nm">Counterparty concentration<span>top peer receives 81% of outflow</span></div>
+          <div class="strength"><i class="bg-warn" style="width:71%"></i></div>
+          <div class="res f-warn">contributes +11</div>
+        </div>
+        <div class="sig">
+          <div class="sig-nm">Approval hygiene<span>no unlimited approvals · 0 revocations pending</span></div>
+          <div class="strength"><i class="bg-good" style="width:22%"></i></div>
+          <div class="res f-good">0/7 failed</div>
+        </div>
+      </details>
+
+      <!-- proof metadata -->
+      <div class="panel">
+        <div class="panel-head"><span class="scope-glyph" style="width:18px;height:18px"></span>Proof Metadata — Sealed On-Chain</div>
+        <div class="kv"><span class="kk">Lease</span><span class="vv cy">v11</span></div>
+        <div class="kv"><span class="kk">Proof ID</span><span class="vv">0x33419b…a7e2</span></div>
+        <div class="kv"><span class="kk">Storage root</span><span class="vv">0xf1766c…9d40</span></div>
+        <div class="kv"><span class="kk">Gate</span><span class="vv" style="text-align:right"><span class="gate-tag">ALLOWED</span></span></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<!-- ══════════════════ 4. LEADERBOARD ══════════════════ -->
+<div class="mock-label">
+  <span class="idx">SCREEN 04</span>
+  <span class="txt">Leaderboard — /agents</span>
+  <span class="rule"></span>
+</div>
+<div class="mock-frame">
+  <div class="pad">
+    <div class="sec-head">
+      <span class="scope-glyph"></span>
+      <div>
+        <div class="eyebrow">Ranked Registry</div>
+        <h2 style="margin-top:6px">Scanned agents</h2>
+        <p>Every agent on 0G, ranked by combined behavioral and code risk. Lower is safer. Attestations sealed on-chain.</p>
+      </div>
+    </div>
+
+    <div class="board">
+      <table>
+        <thead>
+          <tr>
+            <th class="num">Rank</th>
+            <th>Agent</th>
+            <th>Subject</th>
+            <th>Behavioral Risk</th>
+            <th>Code Risk</th>
+            <th>Gate</th>
+            <th>Version</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="rank"><b>01</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#7</a></div><div class="ad">0x91ab…4c7d</div></td>
+            <td class="subj">payments-router</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-good">20</span><span class="score-track"><i class="score-fill bg-good" style="width:20%"></i></span></div></td>
+            <td><span class="badge b-safe">SAFE</span></td>
+            <td><span class="badge b-safe">ALLOW</span></td>
+            <td class="ver-cell">v14</td>
+          </tr>
+          <tr>
+            <td class="rank"><b>02</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#200</a></div><div class="ad">0x4fe2…88a1</div></td>
+            <td class="subj">oracle-relayer</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-good">28</span><span class="score-track"><i class="score-fill bg-good" style="width:28%"></i></span></div></td>
+            <td><span class="badge b-safe">SAFE</span></td>
+            <td><span class="badge b-safe">ALLOW</span></td>
+            <td class="ver-cell">v9</td>
+          </tr>
+          <tr>
+            <td class="rank"><b>03</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#1000</a></div><div class="ad">0xbb70…12f9</div></td>
+            <td class="subj">liquidation-bot</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-good">33</span><span class="score-track"><i class="score-fill bg-good" style="width:33%"></i></span></div></td>
+            <td><span class="badge b-safe">SAFE</span></td>
+            <td><span class="badge b-safe">ALLOW</span></td>
+            <td class="ver-cell">v6</td>
+          </tr>
+          <tr>
+            <td class="rank"><b>04</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#3527152</a></div><div class="ad">0x2d19…3527</div></td>
+            <td class="subj">yield-optimizer</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-warn">39</span><span class="score-track"><i class="score-fill bg-warn" style="width:39%"></i></span></div></td>
+            <td><span class="badge b-caut">CAUTION</span></td>
+            <td><span class="badge b-caut">REVIEW</span></td>
+            <td class="ver-cell">v11</td>
+          </tr>
+          <tr>
+            <td class="rank"><b>05</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#842</a></div><div class="ad">0x7c04…aa5e</div></td>
+            <td class="subj">nft-minter</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-warn">40</span><span class="score-track"><i class="score-fill bg-warn" style="width:40%"></i></span></div></td>
+            <td><span class="badge b-caut">CAUTION</span></td>
+            <td><span class="badge b-safe">ALLOW</span></td>
+            <td class="ver-cell">v3</td>
+          </tr>
+          <tr>
+            <td class="rank"><b>06</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#556</a></div><div class="ad">0xe3d8…9017</div></td>
+            <td class="subj">bridge-agent</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-warn">47</span><span class="score-track"><i class="score-fill bg-warn" style="width:47%"></i></span></div></td>
+            <td><span class="badge b-caut">CAUTION</span></td>
+            <td><span class="badge b-caut">REVIEW</span></td>
+            <td class="ver-cell">v5</td>
+          </tr>
+          <tr>
+            <td class="rank"><b>07</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#318</a></div><div class="ad">0x0af1…6b2c</div></td>
+            <td class="subj">airdrop-claimer</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-warn">54</span><span class="score-track"><i class="score-fill bg-warn" style="width:54%"></i></span></div></td>
+            <td><span class="badge b-caut">CAUTION</span></td>
+            <td><span class="badge b-caut">REVIEW</span></td>
+            <td class="ver-cell">v2</td>
+          </tr>
+          <tr class="hi">
+            <td class="rank"><b>08</b></td>
+            <td class="agent-cell"><div class="nm"><a href="#">Agent&nbsp;#4471</a></div><div class="ad">0xdead…c0de</div></td>
+            <td class="subj">drainer-proxy</td>
+            <td class="risk-cell"><div class="score-wrap"><span class="score-num f-bad">72</span><span class="score-track"><i class="score-fill bg-bad" style="width:72%"></i></span></div></td>
+            <td><span class="badge b-flag">FLAGGED</span></td>
+            <td><span class="badge b-flag">BLOCK</span></td>
+            <td class="ver-cell">v1</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════ 5. AGENT DETAIL ══════════════════ -->
+<div class="mock-label">
+  <span class="idx">SCREEN 05</span>
+  <span class="txt">Agent Detail</span>
+  <span class="rule"></span>
+</div>
+<div class="mock-frame">
+  <section class="report-shell">
+    <div class="pad">
+      <div class="detail-head">
+        <div>
+          <div class="eyebrow" style="margin-bottom:16px">Agent #3527152 · yield-optimizer</div>
+          <div class="trust-line">Trust this agent with <span class="warn-w">mild caution</span> — clean intel, but young and concentrated.</div>
+          <div class="trust-meta">
+            <span><b>Subject</b> 0x2d19…3527</span>
+            <span><b>Risk</b> 39/100</span>
+            <span><b>Gate</b> REVIEW</span>
+            <span><b>Lease</b> v11</span>
+          </div>
+        </div>
+        <div class="radar-stage compact">
+          <div class="radar">
+            <span class="ring r1"></span><span class="ring r2"></span><span class="ring r3"></span><span class="ring r4"></span>
+            <span class="cross-h"></span><span class="cross-v"></span>
+            <span class="sweep"></span><span class="sweep-line"></span><span class="radar-center"></span>
+            <span class="blip warm" style="top:38%;left:60%"></span>
+            <span class="blip faint" style="top:60%;left:44%"></span>
+            <span class="blip faint" style="top:48%;left:33%"></span>
+          </div>
+          <span class="radar-badge">RISK <b>39</b> · caution</span>
+        </div>
+      </div>
+
+      <!-- reused RiskReport (condensed) -->
+      <div class="rep-grid">
+        <div class="panel">
+          <div class="panel-head"><span class="scope-glyph" style="width:18px;height:18px"></span>Threat Intelligence</div>
+          <div class="panel-body">
+            <div class="source-row">
+              <span class="src clear"><span class="nm">OFAC</span><span class="st">✓ CLEAR</span></span>
+              <span class="src na"><span class="nm">Chainalysis</span><span class="st">— n/a</span></span>
+              <span class="src clear"><span class="nm">ScamSniffer</span><span class="st">✓ CLEAR</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><span class="scope-glyph" style="width:18px;height:18px"></span>Contract Safety</div>
+          <div class="panel-body">
+            <p class="chip-note">Bytecode · <b>0x8a3f…c012</b></p>
+            <div class="chips">
+              <div class="chip"><span class="ic">⚠</span><span class="cx"><b>Self-destruct</b> — contract can be destroyed</span></div>
+              <div class="chip"><span class="ic">⚠</span><span class="cx"><b>Delegatecall</b> — execution can be redirected</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-head">Key Factors</div>
+        <div class="panel-body" style="padding:6px 20px">
+          <ul class="factors">
+            <li class="neg"><span class="mark">!</span>New address with limited on-chain history</li>
+            <li class="neg"><span class="mark">!</span>Most activity flows to a single counterparty</li>
+            <li class="pos"><span class="mark">✓</span>No unlimited approvals or drain patterns</li>
+            <li class="pos"><span class="mark">✓</span>No sanctions or scam flags</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- attestation timeline -->
+      <div class="timeline-panel">
+        <div class="timeline-head"><span class="scope-glyph" style="width:18px;height:18px"></span>Attestation Timeline</div>
+        <div class="timeline">
+          <div class="tl-node done"><span class="dot"></span><div class="v">v1</div><div class="s">risk 61</div></div>
+          <div class="tl-node done"><span class="dot"></span><div class="v">v2</div><div class="s">risk 58</div></div>
+          <div class="tl-node done"><span class="dot"></span><div class="v">v4</div><div class="s">risk 52</div></div>
+          <div class="tl-node done"><span class="dot"></span><div class="v">v6</div><div class="s">risk 47</div></div>
+          <div class="tl-node done"><span class="dot"></span><div class="v">v8</div><div class="s">risk 43</div></div>
+          <div class="tl-node done"><span class="dot"></span><div class="v">v9</div><div class="s">risk 41</div></div>
+          <div class="tl-node done"><span class="dot"></span><div class="v">v10</div><div class="s">risk 40</div></div>
+          <div class="tl-node live"><span class="dot"></span><div class="v">v11</div><div class="s">risk 39</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- footer -->
+    <div class="page-foot">
+      <div class="foot-inner">
+        <span class="fmk"><span class="wordmark"><span class="mk"></span></span>0G Sentinel</span>
+        <span class="fnet">Chain ID 16661 · attestations sealed on-chain</span>
+        <a href="#" class="flink">View on explorer →</a>
+      </div>
+    </div>
+  </section>
+</div>
+
+</body>
+</html>

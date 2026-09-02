@@ -5,7 +5,7 @@ const standaloneOrigin = "http://127.0.0.1:4318";
 
 test("@mocked public routes stay secret-free and operator work stays isolated", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("Admission should be provable");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("Is this agent safe to trust");
   await expect(page.locator('input[type="password"]')).toHaveCount(0);
   await expect(page.getByText("One-time operator token")).toHaveCount(0);
 

@@ -40,7 +40,7 @@ test("@mocked loading is explicit and cancellable navigation does not leave stal
   await installFixture(page, "loading"); await navigate(page, "/agents");
   await expect(page.getByText("Reading recent ProofLocks")).toBeVisible();
   await navigate(page, "/");
-  await expect(page.getByRole("heading", { name: /Admission should be/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /Is this agent safe to trust/ })).toBeVisible();
   await expect(page.getByText("Reading recent ProofLocks")).toHaveCount(0);
 });
 
@@ -196,7 +196,7 @@ async function exerciseAdverseState(page: Page, scenario: FixtureScenario) {
   if (["loading", "empty", "partial", "maximum", "unavailable"].includes(scenario)) {
     await navigate(page, "/agents");
     if (scenario === "loading") { await page.getByText("Reading recent ProofLocks").waitFor();
-      await navigate(page, "/"); await page.getByRole("heading", { name: /Admission should be/ }).waitFor(); return; }
+      await navigate(page, "/"); await page.getByRole("heading", { name: /Is this agent safe to trust/ }).waitFor(); return; }
     const copy = scenario === "empty" ? "No recent finalized events" : scenario === "partial" ? "Partial results"
       : scenario === "maximum" ? "100 returned · cap 100" : "ProofLock inventory unavailable";
     await page.getByText(copy, { exact: false }).first().waitFor(); return;

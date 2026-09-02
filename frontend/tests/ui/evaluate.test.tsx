@@ -102,7 +102,7 @@ describe("Evaluate ceremony", () => {
     const html = withoutFeaturedEnvironment(() => renderToStaticMarkup(React.createElement(OverviewPage)));
     const primary = html.indexOf("Browse recent ProofLocks");
     const secondary = html.indexOf("Verify another proof");
-    const dependencies = html.indexOf("Dependency configuration is not service health");
+    const dependencies = html.indexOf("seals the full evidence on 0G Storage");
     const architecture = html.indexOf("Architecture / process");
     expect(primary).toBeGreaterThan(-1);
     expect(primary).toBeLessThan(secondary);

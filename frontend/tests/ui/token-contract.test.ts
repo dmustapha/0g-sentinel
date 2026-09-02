@@ -44,12 +44,12 @@ describe("canonical Proof Ledger token contract", () => {
     expect(() => assertCanonicalTokens(tokenSource)).not.toThrow();
     const expected = {
       "--color-graphite-950": "#111214", "--color-paper-100": "#f1ebdf",
-      "--color-violet-400": "#ad72ff", "--surface-canvas": "var(--color-graphite-950)",
+      "--color-violet-400": "#c6f24e", "--surface-canvas": "var(--color-graphite-950)",
       "--text-on-dark": "var(--color-paper-50)", "--text-on-paper": "var(--color-ink-950)",
       "--status-success-on-dark": "#39b982", "--status-success-on-paper": "#116b49",
       "--status-caution-on-dark": "#d79a36", "--status-caution-on-paper": "#91470a",
       "--status-failure-on-dark": "#f07878", "--status-failure-on-paper": "#aa303a",
-      "--focus-on-dark": "#d0b2ff", "--focus-on-paper": "#674093",
+      "--focus-on-dark": "#d8f57a", "--focus-on-paper": "#446200",
       "--space-half": "4px", "--space-1": "8px", "--space-2": "16px", "--space-3": "24px",
       "--type-caption": "0.75rem", "--type-data": "0.875rem", "--type-body": "1rem",
       "--line-caption": "1.4", "--line-data": "1.45", "--line-body": "1.55",
@@ -149,7 +149,7 @@ describe("canonical Proof Ledger token contract", () => {
     const system = await readFile(resolve(process.cwd(), "DESIGN_SYSTEM.md"), "utf8");
     const progress = await readFile(resolve(process.cwd(), "ai/design-progress.md"), "utf8");
     const brand = JSON.parse(await readFile(resolve(process.cwd(), "brand.json"), "utf8"));
-    for (const text of ["graphite", "warm paper", "provenance violet", "3px 3px 0",
+    for (const text of ["graphite", "warm paper", "signal lime", "3px 3px 0",
       "5px 5px 0", "Raw-color exception", "token-contract.test.ts"]) expect(system).toContain(text);
     expect(brand.canonicalStyleSource).toBe("app/styles/tokens.css");
     expect(brand).not.toHaveProperty("colorMode");
@@ -429,7 +429,7 @@ async function resolveTsxImport(from: string, specifier: string): Promise<string
   }
 }
 
-const OG_COLOR_ALLOWLIST = new Set(["#111214", "#f2efe8", "#ad72ff", "#a7a39b"]);
+const OG_COLOR_ALLOWLIST = new Set(["#111214", "#f2efe8", "#c6f24e", "#a7a39b"]);
 
 async function css(path: string): Promise<string> {
   return readFile(resolve(process.cwd(), path), "utf8");
@@ -482,21 +482,21 @@ const RAW_TOKEN_DECLARATIONS = new Map<string, string>([
   ["--color-graphite-950", "#111214"], ["--color-graphite-900", "#191a1e"],
   ["--color-graphite-800", "#222329"], ["--color-graphite-975", "#0d0e10"],
   ["--color-paper-50", "#f2efe8"], ["--color-paper-100", "#f1ebdf"], ["--color-paper-200", "#e6ddcf"],
-  ["--color-ink-950", "#19181a"], ["--color-violet-400", "#ad72ff"], ["--color-violet-700", "#7950ae"],
-  ["--color-action-ink", "#160f1d"], ["--surface-topbar", "rgba(17, 18, 20, .96)"],
+  ["--color-ink-950", "#19181a"], ["--color-violet-400", "#c6f24e"], ["--color-violet-700", "#4a6a00"],
+  ["--color-action-ink", "#14210a"], ["--surface-topbar", "rgba(17, 18, 20, .96)"],
   ["--surface-subtle", "rgba(255, 255, 255, .025)"], ["--texture-dot", "rgba(255, 255, 255, .08)"],
-  ["--grid-line", "rgba(173, 114, 255, .08)"], ["--text-muted-on-dark", "#a7a39b"],
+  ["--grid-line", "rgba(198, 242, 78, .08)"], ["--text-muted-on-dark", "#a7a39b"],
   ["--text-placeholder-on-dark", "#8f8b84"], ["--text-muted-on-paper", "#5b565b"],
   ["--text-data-on-paper", "#423d42"], ["--status-success-on-dark", "#39b982"],
   ["--status-caution-on-dark", "#d79a36"], ["--status-failure-on-dark", "#f07878"],
   ["--status-unknown-on-dark", "#b4afb7"], ["--status-success-on-paper", "#116b49"],
   ["--status-caution-on-paper", "#91470a"], ["--status-failure-on-paper", "#aa303a"],
-  ["--status-unknown-on-paper", "#68636b"], ["--focus-on-dark", "#d0b2ff"],
-  ["--focus-on-paper", "#674093"], ["--border-control-on-dark", "#77767b"],
+  ["--status-unknown-on-paper", "#68636b"], ["--focus-on-dark", "#d8f57a"],
+  ["--focus-on-paper", "#446200"], ["--border-control-on-dark", "#77767b"],
   ["--border-control-on-paper", "#777076"], ["--border-subtle-on-dark", "rgba(242, 239, 232, .18)"],
   ["--border-subtle-on-paper", "rgba(25, 24, 26, .22)"], ["--status-success-soft", "rgba(57, 185, 130, .14)"],
   ["--status-caution-soft", "rgba(215, 154, 54, .15)"], ["--status-failure-soft", "rgba(240, 120, 120, .14)"],
-  ["--action-soft", "rgba(173, 114, 255, .15)"], ["--rail-end-on-ceremony", "rgba(173, 114, 255, .65)"],
+  ["--action-soft", "rgba(198, 242, 78, .15)"], ["--rail-end-on-ceremony", "rgba(198, 242, 78, .65)"],
   ["--shadow-ink", "#000000"],
 ]);
 

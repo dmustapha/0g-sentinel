@@ -8,10 +8,10 @@ export const alt = "0G Sentinel ProofLock agent route locator";
 export default function Image({ params }: { params: { address: string } }) {
   const valid = validAgentId(params.address);
   return new ImageResponse(<div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column",
-    justifyContent: "space-between", padding: "62px", background: "#111214", color: "#f2efe8", borderTop: "12px solid #ad72ff", fontFamily: "sans-serif" }}>
+    justifyContent: "space-between", padding: "62px", background: "#111214", color: "#f2efe8", borderTop: "12px solid #c6f24e", fontFamily: "sans-serif" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><b style={{ fontSize: 30 }}>0G SENTINEL · PROOFLOCK</b>
       <span style={{ fontSize: 18, color: "#a7a39b" }}>NETWORK · CHAIN ID 16661</span></div>
-    <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "#ad72ff", fontSize: 22, letterSpacing: 3 }}>AGENT ROUTE LOCATOR</span>
+    <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "#c6f24e", fontSize: 22, letterSpacing: 3 }}>AGENT ROUTE LOCATOR</span>
       <strong style={{ fontSize: 80, lineHeight: 1.05, marginTop: 14 }}>{valid ? `Route parameter · Agent ID ${params.address}` : "Invalid Agent ID parameter"}</strong>
       <span style={{ color: "#a7a39b", fontSize: 28, marginTop: 22 }}>Syntactic locator only · resolve the identity on the detail page</span></div>
     <div style={{ display: "flex", color: "#a7a39b", fontSize: 19 }}>Identity existence and current state are resolved on the application. No share-card verdict is asserted.</div>

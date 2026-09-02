@@ -10,12 +10,12 @@ export default function Image({ params }: { params: { proofId: string } }) {
     ? `${params.proofId.slice(0, 10)}…${params.proofId.slice(-8)}` : "Invalid proof identifier";
   return new ImageResponse(<div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column",
     justifyContent: "space-between", padding: "62px", background: "#111214", color: "#f2efe8",
-    borderTop: "12px solid #ad72ff", fontFamily: "sans-serif" }}>
+    borderTop: "12px solid #c6f24e", fontFamily: "sans-serif" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
       <b style={{ fontSize: 30 }}>0G SENTINEL · PROOFLOCK</b>
       <span style={{ fontSize: 18, color: "#a7a39b" }}>NETWORK · CHAIN ID 16661</span></div>
     <div style={{ display: "flex", flexDirection: "column" }}>
-      <span style={{ color: "#ad72ff", fontSize: 22, letterSpacing: 3 }}>PROOF ROUTE LOCATOR</span>
+      <span style={{ color: "#c6f24e", fontSize: 22, letterSpacing: 3 }}>PROOF ROUTE LOCATOR</span>
       <strong style={{ fontSize: 66, lineHeight: 1.05, marginTop: 14 }}>Route parameter · {proof}</strong>
       <span style={{ color: "#a7a39b", fontSize: 28, marginTop: 22 }}>Syntactic locator only · reproduce evidence on the detail page</span></div>
     <div style={{ display: "flex", color: "#a7a39b", fontSize: 19 }}>

@@ -50,7 +50,7 @@ output/playwright/
 .verify-state.json
 .watchdog-last-alert
 .wire-state.json
-# Design forge state
+# Local build + tool state
 frontend/.design-forge-state.json
 **/.design-forge-state.json
 # Pipeline reports and scripts (local only)
@@ -86,3 +86,8 @@ frontend/.prooflock-build/
 # Batch-seal local state (contains private keys — never commit)
 .config-batch-keys.json
 .config-batch-agents.json
+
+# Local planning + context
+docs/plans/
+docs/prompts/
+FOR[Dami].md

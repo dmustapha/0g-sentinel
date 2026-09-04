@@ -30,7 +30,7 @@ const ERC8004_REGISTRY = "0x8004a169fb4a3325136eb29fa0ceb6d2e539a432";
 const identitySchema = z.object({
   identity: z.object({ namespace: z.literal("eip155"), chainId: z.literal(16661), registryAddress: hex20, agentId: canonicalAgentId }),
   owner: hex20, agentWallet: hex20, agentURI: uri, registrationDigest: hex32,
-  sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32, card: identityCard,
+  sourceBlockNumber: uint64Decimal, sourceBlockHash: hex32, card: identityCard.nullable(),
 });
 const lockSchema = z.object({
   identityKey: hex32, subject: hex20, envelopeDigest: hex32, storageRoot: hex32, computeRoot: hex32,

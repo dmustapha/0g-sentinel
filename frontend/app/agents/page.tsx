@@ -24,7 +24,7 @@ export default function ProofLocksPage() {
   const partial = items.some((item) => item.status === "ENRICHMENT_UNAVAILABLE");
   const retryRead = () => { setState("loading"); setRetry((value) => value + 1); };
   const sealed = items.filter((item) => item.status === "VERIFIED");
-  return <section className="workspace-section inventory-page"><div className="wrap"><div className="page-heading"><span className="eyebrow">Sealed agent risk board</span><h1>Risk leaderboard</h1>
+  return <section className="workspace-section inventory-page"><div className="wrap"><div className="page-heading"><span className="eyebrow">Sealed agents, ranked by risk</span><h1>Risk-ranked ProofLocks</h1>
     <p>Sealed ProofLock V2 records ranked by combined behavioral and code risk, riskiest agent first. Ranking is a triage aid over recent finalized seals, not a complete registry index or a universal safety verdict.</p></div>
     {discovery && <div className="inventory-scope" aria-label="Discovery scope"><b>Observed finalized blocks {discovery.fromBlock}–{discovery.toBlock}</b>
       {" · "}<span>{discovery.confirmations} confirmations · {discovery.returned} returned · cap {discovery.cap} · observed {discovery.observedAt}</span>
@@ -34,7 +34,7 @@ export default function ProofLocksPage() {
       Successful rows remain visible; failed Registry enrichment is disclosed in place.
     </StateMessage>}
     {state === "loading" && <LeaderboardSkeleton />}
-    {state === "error" && <StateMessage state="error" title="ProofLock leaderboard unavailable"
+    {state === "error" && <StateMessage state="error" title="Risk-ranked ProofLocks unavailable"
       action={<Button onClick={retryRead}>Retry read</Button>}>The public read path failed. No records are inferred from legacy V1.</StateMessage>}
     {state === "ready" && sealed.length === 0 && <StateMessage state="empty" title="No sealed agents yet"
       action={<Link className="button" href="/scan">Run a scan</Link>}>No sealed agents yet — run a scan. Older active leases may exist outside this bounded finalized view.</StateMessage>}

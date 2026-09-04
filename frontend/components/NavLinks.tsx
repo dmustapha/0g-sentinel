@@ -8,10 +8,12 @@ export function NavLinks() {
   const scanActive = withinRoute(pathname, "/scan");
   const agentsActive = withinRoute(pathname, "/agents");
   const proofActive = withinRoute(pathname, "/proof");
+  const developersActive = withinRoute(pathname, "/developers");
   const operatorActive = withinRoute(pathname, "/operator");
   const current = scanActive ? "Scan"
     : agentsActive ? "ProofLocks"
     : proofActive ? "Verify"
+    : developersActive ? "Developers"
     : operatorActive ? "Operator"
     : pathname === "/" ? "Overview" : null;
   return (
@@ -31,6 +33,10 @@ export function NavLinks() {
       <Link href="/proof" className={proofActive ? "active" : ""}
         aria-current={proofActive ? "page" : undefined}>
         Verify
+      </Link>
+      <Link href="/developers" className={developersActive ? "active" : ""}
+        aria-current={developersActive ? "page" : undefined}>
+        Developers
       </Link>
       <Link href="/operator" className={operatorActive ? "active" : ""}
         aria-current={operatorActive ? "page" : undefined}>Operator</Link>

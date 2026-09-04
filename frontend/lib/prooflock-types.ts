@@ -14,7 +14,7 @@ export type CanonicalIdentity = Readonly<{
   registrationDigest: Bytes32;
   sourceBlockNumber: string;
   sourceBlockHash: Bytes32;
-  card: Readonly<Record<string, unknown>>;
+  card: Readonly<Record<string, unknown>> | null;
 }>;
 
 export type ProofLockRecord = Readonly<{

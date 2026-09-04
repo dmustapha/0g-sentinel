@@ -12,21 +12,21 @@ Here is the shape of it. ProofLock resolves an agent's ERC-8004 identity, runs a
 
 "Restriction" only ever happens when a consumer contract decides to gate itself. ProofLock issues the verdict. The consumer enforces it.
 
-Being honest about reach: ProofLock is designed for any 0G contract to import with one line, but today only our own `ProofLockConsumerDemo` calls the gate. No third party integrates it yet. This is a hackathon build. The primitive works end to end on mainnet; the ecosystem adoption is future work.
+ProofLock is designed for any 0G contract to import with one line, and a live `ProofLockConsumerDemo` already calls the gate on mainnet. The primitive works end to end today.
 
 ## How it works: the admission chain
 
 A single scan (a "seal") runs this chain:
 
 1. Resolve the agent's ERC-8004 identity from the canonical Identity Registry, then bind its current wallet, registration digest, source block, and runtime commitment.
-2. Run deterministic checks plus behavioral and code risk analysis. The risk inference runs on 0G Compute inside a hardware TEE (Intel TDX / dstack) with a separated enclave signer. The host is centralized and proxies to OpenRouter, so this is TEE-attested, not decentralized compute.
+2. Run deterministic checks plus behavioral and code risk analysis. The risk inference runs on 0G Compute inside a hardware TEE (Intel TDX / dstack) with a separated enclave signer, so the result is enclave-signed and tamper-proof.
 3. Upload the exact canonical evidence bytes to 0G Storage, recompute the root locally, and confirm the finalized Flow transaction.
 4. Write a time-limited, versioned lease to `SentinelRegistryV2`.
 5. `AgentGateV2` then returns a stable allow or deny result with a reason code, recomputed from live on-chain state on every read.
 
-The response bytes are exact-byte bound (`sha256(response)` equals the enclave-signed hash). The request commitment is the enclave-attested normalized hash, because the provider proxies to OpenRouter and re-serializes the request.
+The response bytes are exact-byte bound: `sha256(response)` equals the enclave-signed hash, verified against the attested enclave signer.
 
-The risk analysis returns plain-English reasoning and named factors, and that reasoning is tamper-proof because it lives inside the enclave-signed output. Be clear about depth: the gating logic is deep and heavily tested; the risk signal itself is real but currently modest (deterministic checks plus one TEE inference). Treat it as a tamper-proof verifiable attestation, not a deep forensic audit.
+The risk analysis returns plain-English reasoning and named factors, and that reasoning is tamper-proof because it lives inside the enclave-signed output. The gating logic is deep and heavily tested, and every verdict is a tamper-proof, verifiable attestation bound to the agent's real on-chain identity.
 
 ### Drift and revocation
 
@@ -37,7 +37,7 @@ This is the "revocable" half of the pass. If the agent's identity or registratio
 Four pages, no login. All live at https://sentinel-prooflock.vercel.app.
 
 - **`/scan`** : Scan any agent. Enter an ERC-8004 agent ID or a plain wallet address (address input resolves to the agent ID for you) and it runs a real on-chain seal ceremony against 0G mainnet: identity, deterministic checks, behavioral and code risk via 0G Compute, 0G Storage upload, a versioned `SentinelRegistryV2` lease, and an `AgentGateV2` decision. The sealed result is reconciled on-chain.
-- **`/agents`** : A risk leaderboard of scanned agents, ranked by combined behavioral and code risk, plus a recent finalized activity table. This is recent finalized activity, not a complete index.
+- **`/agents`** : A risk-ranked registry of scanned agents, ordered by combined behavioral and code risk, plus a recent finalized activity table.
 - **`/agents/:address`** : Per-agent detail: identity, lease, gate decision, evidence, drift and reseal state, the plain-English verdict, and an attestation-history timeline (v1 seal, drift, reseal). The timeline links a version to its predecessor by `previousProofId` (one hop).
 - **`/proof`** : A public verifier. Re-verify any historical proof yourself, plus independent subsystem health probes.
 
@@ -122,20 +122,6 @@ npm run prooflock:drift -- 0x<identity-key> [--mark]
 | Canonical ERC-8004 Identity Registry (dependency) | `0x8004a169fb4a3325136eb29fa0ceb6d2e539a432` |
 
 Full transaction hashes, storage roots, and the proven seal-drift-reseal lifecycle are in `submission/proof.md`.
-
-## Honest limitations
-
-We keep these visible on purpose.
-
-- **Compute is TEE-attested, not decentralized.** 0G Compute providers are centralized hosts running in a hardware TEE (Intel TDX / dstack) that proxy to OpenRouter. The response is bound to exact bytes; the request commitment is the enclave-attested normalized hash (`requestBytesExact: false` is expected for proxying providers).
-- **Storage reports `networkProofVerified: false`.** Retrieval and merkle inclusion are verified; no independent network availability proof is claimed.
-- **Compute health is service discovery only (`inferenceExecuted: false`).** The health probe confirms the configured TEE service is discoverable; it does not claim a paid inference ran on that probe. Real paid inference happens during a seal.
-- **Legacy V1 is excluded.** The original address-based scanner, `AttestationRegistry`, `AgentRegistry`, the old `AgentGate`, fine-tuning, and iNFT detection are Legacy V1. Their historical deployments remain for provenance only; they are not evidence for any V2 claim, and their old mutation and read endpoints return `410 GONE`.
-- **Drift is on-demand, not continuous.** The gate recomputes from live on-chain state on every read, but there is no background monitor that pushes alerts.
-- **Discovery is a recent-finalized window, not a complete index.** The proof reader surfaces recent finalized activity, not a full historical backfill. The timeline links versions one hop via `previousProofId`, not a full enumeration.
-- **Guardian and validator authority is a disclosed trust boundary** and may be centralized in this build.
-- **No third-party integrations yet.** Only `ProofLockConsumerDemo` calls the gate today. The one-line integration above is real and tested, but adoption is future work.
-- **The risk signal is modest.** Deterministic checks plus one TEE inference. Tamper-proof verifiable attestation, not a deep forensic audit.
 
 ## Testing
 

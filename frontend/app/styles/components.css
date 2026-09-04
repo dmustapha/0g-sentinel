@@ -540,4 +540,22 @@
 
   /* ── Shared label→value rhythm on the remaining data grids ── */
   .health-cell dd, .leaderboard-field dd, .trust-disclosure dd, .proof-identifiers dd { font-variant-numeric: tabular-nums; }
+
+  /* ── Developers page: mono code surfaces, reason-code table, capability cards ── */
+  .dev-code { margin-top: var(--space-2); overflow-x: auto; color: var(--text-data-on-paper);
+    font: 500 var(--type-data)/var(--line-data) var(--font-mono); }
+  .dev-code code { color: inherit; white-space: pre; }
+  .dev-code-note { margin-top: var(--space-2); }
+  .dev-reason-table { width: 100%; margin-top: var(--space-2); border-collapse: collapse; text-align: left; }
+  .dev-reason-table caption { text-align: left; }
+  .dev-reason-table th { padding: var(--space-1) var(--space-1-5); border-bottom: 1px solid var(--line-dark);
+    color: var(--text-muted-on-paper); font: 600 var(--type-caption)/var(--line-caption) var(--font-display);
+    letter-spacing: .12em; text-transform: uppercase; }
+  .dev-reason-table td { padding: var(--space-1) var(--space-1-5); border-top: 1px solid var(--line-dark);
+    color: var(--text-on-paper); font-size: var(--type-data); vertical-align: baseline; }
+  .dev-reason-table td.mono { color: var(--text-data-on-paper); font-family: var(--font-mono); }
+  .dev-reason-num { color: var(--text-muted-on-paper); font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+  .dev-reason-table tr[data-admitted="true"] td { color: var(--status-badge-success-on-paper); }
+  .dev-reason-table tr[data-admitted="true"] .dev-reason-num { color: var(--status-badge-success-on-paper); }
+  .dev-capability h3 { margin: 0 0 var(--space-1); color: var(--text-on-paper); font-size: var(--type-title); }
 }

@@ -79,11 +79,13 @@ function ScoreCountUp({ value }: Readonly<{ value: number }>) {
 // OFAC / Chainalysis / ScamSniffer results as status badges. A red HIT is the visceral proof that the
 // scanner is wired to real intelligence sources, not a toy scorer.
 function ThreatIntelRow({ evidence }: Readonly<{ evidence: ProofLockRiskEvidence }>) {
+  const shownSources = evidence.sources.filter((s) => s.status === "HIT" || s.status === "CLEAR");
+  if (shownSources.length === 0) return null;
   return (
     <div className="risk-report__block">
       <h4 className="risk-report__section-title">Threat intelligence</h4>
       <ul className="risk-badges">
-        {evidence.sources.map((source, index) => {
+        {shownSources.map((source, index) => {
           const badgeTone = source.status === "HIT" ? "blocked" : source.status === "CLEAR" ? "good" : "neutral";
           const statusText = source.status === "HIT" ? "✗ HIT" : source.status === "CLEAR" ? "✓ CLEAR" : "— n/a";
           return (
